@@ -919,7 +919,7 @@ static float uncollapseOpenAnim = 1.0f;
 static bool dark = true;
 static float tabAlpha = 0.0f;
 static float tabAdd = 0.0f;
-static int page = 1;
+static int g_menuPage = 1;   // menu page id (renamed: lanx theme owns an inline namespace "page" in c::)
 static int activeTab = 1;
 bool g_LogoPreviewMode = false;
 static bool isLogin = false;
@@ -1627,7 +1627,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 }
 
                 runtime_preview_menu::StateRefs runtimeState{
-                    dark, tabAlpha, tabAdd, ::page, activeTab,
+                    dark, tabAlpha, tabAdd, g_menuPage, activeTab,
                     windowCollapsed, isMenuVisible,
                     collapseBarLastActiveTime, collapseBarOpacityAnim, collapseBarPressAnim
                 };
