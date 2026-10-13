@@ -38,6 +38,9 @@ namespace custom
         bool                DrawCloseCard(const ImVec2& min, const ImVec2& size);
     }
 
+    bool                Tab(const char* label, int* v, int number);
+    bool                SubTab(const char* label, int* v, int number, ImColor color);
+
     bool                Page(bool selected, const char* icon, const ImVec2& size, bool allow_icon_font = true, bool show_active_line = true);
 
     bool                ThemeButton(const char* id_theme, bool dark, const ImVec2& size_arg);

@@ -28,6 +28,8 @@ namespace font {
     extern ImFont* inter_semibold;
 }
 
+#include "custom_widgets.hpp"  // lanx widget set (Tab rows for the sidebar)
+
 namespace runtime_preview_menu {
 
 struct Texture {
@@ -548,6 +550,84 @@ inline void DrawRuntimeEspPreviewPanel(const ImVec2 &min, const ImVec2 &size) {
     const ImVec2 distanceSz = textFont->CalcTextSizeA(11.0f, FLT_MAX, 0.0f, distance);
     drawList->AddText(textFont, 11.0f,
         ImVec2(boxCenter.x - distanceSz.x * 0.5f, boxMax.y + 7.0f), IM_COL32(255, 74, 74, 255), distance);
+}
+
+// Lanx-style vertical sidebar — the unified page selector living inside the main
+// menu body. Replaces the removed floating touch wheel. Pages keep their
+// existing ids (1 ESP, 2 EXTRA, 3 AIM, 4 SKINS, 5 MISC, 6 SETTINGS) so every
+// existing feature binding is untouched.
+
+inline void DrawMainSidebar(runtime_preview_menu::StateRefs &state, const ImVec2 &min, const ImVec2 &size)
+{
+    if (size.x <= 1.0f || size.y <= 1.0f)
+        return;
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 max = min + size;
+
+    // lanx panel: page background + accent-stroked edge
+    dl->AddRectFilled(min, max, ImGui::GetColorU32(c::page::background), c::page::rounding);
+    dl->AddRect(min, max, ImGui::GetColorU32(ImVec4(c::main_color.Value.x, c::main_color.Value.y, c::main_color.Value.z, 0.35f)), c::page::rounding, 0, 1.0f);
+
+    const float pad = 10.0f * c::scale;
+    ImGui::SetCursorScreenPos(ImVec2(min.x + pad, min.y + pad));
+    if (!ImGui::BeginChild("##RuntimeMainSidebar", ImVec2(size.x - pad * 2.0f, size.y - pad * 2.0f), false, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+    {
+        ImGui::EndChild();
+        return;
+    }
+
+    // Highlight follows the animating tab (existing fade machinery is untouched).
+    int currentMutable = state.activeTab;
+    int pressedPage    = 0;
+    static const char* kGroupHeaders[] = { "Combat", "Visuals", "System" };
+    struct SidebarEntry { const char* label; int page; int group; };
+    static const SidebarEntry kEntries[] = {
+        { "Aimbot",    3, 0 },
+        { "ESP",       1, 1 },
+        { "Extra",     2, 1 },
+        { "Skins",     4, 1 },
+        { "Misc",      5, 2 },
+        { "Settings",  6, 2 },
+    };
+
+    int lastGroup = -1;
+    for (const SidebarEntry& e : kEntries)
+    {
+        if (e.group != lastGroup)
+        {
+            if (font::regular_m)
+            {
+                ImGui::PushFont(font::regular_m);
+                ImGui::SetWindowFontScale(0.60f);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(150, 150, 150, 220));
+                ImGui::TextUnformatted(kGroupHeaders[e.group]);
+                ImGui::PopStyleColor();
+                ImGui::SetWindowFontScale(1.0f);
+                ImGui::PopFont();
+            }
+            else
+            {
+                ImGui::TextUnformatted(kGroupHeaders[e.group]);
+            }
+            ImGui::Spacing();
+            lastGroup = e.group;
+        }
+        // Touch: custom::Tab rows already scale into tap-sized rows; the press
+        // lands on release (click semantics) exactly like a finger tap.
+        char pageLabel[48];
+        std::snprintf(pageLabel, sizeof(pageLabel), "%s##sb_page_%d", e.label, e.page);
+        if (custom::Tab(pageLabel, &currentMutable, e.page))
+            pressedPage = e.page;
+    }
+
+    // custom::Tab returns the press (click-on-release = natural finger tap).
+    // Mirrors the removed floating wheel exactly: it only wrote state.page, and the
+    // pre-existing fade machinery (tabAlpha -> activeTab = page) does the switch.
+    if (pressedPage >= 1 && pressedPage <= 6)
+        state.page = pressedPage;
+
+    ImGui::EndChild();
 }
 
 inline void CollapseMenu(StateRefs &state) {

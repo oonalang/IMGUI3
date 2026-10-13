@@ -41,19 +41,12 @@ Index of this file:
 #include "imgui.h"
 #ifndef IMGUI_DISABLE
 #include "imgui_internal.h"
-#include "imgui_settings.h"
 
 #include <string>
 #include <map>
 
 // System includes
 #include <stdint.h>     // intptr_t
-
-extern ImFont* F50;
-
-namespace font {
-    extern ImFont* inter_semibold;
-}
 
 //-------------------------------------------------------------------------
 // Warnings
@@ -772,6 +765,7 @@ bool ImGui::InvisibleButton(const char* str_id, const ImVec2& size_arg, ImGuiBut
     return pressed;
 }
 
+
 bool ImGui::ArrowButtonEx(const char* str_id, ImGuiDir dir, ImVec2 size, ImGuiButtonFlags flags)
 {
     ImGuiContext& g = *GImGui;
@@ -802,7 +796,7 @@ bool ImGui::ArrowButtonEx(const char* str_id, ImGuiDir dir, ImVec2 size, ImGuiBu
 
 bool ImGui::ArrowButton(const char* str_id, ImGuiDir dir)
 {
-    float sz = GetFrameHeight();
+    float sz = 30;
     return ArrowButtonEx(str_id, dir, ImVec2(sz, sz), ImGuiButtonFlags_None);
 }
 
@@ -886,13 +880,6 @@ ImRect ImGui::GetWindowScrollbarRect(ImGuiWindow* window, ImGuiAxis axis)
     IM_ASSERT(scrollbar_size > 0.0f);
     if (axis == ImGuiAxis_X)
         return ImRect(inner_rect.Min.x, ImMax(outer_rect.Min.y, outer_rect.Max.y - border_size - scrollbar_size), inner_rect.Max.x - border_size, outer_rect.Max.y - border_size);
-    else if (c::scrollbar::left_side && (window->Flags & ImGuiWindowFlags_ChildWindow))
-        return ImRect(
-            outer_rect.Min.x + border_size,
-            inner_rect.Min.y,
-            ImMax(outer_rect.Min.x + border_size, inner_rect.Min.x - c::scrollbar::gutter_spacing * c::scale),
-            inner_rect.Max.y - border_size
-        );
     else
         return ImRect(ImMax(outer_rect.Min.x, outer_rect.Max.x - border_size - scrollbar_size), inner_rect.Min.y, outer_rect.Max.x - border_size, inner_rect.Max.y - border_size);
 }
@@ -914,11 +901,10 @@ void ImGui::Scrollbar(ImGuiAxis axis)
     }
     else
     {
-        const bool scrollbar_on_left = c::scrollbar::left_side && (window->Flags & ImGuiWindowFlags_ChildWindow);
         if ((window->Flags & ImGuiWindowFlags_NoTitleBar) && !(window->Flags & ImGuiWindowFlags_MenuBar))
-            rounding_corners |= scrollbar_on_left ? ImDrawFlags_RoundCornersTopLeft : ImDrawFlags_RoundCornersTopRight;
+            rounding_corners |= ImDrawFlags_RoundCornersTopRight;
         if (!window->ScrollbarX)
-            rounding_corners |= scrollbar_on_left ? ImDrawFlags_RoundCornersBottomLeft : ImDrawFlags_RoundCornersBottomRight;
+            rounding_corners |= ImDrawFlags_RoundCornersBottomRight;
     }
     float size_avail = window->InnerRect.Max[axis] - window->InnerRect.Min[axis];
     float size_contents = window->ContentSize[axis] + window->WindowPadding[axis] * 2.0f;
@@ -934,106 +920,55 @@ void ImGui::Scrollbar(ImGuiAxis axis)
 // - We handle both horizontal and vertical scrollbars, which makes the terminology not ideal.
 // Still, the code should probably be made simpler..
 
+#include "imgui_settings.h"
+
 bool ImGui::ScrollbarEx(const ImRect& bb_frame, ImGuiID id, ImGuiAxis axis, ImS64* p_scroll_v, ImS64 size_avail_v, ImS64 size_contents_v, ImDrawFlags flags)
 {
     ImGuiContext& g = *GImGui;
     ImGuiWindow* window = g.CurrentWindow;
-    if (window->SkipItems)
-        return false;
-
-    const float bb_frame_width = bb_frame.GetWidth();
-    const float bb_frame_height = bb_frame.GetHeight();
-    if (bb_frame_width <= 0.0f || bb_frame_height <= 0.0f)
-        return false;
-
-    // When we are too small, start hiding and disabling the grab (this reduce visual noise on very small window and facilitate using the window resize grab)
+    if (window->SkipItems) return false;
     float alpha = 1.0f;
-    if ((axis == ImGuiAxis_Y) && bb_frame_height < g.FontSize + g.Style.FramePadding.y * 2.0f)
-        alpha = ImSaturate((bb_frame_height - g.FontSize) / (g.Style.FramePadding.y * 2.0f));
-    if (alpha <= 0.0f)
-        return false;
-
+    if (axis == ImGuiAxis_Y && bb_frame.GetHeight() < g.FontSize + g.Style.FramePadding.y * 2.0f)
+        alpha = ImSaturate((bb_frame.GetHeight() - g.FontSize) / (g.Style.FramePadding.y * 2.0f));
+    if (alpha <= 0.0f) return false;
     const ImGuiStyle& style = g.Style;
-    const bool allow_interaction = (alpha >= 1.0f);
-
+    bool held = false, hovered = false;
     ImRect bb = bb_frame;
-    bb.Expand(ImVec2(-ImClamp(IM_TRUNC((bb_frame_width - 2.0f) * 0.5f), 0.0f, 3.0f), -ImClamp(IM_TRUNC((bb_frame_height - 2.0f) * 0.5f), 0.0f, 3.0f)));
-
-    // V denote the main, longer axis of the scrollbar (= height for a vertical scrollbar)
-    const float scrollbar_size_v = (axis == ImGuiAxis_X) ? bb.GetWidth() : bb.GetHeight();
-
-    // Calculate the height of our grabbable box. It generally represent the amount visible (vs the total scrollable amount)
-    // But we maintain a minimum size in pixel to allow for the user to still aim inside.
-    IM_ASSERT(ImMax(size_contents_v, size_avail_v) > 0.0f); // Adding this assert to check if the ImMax(XXX,1.0f) is still needed. PLEASE CONTACT ME if this triggers.
+    bb.Expand(ImVec2(-ImClamp((int)((bb_frame.GetWidth() - 2.0f) * 0.5f), 0, 3), -ImClamp((int)((bb_frame.GetHeight() - 2.0f) * 0.5f), 0, 3)));
+    ItemAdd(bb_frame, id, nullptr, ImGuiItemFlags_NoNav);
+    ButtonBehavior(bb, id, &hovered, &held, ImGuiButtonFlags_NoNavFocus);
+    const float scrollbar_v = (axis == ImGuiAxis_X ? bb.GetWidth() : bb.GetHeight());
     const ImS64 win_size_v = ImMax(ImMax(size_contents_v, size_avail_v), (ImS64)1);
-    const float grab_h_pixels = ImClamp(scrollbar_size_v * ((float)size_avail_v / (float)win_size_v), style.GrabMinSize, scrollbar_size_v);
-    const float grab_h_norm = grab_h_pixels / scrollbar_size_v;
-
-    // Handle input right away. None of the code of Begin() is relying on scrolling position before calling Scrollbar().
-    bool held = false;
-    bool hovered = false;
-    ImRect bb_interact = bb;
-    const float hitbox_extra = ImMax(0.0f, c::scrollbar::hitbox_area * c::scale);
-    if (axis == ImGuiAxis_Y)
-        bb_interact.Expand(ImVec2(hitbox_extra, 0.0f));
-    else
-        bb_interact.Expand(ImVec2(0.0f, hitbox_extra));
-    ItemAdd(bb_interact, id, NULL, ImGuiItemFlags_NoNav);
-    ButtonBehavior(bb_interact, id, &hovered, &held, ImGuiButtonFlags_NoNavFocus);
-
-    const ImS64 scroll_max = ImMax((ImS64)1, size_contents_v - size_avail_v);
-    float scroll_ratio = ImSaturate((float)*p_scroll_v / (float)scroll_max);
-    float grab_v_norm = scroll_ratio * (scrollbar_size_v - grab_h_pixels) / scrollbar_size_v; // Grab position in normalized space
-    if (held && allow_interaction && grab_h_norm < 1.0f)
+    float grab_pix = ImClamp(scrollbar_v * (float)size_avail_v / (float)win_size_v, style.GrabMinSize, scrollbar_v);
+    float scroll_max = ImMax((ImS64)1, size_contents_v - size_avail_v);
+    float scroll_norm = ImSaturate((float)*p_scroll_v / scroll_max);
+    float grab_norm = scroll_norm * (scrollbar_v - grab_pix) / scrollbar_v;
+    if (held && alpha >= 1.0f && grab_pix < scrollbar_v)
     {
-        const float scrollbar_pos_v = bb.Min[axis];
-        const float mouse_pos_v = g.IO.MousePos[axis];
-
-        // Click position in scrollbar normalized space (0.0f->1.0f)
-        const float clicked_v_norm = ImSaturate((mouse_pos_v - scrollbar_pos_v) / scrollbar_size_v);
-        SetHoveredID(id);
-
-        bool seek_absolute = false;
+        float click_norm = ImSaturate((g.IO.MousePos[axis] - bb.Min[axis]) / scrollbar_v);
+        bool seek = false;
         if (g.ActiveIdIsJustActivated)
         {
-            // On initial click calculate the distance between mouse and the center of the grab
-            seek_absolute = (clicked_v_norm < grab_v_norm || clicked_v_norm > grab_v_norm + grab_h_norm);
-            if (seek_absolute)
-                g.ScrollbarClickDeltaToGrabCenter = 0.0f;
-            else
-                g.ScrollbarClickDeltaToGrabCenter = clicked_v_norm - grab_v_norm - grab_h_norm * 0.5f;
+            seek = (click_norm < grab_norm || click_norm > grab_norm + grab_pix / scrollbar_v);
+            g.ScrollbarClickDeltaToGrabCenter = seek ? 0.0f : click_norm - grab_norm - grab_pix / scrollbar_v * 0.5f;
         }
-
-        // Apply scroll (p_scroll_v will generally point on one member of window->Scroll)
-        // It is ok to modify Scroll here because we are being called in Begin() after the calculation of ContentSize and before setting up our starting position
-        const float scroll_v_norm = ImSaturate((clicked_v_norm - g.ScrollbarClickDeltaToGrabCenter - grab_h_norm * 0.5f) / (1.0f - grab_h_norm));
-        *p_scroll_v = (ImS64)(scroll_v_norm * scroll_max);
-
-        // Update values for rendering
-        scroll_ratio = ImSaturate((float)*p_scroll_v / (float)scroll_max);
-        grab_v_norm = scroll_ratio * (scrollbar_size_v - grab_h_pixels) / scrollbar_size_v;
-
-        // Update distance to grab now that we have seeked and saturated
-        if (seek_absolute)
-            g.ScrollbarClickDeltaToGrabCenter = clicked_v_norm - grab_v_norm - grab_h_norm * 0.5f;
+        float new_norm = ImSaturate((click_norm - g.ScrollbarClickDeltaToGrabCenter - grab_pix / scrollbar_v * 0.5f) / (1.0f - grab_pix / scrollbar_v));
+        *p_scroll_v = (ImS64)(new_norm * scroll_max);
+        scroll_norm = ImSaturate((float)*p_scroll_v / scroll_max);
+        grab_norm = scroll_norm * (scrollbar_v - grab_pix) / scrollbar_v;
+        if (seek) g.ScrollbarClickDeltaToGrabCenter = click_norm - grab_norm - grab_pix / scrollbar_v * 0.5f;
     }
-
-    // Render
-    const ImU32 bg_col = GetColorU32(ImGuiCol_ScrollbarBg);
-    const ImU32 grab_col = GetColorU32(held ? ImGuiCol_ScrollbarGrabActive : hovered ? ImGuiCol_ScrollbarGrabHovered : ImGuiCol_ScrollbarGrab, alpha);
-    window->DrawList->AddRectFilled(bb_frame.Min, bb_frame.Max, bg_col, window->WindowRounding, flags);
+    window->DrawList->AddRectFilled(bb_frame.Min, bb_frame.Max, GetColorU32(ImGuiCol_ScrollbarBg), window->WindowRounding, flags);
     ImRect grab_rect;
     if (axis == ImGuiAxis_X)
-        grab_rect = ImRect(ImLerp(bb.Min.x, bb.Max.x, grab_v_norm), bb.Min.y, ImLerp(bb.Min.x, bb.Max.x, grab_v_norm) + grab_h_pixels, bb.Max.y);
+        grab_rect = ImRect(ImLerp(bb.Min.x, bb.Max.x, grab_norm), bb.Min.y, ImLerp(bb.Min.x, bb.Max.x, grab_norm) + grab_pix, bb.Max.y);
     else
-    {
-        const float grab_pad_x = ImMax(1.0f, 1.0f * c::scale);
-        const float grab_pad_y = ImMax(4.0f, 4.0f * c::scale);
-        const float grab_min_y = ImLerp(bb.Min.y + grab_pad_y, bb.Max.y - grab_pad_y - grab_h_pixels, grab_v_norm);
-        grab_rect = ImRect(bb.Min.x + grab_pad_x, grab_min_y, bb.Max.x - grab_pad_x, grab_min_y + grab_h_pixels);
-    }
-    window->DrawList->AddRectFilled(grab_rect.Min, grab_rect.Max, GetColorU32(c::accent), 30.f);
-
+        grab_rect = ImRect(bb.Min.x, ImLerp(bb.Min.y, bb.Max.y, grab_norm), bb.Max.x, ImLerp(bb.Min.y, bb.Max.y, grab_norm) + grab_pix);
+    static std::map<ImGuiID, float> anim;
+    float& ani = anim[id];
+    ani = ImLerp(ani, held ? 1.0f : hovered ? 0.7f : 0.0f, GetAnimSpeed());
+    ImU32 col = utils::GetColorWithAlpha(c::main_color, ani);
+    window->DrawList->AddRectFilled(grab_rect.Min, grab_rect.Max, col, 30.0f);
     return held;
 }
 
@@ -1136,88 +1071,6 @@ bool ImGui::Checkbox(const char* label, bool* v)
     const ImGuiStyle& style = g.Style;
     const ImGuiID id = window->GetID(label);
     const ImVec2 label_size = CalcTextSize(label, NULL, true);
-    const bool use_custom_checkbox = (label != NULL && label[0] != '#' && label_size.x > 0.0f);
-
-    if (use_custom_checkbox)
-    {
-        const float row_h = 30.0f;
-        const float row_gap = 4.0f;
-        const float row_w = ImMax(label_size.x + 56.0f, GetContentRegionAvail().x);
-        const ImVec2 pos = window->DC.CursorPos;
-        const ImRect row_bb(pos, pos + ImVec2(row_w, row_h));
-        const ImRect total_bb(pos, pos + ImVec2(row_w, row_h + row_gap));
-
-        ItemSize(total_bb, 0.0f);
-        if (!ItemAdd(row_bb, id))
-        {
-            IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags | ImGuiItemStatusFlags_Checkable | (*v ? ImGuiItemStatusFlags_Checked : 0));
-            return false;
-        }
-
-        bool hovered = false, held = false;
-        const bool pressed = ButtonBehavior(row_bb, id, &hovered, &held);
-        if (pressed)
-        {
-            *v = !(*v);
-            MarkItemEdited(id);
-        }
-
-        const bool mixed_value = (g.LastItemData.InFlags & ImGuiItemFlags_MixedValue) != 0;
-        ImGuiStorage* storage = GetStateStorage();
-        const ImGuiID anim_id = id + 0x51A2;
-        const float target_t = mixed_value ? 0.5f : (*v ? 1.0f : 0.0f);
-        float anim_t = storage->GetFloat(anim_id, target_t);
-        float follow = g.IO.DeltaTime * 14.0f;
-        if (follow > 1.0f) follow = 1.0f;
-        anim_t += (target_t - anim_t) * follow;
-        storage->SetFloat(anim_id, anim_t);
-
-        RenderNavHighlight(row_bb, id);
-        ImDrawList* draw_list = window->DrawList;
-        if (hovered)
-            draw_list->AddRectFilled(row_bb.Min, row_bb.Max, IM_COL32(255, 255, 255, 8), 8.0f);
-
-        ImFont* label_font = font::inter_semibold ? font::inter_semibold : GetFont();
-        const float label_font_size = label_font->FontSize * 0.84f;
-        const ImVec2 label_text_size = label_font->CalcTextSizeA(label_font_size, FLT_MAX, 0.0f, label);
-        draw_list->AddText(
-            label_font,
-            label_font_size,
-            ImVec2(row_bb.Min.x + 4.0f, row_bb.Min.y + (row_h - label_text_size.y) * 0.5f),
-            hovered ? IM_COL32(240, 232, 248, 255) : IM_COL32(214, 202, 232, 242),
-            label
-        );
-
-        ImFont* status_font = F50 ? F50 : label_font;
-        const float status_font_size = (status_font == F50) ? 13.5f : (label_font->FontSize * 0.84f);
-        const char* status_text = mixed_value ? "~" : (*v ? "ON" : "OFF");
-        const ImVec2 status_text_size = status_font->CalcTextSizeA(status_font_size, FLT_MAX, 0.0f, status_text);
-        const int off_r = 144, off_g = 144, off_b = 150;
-        const int on_r = 188, on_g = 110, on_b = 255;
-        const int status_r = (int)(off_r + (on_r - off_r) * anim_t);
-        const int status_g = (int)(off_g + (on_g - off_g) * anim_t);
-        const int status_b = (int)(off_b + (on_b - off_b) * anim_t);
-        draw_list->AddText(
-            status_font,
-            status_font_size,
-            ImVec2(row_bb.Max.x - 10.0f - status_text_size.x, row_bb.Min.y + (row_h - status_text_size.y) * 0.5f),
-            IM_COL32(status_r, status_g, status_b, hovered ? 255 : 236),
-            status_text
-        );
-
-        const float separator_y = row_bb.Max.y + (row_gap * 0.5f);
-        draw_list->AddLine(
-            ImVec2(row_bb.Min.x + 4.0f, separator_y),
-            ImVec2(row_bb.Max.x - 4.0f, separator_y),
-            IM_COL32(188, 110, 255, hovered ? 36 : 22),
-            1.0f
-        );
-
-        if (g.LogEnabled)
-            LogRenderedText(&row_bb.Min, mixed_value ? "[~]" : *v ? "[ON]" : "[OFF]");
-        IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags | ImGuiItemStatusFlags_Checkable | (*v ? ImGuiItemStatusFlags_Checked : 0));
-        return pressed;
-    }
 
     const float square_sz = GetFrameHeight();
     const ImVec2 pos = window->DC.CursorPos;
@@ -1556,7 +1409,7 @@ void ImGui::SeparatorEx(ImGuiSeparatorFlags flags, float thickness)
         if (ItemAdd(bb, 0))
         {
             // Draw
-            window->DrawList->AddRectFilled(bb.Min, bb.Max, GetColorU32(ImGuiCol_Separator));
+            window->DrawList->AddRectFilled(bb.Min + ImVec2(10, 0), bb.Max - ImVec2(10, 0), GetColorU32(ImGuiCol_Separator));
             if (g.LogEnabled)
                 LogRenderedText(&bb.Min, "--------------------------------\n");
 
@@ -3123,108 +2976,7 @@ bool ImGui::SliderScalar(const char* label, ImGuiDataType data_type, void* p_dat
     const float w = CalcItemWidth();
 
     const ImVec2 label_size = CalcTextSize(label, NULL, true);
-    const bool use_custom_slider = (label != NULL && label[0] != '#' && label_size.x > 0.0f);
-
-    if (use_custom_slider)
-    {
-        const float slider_height = 44.0f;
-        const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, slider_height));
-        ItemSize(frame_bb, style.FramePadding.y);
-        if (!ItemAdd(frame_bb, id))
-            return false;
-
-        if (format == NULL)
-            format = DataTypeGetInfo(data_type)->PrintFmt;
-
-        const float slider_min_x = frame_bb.Min.x + 10.0f;
-        const float slider_max_x = frame_bb.Max.x - 10.0f;
-        const float slider_label_size = GetFontSize() * 0.84f;
-        const float row_y = frame_bb.Min.y + 1.0f;
-        const float track_h = 6.0f;
-        const float track_y = row_y + slider_label_size + 10.0f + track_h * 0.5f;
-        const float knob_r = 8.0f;
-        const ImRect behavior_bb(
-            ImVec2(slider_min_x, track_y - track_h * 0.5f),
-            ImVec2(slider_max_x, track_y + track_h * 0.5f)
-        );
-        const ImRect interact_bb(
-            ImVec2(slider_min_x, ImMax(frame_bb.Min.y, behavior_bb.Min.y - 10.0f)),
-            ImVec2(slider_max_x, ImMin(frame_bb.Max.y, behavior_bb.Max.y + 10.0f))
-        );
-
-        const bool temp_input_allowed = (flags & ImGuiSliderFlags_NoInput) == 0;
-        const bool hovered = ItemHoverable(interact_bb, id, g.LastItemData.InFlags);
-        bool temp_input_is_active = temp_input_allowed && TempInputIsActive(id);
-        if (!temp_input_is_active)
-        {
-            const bool input_requested_by_tabbing = temp_input_allowed && (g.LastItemData.StatusFlags & ImGuiItemStatusFlags_FocusedByTabbing) != 0;
-            const bool clicked = hovered && IsMouseClicked(0, id);
-            const bool make_active = (input_requested_by_tabbing || clicked || g.NavActivateId == id);
-            if (make_active && clicked)
-                SetKeyOwner(ImGuiKey_MouseLeft, id);
-            if (make_active && temp_input_allowed)
-                if (input_requested_by_tabbing || (clicked && g.IO.KeyCtrl) || (g.NavActivateId == id && (g.NavActivateFlags & ImGuiActivateFlags_PreferInput)))
-                    temp_input_is_active = true;
-
-            if (make_active && !temp_input_is_active)
-            {
-                SetActiveID(id, window);
-                SetFocusID(id, window);
-                FocusWindow(window);
-                g.ActiveIdUsingNavDirMask |= (1 << ImGuiDir_Left) | (1 << ImGuiDir_Right);
-            }
-        }
-
-        if (temp_input_is_active)
-        {
-            const bool is_clamp_input = (flags & ImGuiSliderFlags_AlwaysClamp) != 0;
-            return TempInputScalar(interact_bb, id, label, data_type, p_data, format, is_clamp_input ? p_min : NULL, is_clamp_input ? p_max : NULL);
-        }
-
-        ImRect grab_bb;
-        const bool value_changed = SliderBehavior(behavior_bb, id, data_type, p_data, p_min, p_max, format, flags, &grab_bb);
-        if (value_changed)
-            MarkItemEdited(id);
-
-        RenderNavHighlight(frame_bb, id);
-
-        char value_buf[64];
-        const char* value_buf_end = value_buf + DataTypeFormatString(value_buf, IM_ARRAYSIZE(value_buf), data_type, p_data, format);
-        const ImVec2 value_size = CalcTextSize(value_buf, value_buf_end);
-
-        ImDrawList* draw_list = window->DrawList;
-        draw_list->AddText(GetFont(), slider_label_size, ImVec2(slider_min_x, row_y), IM_COL32(229, 235, 243, 240), label);
-        draw_list->AddText(GetFont(), slider_label_size, ImVec2(slider_max_x - value_size.x, row_y), IM_COL32(225, 173, 255, 255), value_buf, value_buf_end);
-        draw_list->AddRectFilled(behavior_bb.Min, behavior_bb.Max, IM_COL32(28, 18, 46, 235), track_h * 0.5f);
-        draw_list->AddRect(behavior_bb.Min, behavior_bb.Max, IM_COL32(98, 72, 132, 170), track_h * 0.5f, 0, 1.0f);
-
-        const float grab_center_x = (grab_bb.Max.x > grab_bb.Min.x) ? (grab_bb.Min.x + grab_bb.Max.x) * 0.5f : behavior_bb.Min.x;
-        if (grab_center_x > behavior_bb.Min.x + 1.0f)
-        {
-            draw_list->AddRectFilled(
-                behavior_bb.Min,
-                ImVec2(grab_center_x, behavior_bb.Max.y),
-                IM_COL32(149, 72, 223, 240),
-                track_h * 0.5f,
-                ImDrawFlags_RoundCornersLeft
-            );
-        }
-
-        const ImVec2 knob(grab_center_x, track_y);
-        const bool active = (g.ActiveId == id);
-        draw_list->AddCircleFilled(knob, knob_r + 4.0f, IM_COL32(196, 102, 255, active ? 76 : hovered ? 62 : 44), 22);
-        draw_list->AddCircleFilled(knob, knob_r + 2.0f, IM_COL32(196, 102, 255, active ? 132 : 102), 22);
-        draw_list->AddCircleFilled(knob, knob_r, IM_COL32(182, 96, 246, 255), 24);
-        draw_list->AddCircle(knob, knob_r + 0.3f, IM_COL32(246, 244, 250, 238), 24, 1.6f);
-
-        if (g.LogEnabled)
-            LogSetNextTextDecoration("{", "}");
-        IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags | (temp_input_allowed ? ImGuiItemStatusFlags_Inputable : 0));
-        return value_changed;
-    }
-
-    const float slider_height = ImMax(label_size.y, 100.0f);
-    const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, slider_height));
+    const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, label_size.y));
     const ImRect total_bb(frame_bb.Min, frame_bb.Max + ImVec2(label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f));
 
     const bool temp_input_allowed = (flags & ImGuiSliderFlags_NoInput) == 0;
@@ -4389,7 +4141,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                 return false;
         item_status_flags = g.LastItemData.StatusFlags;
     }
-    const bool hovered = ItemHoverable(frame_bb, id, NULL);
+    const bool hovered = ItemHoverable(frame_bb, id, ImGuiItemFlags_None);
 
     if (hovered)
         g.MouseCursor = ImGuiMouseCursor_TextInput;
@@ -5148,7 +4900,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                     ImRect rect(rect_pos + ImVec2(0.0f, bg_offy_up - g.FontSize), rect_pos + ImVec2(rect_size.x, bg_offy_dn));
                     rect.ClipWith(clip_rect);
                     if (rect.Overlaps(clip_rect))
-                        draw_window->DrawList->AddRectFilled(rect.Min, rect.Max, GetColorU32(c::accent, 0.2f), c::elements::rounding);
+                        draw_window->DrawList->AddRectFilled(rect.Min, rect.Max, GetColorU32(c::main_color.Value, 0.2f), c::elements::rounding);
                 }
                 rect_pos.x = draw_pos.x - draw_scroll.x;
                 rect_pos.y += g.FontSize;

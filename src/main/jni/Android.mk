@@ -64,6 +64,11 @@ include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE           := gspace1
+# --- lanx integration: FreeType backing for the custom font stack -------------
+# Source set mirrors the verified host link exactly: module aggregates (cff/psaux/
+# pshinter/psnames/sfnt/smooth/truetype, ftgzip with its embedded zlib) plus the
+# standalone base files. Aggregate-embedded singles are NOT compiled (multiple
+# definition of FT_Error_String / zError otherwise).
 LOCAL_CFLAGS           := -Wno-error=format-security -fvisibility=hidden -ffunction-sections -fdata-sections -w
 LOCAL_CFLAGS           += -fno-rtti -fno-exceptions -fpermissive
 LOCAL_CPPFLAGS         := -Wno-error=format-security -fvisibility=hidden -ffunction-sections -fdata-sections -w -Werror -s -std=c++17
@@ -75,13 +80,46 @@ LOCAL_ARM_MODE         := arm
 LOCAL_LDLIBS           := -llog -landroid -lEGL -lGLESv3 -lGLESv2 -lGLESv1_CM -lz
 
 LOCAL_C_INCLUDES       += $(LOCAL_PATH)
+LOCAL_C_INCLUDES       += $(LOCAL_PATH)/ImGui/freetype
+LOCAL_C_INCLUDES       += $(LOCAL_PATH)/ImGui/freetype/ttf_include
+LOCAL_CFLAGS           += -DIMGUI_USE_WCHAR32
 FILE_LIST              := $(wildcard $(LOCAL_PATH)/ImGui/*.c*)
+# Host-only test harness (has main()); never part of the Android build.
+FILE_LIST              := $(filter-out %test_main.cpp,$(FILE_LIST))
 FILE_LIST              += $(wildcard $(LOCAL_PATH)/IL2CppSDKGenerator/IL2Cpp/*.c*)
 FILE_LIST              += $(wildcard $(LOCAL_PATH)/IL2CppSDKGenerator/KittyMemory/*.c*)
 FILE_LIST              += $(wildcard $(LOCAL_PATH)/System/Texture/*.c*)
 FILE_LIST              += $(wildcard $(LOCAL_PATH)/*.c) $(wildcard $(LOCAL_PATH)/*.cpp)
 
 LOCAL_SRC_FILES        := $(FILE_LIST:$(LOCAL_PATH)/%=%) \
+                              ImGui/freetype/freetype_ttf_src/base/ftbase.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftbbox.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftbdf.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftbitmap.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftcid.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftdebug.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftfstype.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftgasp.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftglyph.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftgxval.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftinit.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftmm.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftotval.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftpatent.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftpfr.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftstroke.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftsynth.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftsystem.c \
+                              ImGui/freetype/freetype_ttf_src/base/fttype1.c \
+                              ImGui/freetype/freetype_ttf_src/base/ftwinfnt.c \
+                              ImGui/freetype/freetype_ttf_src/cff/cff.c \
+                              ImGui/freetype/freetype_ttf_src/gzip/ftgzip.c \
+                              ImGui/freetype/freetype_ttf_src/psaux/psaux.c \
+                              ImGui/freetype/freetype_ttf_src/pshinter/pshinter.c \
+                              ImGui/freetype/freetype_ttf_src/psnames/psnames.c \
+                              ImGui/freetype/freetype_ttf_src/sfnt/sfnt.c \
+                              ImGui/freetype/freetype_ttf_src/smooth/smooth.c \
+                              ImGui/freetype/freetype_ttf_src/truetype/truetype.c \
                               Substrate/hde64.c \
                               Substrate/SubstrateDebug.cpp \
                               Substrate/SubstrateHook.cpp \

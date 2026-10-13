@@ -1,3 +1,5 @@
+// https://discord.authguards.com/
+// https://authguards.com/
 // dear imgui, v1.90 WIP
 // (main code and documentation)
 
@@ -941,7 +943,6 @@ CODE
 #include "imgui.h"
 #ifndef IMGUI_DISABLE
 #include "imgui_internal.h"
-#include "imgui_settings.h"
 
 // System includes
 #include <stdio.h>      // vsnprintf, sscanf, printf
@@ -1038,8 +1039,6 @@ static const float WINDOWS_MOUSE_WHEEL_SCROLL_LOCK_TIMER    = 0.70f;    // Lock 
 
 // Tooltip offset
 static const ImVec2 TOOLTIP_DEFAULT_OFFSET = ImVec2(16, 10);            // Multiplied by g.Style.MouseCursorScale
-
-int __ZN8MyClass10initializeEv = 8789273;
 
 //-------------------------------------------------------------------------
 // [SECTION] FORWARD DECLARATIONS
@@ -5408,6 +5407,7 @@ bool ImGui::BeginChildEx(const char* name, ImGuiID id, const ImVec2& size_arg, b
     flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_ChildWindow;
     flags |= (parent_window->Flags & ImGuiWindowFlags_NoMove);  // Inherit the NoMove flag
 
+
     // Size
     const ImVec2 content_avail = GetContentRegionAvail();
     ImVec2 size = ImTrunc(size_arg);
@@ -5417,6 +5417,8 @@ bool ImGui::BeginChildEx(const char* name, ImGuiID id, const ImVec2& size_arg, b
     if (size.y <= 0.0f)
         size.y = ImMax(content_avail.y + size.y, 4.0f);
     SetNextWindowSize(size);
+
+    PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
 
     // Build up name. If you need to append to a same child from multiple location in the ID stack, use BeginChild(ImGuiID id) with a stable value.
     const char* temp_window_name;
@@ -5452,6 +5454,7 @@ bool ImGui::BeginChildEx(const char* name, ImGuiID id, const ImVec2& size_arg, b
         SetActiveID(temp_id_for_activation, child_window); // Steal ActiveId with another arbitrary id so that key-press won't activate child item
         g.ActiveIdSource = g.NavInputSource;
     }
+
     return ret;
 }
 
@@ -5515,6 +5518,7 @@ void ImGui::EndChild()
     }
     g.WithinEndChild = false;
     g.LogLinePosY = -FLT_MAX; // To enforce a carriage return
+    ImGui::PopStyleVar();
 }
 
 // Helper to create a child window / scrolling region that looks like a normal widget frame.
@@ -6668,10 +6672,7 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
             window->ScrollbarSizes = ImVec2(window->ScrollbarY ? style.ScrollbarSize : 0.0f, window->ScrollbarX ? style.ScrollbarSize : 0.0f);
 
             // Amend the partially filled window->DecorationXXX values.
-            if (window->ScrollbarY && c::scrollbar::left_side && (flags & ImGuiWindowFlags_ChildWindow))
-                window->DecoOuterSizeX1 += window->ScrollbarSizes.x + c::scrollbar::gutter_spacing * c::scale;
-            else
-                window->DecoOuterSizeX2 += window->ScrollbarSizes.x;
+            window->DecoOuterSizeX2 += window->ScrollbarSizes.x;
             window->DecoOuterSizeY2 += window->ScrollbarSizes.y;
         }
 
