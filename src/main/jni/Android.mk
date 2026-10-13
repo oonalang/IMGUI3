@@ -80,9 +80,10 @@ LOCAL_ARM_MODE         := arm
 LOCAL_LDLIBS           := -llog -landroid -lEGL -lGLESv3 -lGLESv2 -lGLESv1_CM -lz
 
 LOCAL_C_INCLUDES       += $(LOCAL_PATH)
-LOCAL_C_INCLUDES       += $(LOCAL_PATH)/ImGui/freetype
-LOCAL_C_INCLUDES       += $(LOCAL_PATH)/ImGui/freetype/ttf_include
+# Include paths go on CFLAGS (-I), not LOCAL_C_INCLUDES: other LOCAL_C_INCLUDES :=
+# assignments later in this file would wipe them out otherwise.
 LOCAL_CFLAGS           += -DIMGUI_USE_WCHAR32
+LOCAL_CFLAGS           += -I$(LOCAL_PATH)/ImGui/freetype -I$(LOCAL_PATH)/ImGui/freetype/ttf_include
 FILE_LIST              := $(wildcard $(LOCAL_PATH)/ImGui/*.c*)
 # Host-only test harness (has main()); never part of the Android build.
 FILE_LIST              := $(filter-out %test_main.cpp,$(FILE_LIST))
