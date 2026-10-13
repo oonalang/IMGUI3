@@ -83,6 +83,7 @@ LOCAL_C_INCLUDES       += $(LOCAL_PATH)
 # Include paths go on CFLAGS (-I), not LOCAL_C_INCLUDES: other LOCAL_C_INCLUDES :=
 # assignments later in this file would wipe them out otherwise.
 LOCAL_CFLAGS           += -DIMGUI_USE_WCHAR32
+LOCAL_CFLAGS           += -I$(LOCAL_PATH)/ImGui
 LOCAL_CFLAGS           += -I$(LOCAL_PATH)/ImGui/freetype -I$(LOCAL_PATH)/ImGui/freetype/ttf_include
 FILE_LIST              := $(wildcard $(LOCAL_PATH)/ImGui/*.c*)
 # Host-only test harness (has main()); never part of the Android build.
