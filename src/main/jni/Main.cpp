@@ -5,6 +5,7 @@
 #include "ImGui/Call_ImGui.h"
 #include "ImGui/font_defines.h"   // lanx icomoon icon glyph macros (ICON_*) + base85 font
 #include "ImGui/lanx_font.h"      // lanx Poppins family, embedded TTF byte arrays
+#include "imgui_freetype.h"     // ImGuiFreeTypeBuilderFlags_* for the font stack
 #include "IL2CppSDKGenerator/BasicStructs/Call_BasicStructs.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Call_IL2Cpp.h"
 #include "Hacks/Hacks.h"
@@ -848,7 +849,6 @@ bool RedWallhackShow = false;
 bool isJumpAdjustmentEnabled = false;
 float jumpHeightMultiplier = 1.0f;
 char logintext[4096];
-float menu[4] = {188.0f / 255.0f, 110.0f / 255.0f, 1.0f, 1.0f};
 
 float g_LastLogoOpacity = 1.0f;
 float g_LastLogoSize = 1.0f;
@@ -867,18 +867,12 @@ using namespace std;
 #include <Substrate/SubstrateHook.h>
 #include <Substrate/CydiaSubstrate.h>
 
-ImFont* F50 = nullptr;
-ImFont* F107 = nullptr;
+// F50 / F107 / Bold / menu[4] / font::icomoon_logo / font::inter_semibold /
+// font::icomoon_page are single inline definitions in ImGui/imgui_settings.h
+// (removed here: they were duplicate definitions of the same globals).
 ImFont* SOCIAL = nullptr;
-ImFont* Bold = nullptr;
 JavaVM* jvm = nullptr;
 JavaVM* VM = nullptr;
-
-namespace font {
-    ImFont* icomoon_logo = nullptr;
-    ImFont* inter_semibold = nullptr;
-    ImFont* icomoon_page = nullptr;
-}
 
 static int g_GlWidth, g_GlHeight;
 static bool g_App = false;

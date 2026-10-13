@@ -14,6 +14,11 @@
 
 #pragma once
 
+// Android screen globals restored from the pre-lanx project imconfig.h
+// (static per-TU, exactly like the original): Main.cpp writes screenWidth/
+// screenHeight from the EGL surface size; DrawESP.h reads glWidth/glHeight.
+static int screenWidth = -1, glWidth, screenHeight = -1, glHeight;
+
 //---- Define assertion handler. Defaults to calling assert().
 // If your macro uses multiple statements, make sure is enclosed in a 'do { .. } while (0)' block so it can be used as a single statement.
 //#define IM_ASSERT(_EXPR)  MyAssert(_EXPR)
