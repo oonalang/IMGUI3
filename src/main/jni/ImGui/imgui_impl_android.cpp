@@ -249,8 +249,10 @@ void ImGui_ImplAndroid_NewFrame(int screen_width, int screen_height) {
 		key_queue.second.pop();
 	}
 	
-	int32_t window_width = g_Window ? screenWidth : screen_width;
-	int32_t window_height = g_Window ? screenHeight : screen_height;
+	// Touch/OpenGL-ES path: the caller always passes the real framebuffer size,
+	// so use the parameters directly (no native-window query on this device).
+	int32_t window_width  = screen_width;
+	int32_t window_height = screen_height;
 	int display_width = window_width;
 	int display_height = window_height;
 	
