@@ -1627,7 +1627,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 }
 
                 runtime_preview_menu::StateRefs runtimeState{
-                    dark, tabAlpha, tabAdd, page, activeTab,
+                    dark, tabAlpha, tabAdd, ::page, activeTab,
                     windowCollapsed, isMenuVisible,
                     collapseBarLastActiveTime, collapseBarOpacityAnim, collapseBarPressAnim
                 };
