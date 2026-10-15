@@ -1932,9 +1932,10 @@ namespace NewFeatures
         const float radiusSq = radius * radius;
         d.radiusPx = radius;
 
-        const HitboxPriority want = (HitboxPriority)Config.NewFeaturesMenu.TriggerbotHitboxPriority;
-        // Read once per scan, not per candidate.
-        const int targetFilter = Config.NewFeaturesMenu.TriggerbotFilter;
+        // Hitbox priority fixed to "Any" (3) - tries Head -> Chest -> Limbs
+        constexpr HitboxPriority want = HitboxPriority::Any;
+        // Target filter fixed to "All" (0) - no distance/visibility restrictions
+        constexpr int targetFilter = 0;
         const float focalPx = A_FireFocalPx();
         d.focalPx = focalPx;
 

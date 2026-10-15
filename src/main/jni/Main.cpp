@@ -1926,23 +1926,8 @@ if (runtimeState.activeTab == 4) {
                                     // TriggerbotDelay field is kept only so old config
                                     // files keep loading.
                                     custom::SliderInt("Radius", &Config.NewFeaturesMenu.TriggerbotRadius, 4, 240, "%d px");
-                                    
-                                    // Hitbox priority
-                                    static const char* hitboxModes[] = { "Head", "Chest", "Limbs", "Any" };
-                                    custom::Combo("Hitbox", &Config.NewFeaturesMenu.TriggerbotHitboxPriority, hitboxModes, IM_ARRAYSIZE(hitboxModes));
-                                    // Target filter. Applied AFTER every hard gate
-                                    // (alive / not us / not a teammate / under the
-                                    // crosshair), so it can only narrow the list:
-                                    // "All" is exactly the old behaviour.
-                                    static const char* triggerFilters[] = {
-                                        "All", "Visible Only", "Within 25 m", "Within 50 m", "Within 100 m"
-                                    };
-                                    custom::Combo("Filter", &Config.NewFeaturesMenu.TriggerbotFilter, triggerFilters, IM_ARRAYSIZE(triggerFilters));
-                                    // The advisory options that used to sit here (Lead Target,
-                                    // Check Spread, Require Ready) could not change a
-                                    // shot, so they are gone; so is the debug Test Fire
-                                    // button. Everything the trigger actually obeys is above
-                                    // (Mode, Radius, Hitbox) plus StartFire itself.
+                                    // Hitbox priority is fixed to "Any" (tries Head -> Chest -> Limbs)
+                                    // Target filter is fixed to "All" (no distance/visibility restrictions)
                                 }
                                 // Debug status (shows in-game). Every number below is
                                 // written by the GAME-THREAD decision tree
