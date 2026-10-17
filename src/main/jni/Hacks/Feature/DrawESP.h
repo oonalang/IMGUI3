@@ -312,7 +312,8 @@ void HandleEnemyInfo(ImDrawList *draw) {
         List<Pawn *> *EnemyPawns = get_MatchGame->EnemyPawns();
         if (EnemyPawns != nullptr) {
             Pawn **pawns = (Pawn **) EnemyPawns->getItems();
-            for (int i = 0; i < EnemyPawns->getSize(); i++) {
+            const int pawnCount = (pawns != nullptr) ? EnemyPawns->getSize() : 0;
+            for (int i = 0; i < pawnCount; i++) {
                 Pawn *pawn = pawns[i];
                 if (pawn != nullptr) {
                     Vector3 pEnemyPawn_headPos = pawn->get_HeadPosition();
@@ -547,7 +548,9 @@ static inline void TeleportToEnemy() {
     float minDistance = 100.0f;
     
     Pawn **pawns = (Pawn **)EnemyPawns->getItems();
-    for (int i = 0; i < EnemyPawns->getSize(); i++) {
+    if (!Tools::IsPtrValid(pawns)) return;
+    const int pawnCount = EnemyPawns->getSize();
+    for (int i = 0; i < pawnCount; i++) {
         Pawn *pawn = pawns[i];
         if (!Tools::IsPtrValid(pawn)) continue;
         
@@ -727,8 +730,18 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
     List<Pawn *> *EnemyPawns = get_MatchGame->EnemyPawns();
     if (!Tools::IsPtrValid(EnemyPawns) || !EnemyPawns->getSize()) return;
 
+    // Snapshot the list ONCE: the game mutates EnemyPawns from its own thread
+    // while this frame walks it (a player seen mid-loop grows the list and
+    // rebuilds its element array), so getSize() must not be re-read in the
+    // loop condition and the count is clamped to the array's own capacity.
     Pawn **pawns = (Pawn **)EnemyPawns->getItems();
-    for (int i = 0; i < EnemyPawns->getSize(); i++) {
+    if (!Tools::IsPtrValid(pawns)) return;
+    const int listCap = Tools::IsPtrValid(EnemyPawns->items) ? EnemyPawns->items->getLength() : 0;
+    int pawnCount = EnemyPawns->getSize();
+    if (pawnCount < 0) pawnCount = 0;
+    if (listCap > 0 && pawnCount > listCap) pawnCount = listCap;
+
+    for (int i = 0; i < pawnCount; i++) {
         Pawn *pawn = pawns[i];
         if (!Tools::IsPtrValid(pawn)) continue;
 
@@ -736,6 +749,12 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
         if (!Tools::IsPtrValid((void *)m_PlayerInfo)) continue;
 
         auto m_AttackableInfo = *(uintptr_t *)(pawn + Class_AttackableTarget_m_AttackableInfo);
+        // The attackable record is filled in AFTER the pawn appears in
+        // EnemyPawns: a player who just spawned can still carry a null
+        // m_AttackableInfo. The two field reads below are unconditional and
+        // this whole function runs every frame with every option off, so an
+        // unchecked null here is the crash on join / when a player appears.
+        if (!Tools::IsPtrValid((void *)m_AttackableInfo)) continue;
         int CurHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_Health);
         int MaxHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_MaxHealth);
 
