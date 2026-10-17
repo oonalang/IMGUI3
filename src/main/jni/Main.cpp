@@ -878,6 +878,52 @@ namespace font {
     ImFont* icomoon_logo = nullptr;
     ImFont* inter_semibold = nullptr;
     ImFont* icomoon_page = nullptr;
+    ImFont* esp_font = nullptr;
+    ImFont* regular_m = nullptr;
+    ImFont* regular_l = nullptr;
+    ImFont* s_inter_semibold = nullptr;
+    ImFont* bold_font = nullptr;
+    ImFont* inter_medium = nullptr;
+}
+
+// Display density of the game's own window, read once before the font atlas
+// is built. Pure field reads through the ActivityThread application context -
+// no view access, so it is safe from the render thread.
+static float QueryDisplayDensity()
+{
+    if (jvm == nullptr) return 2.0f;
+    JNIEnv *env = nullptr;
+    if (jvm->AttachCurrentThread(&env, nullptr) != JNI_OK || env == nullptr) return 2.0f;
+
+    float density = 2.0f;
+    jclass atCls = env->FindClass("android/app/ActivityThread");
+    jobject at = nullptr;
+    if (atCls != nullptr) {
+        jfieldID cur = env->GetStaticFieldID(atCls, "sCurrentActivityThread", "Landroid/app/ActivityThread;");
+        if (cur != nullptr) at = env->GetStaticObjectField(atCls, cur);
+    }
+    if (at != nullptr && !env->ExceptionCheck()) {
+        jclass atClass = env->GetObjectClass(at);
+        jmethodID getRes = atClass ? env->GetMethodID(atClass, "getResources", "()Landroid/content/res/Resources;") : nullptr;
+        jobject res = getRes ? env->CallObjectMethod(at, getRes) : nullptr;
+        if (res != nullptr && !env->ExceptionCheck()) {
+            jclass resCls = env->GetObjectClass(res);
+            jmethodID getDm = resCls ? env->GetMethodID(resCls, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;") : nullptr;
+            jobject dm = getDm ? env->CallObjectMethod(res, getDm) : nullptr;
+            if (dm != nullptr && !env->ExceptionCheck()) {
+                jclass dmCls = env->GetObjectClass(dm);
+                jfieldID dField = dmCls ? env->GetFieldID(dmCls, "density", "F") : nullptr;
+                if (dField != nullptr) density = env->GetFloatField(dm, dField);
+            }
+            if (env->ExceptionCheck()) { env->ExceptionClear(); density = 2.0f; }
+        } else if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        }
+    } else if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+    }
+    if (!(density > 0.1f) || density > 6.0f) density = 2.0f;
+    return density;
 }
 
 static int g_GlWidth, g_GlHeight;
@@ -1302,20 +1348,35 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         if (!g_imguiBackendReady) { ImGui::DestroyContext(); return old_eglSwapBuffers(dpy, surface); }
         g_imguiDisplay = dpy; g_imguiContext = currentContext; g_imguiSurface = surface;
 
+        // One ui_scale for every font size in the menu: the display's own
+        // density against the 2.75 dppx the layout was authored at, clamped so
+        // a 560 dpi panel cannot grow the menu past the screen and a low-dpi
+        // surface cannot shrink the text into noise.
+        c::ui_scale = ImClamp(QueryDisplayDensity() / 2.75f, 0.8f, 2.5f);
+        const float fs = c::ui_scale;
+
         ImFontConfig ilc; ilc.MergeMode = false; ilc.PixelSnapH = true; ilc.FontDataOwnedByAtlas = false;
-        font::icomoon_logo = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 20.f, &ilc);
+        font::icomoon_logo = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 32.f * fs, &ilc);
 
         ImFontConfig ic; ic.MergeMode = false; ic.PixelSnapH = true; ic.FontDataOwnedByAtlas = false;
-        font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)inter_semibold, sizeof(inter_semibold), 16.f, &ic);
+        font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsSemiBold, sizeof(PoppinsSemiBold), 17.f * fs, &ic, io.Fonts->GetGlyphRangesCyrillic());
 
         ImFontConfig pc; pc.MergeMode = false; pc.PixelSnapH = true; pc.FontDataOwnedByAtlas = false;
-        font::icomoon_page = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 18.f, &pc);
+        font::icomoon_page = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 18.f * fs, &pc);
+
+        ImFontConfig pmc; pmc.MergeMode = false; pmc.PixelSnapH = true; pmc.FontDataOwnedByAtlas = false;
+        font::regular_m = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsMedium, sizeof(PoppinsMedium), 21.f * fs, &pmc, io.Fonts->GetGlyphRangesCyrillic());
+        font::regular_l = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsMedium, sizeof(PoppinsMedium), 41.f * fs, &pmc, io.Fonts->GetGlyphRangesCyrillic());
+        font::s_inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsSemiBold, sizeof(PoppinsSemiBold), 17.f * fs, &pmc, io.Fonts->GetGlyphRangesCyrillic());
+        font::bold_font = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsBold, sizeof(PoppinsBold), 23.f * fs, &pmc, io.Fonts->GetGlyphRangesCyrillic());
+        font::inter_medium = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsMedium, sizeof(PoppinsMedium), 17.f * fs, &pmc, io.Fonts->GetGlyphRangesCyrillic());
+        font::esp_font = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsRegular, sizeof(PoppinsRegular), 17.f * fs, &pmc, io.Fonts->GetGlyphRangesCyrillic());
 
         static const ImWchar icons_ranges[] = { 0xe000, 0xf8ff, 0 };
         ImFontConfig iconsCfg; iconsCfg.MergeMode = true; iconsCfg.PixelSnapH = true;
         iconsCfg.OversampleH = 2.5f; iconsCfg.OversampleV = 2.5f; iconsCfg.FontDataOwnedByAtlas = false;
-        F107 = io.Fonts->AddFontFromMemoryCompressedTTF((void*)font_awesome_data1, (int)font_awesome_size1, 25.0f, &iconsCfg, icons_ranges);
-        F50 = io.Fonts->AddFontFromMemoryTTF((void *)F50_data, F50_size, 30.0f, NULL, io.Fonts->GetGlyphRangesDefault());
+        F107 = io.Fonts->AddFontFromMemoryCompressedTTF((void*)font_awesome_data1, (int)font_awesome_size1, 25.f * fs, &iconsCfg, icons_ranges);
+        F50 = io.Fonts->AddFontFromMemoryTTF((void *)F50_data, F50_size, 30.f * fs, NULL, io.Fonts->GetGlyphRangesDefault());
         if (!F107) F107 = font::inter_semibold;
         if (font::inter_semibold) io.FontDefault = font::inter_semibold;
         io.Fonts->Build();
