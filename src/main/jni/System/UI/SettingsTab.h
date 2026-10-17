@@ -5,6 +5,8 @@
 #include "Logo.h"
 #include "../ImGui/imgui_settings.h"
 #include "../ImGui/custom_widgets.hpp"
+// ReportBlock.h brings the toggle's own on-device counters into this tab.
+#include "../Hooks/ReportBlock.h"
 
 extern ImFont* F50;
 extern ImFont* F48;
@@ -236,5 +238,31 @@ namespace settings_tab
         }
         if (custom::Button("RESET GUEST", ImVec2(ImMax(1.0f, ImGui::GetContentRegionAvail().x), 50.0f)))
             Config.ExtraMenu.ResetGuest = true;
+    }
+
+    // PRIVACY - "Block Report Evidence" (System/Hooks/ReportBlock.h). ON by
+    // default: the client's own report / evidence senders are swallowed, so a
+    // report against this account never uploads the payload from this phone.
+    // The counter line is the on-device proof that the four hooks are live: it
+    // stays at 0/0 while the game never called them, and with the toggle OFF
+    // every call goes straight to the game's own function.
+    inline void RenderPrivacyCard()
+    {
+        custom::Checkbox("Block Report Evidence", &Config.ExtraMenu.BlockReport);
+
+        int seen = 0;
+        int blocked = 0;
+        int landed = 0;
+        for (int i = 0; i < report_block::GateCount; i++)
+        {
+            seen    += report_block::g_diag.seen[i];
+            blocked += report_block::g_diag.blocked[i];
+            if (report_block::g_landed[i]) landed++;
+        }
+
+        const float sidePad = 15.0f;
+        ImGui::SetCursorPosX(sidePad);
+        ImGui::TextColored(c::text::text, "blocked %d / %d  |  hooks %d/%d",
+            blocked, seen, landed, (int)report_block::GateCount);
     }
 }

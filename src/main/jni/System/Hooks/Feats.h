@@ -277,7 +277,11 @@ inline bool A_BulletTrackTriggerReady()
     if (Config.Aim.Trigger == EAimTrigger::Shooting)
         return ((bool (*)(uintptr_t))(Class_Pawn_get_IsFiring))((uintptr_t)local);
     if (Config.Aim.Trigger == EAimTrigger::Scoping)
-        return ((bool (*)(uintptr_t))(Class_Pawn_IsAiming))((uintptr_t)local);
+        // Same swap as DrawESP.h's aim path: the pawn's own held weapon is
+        // asked (Weapon.m_IsAiming @0xC21 / m_AimingPercentage @0x460).
+        // Pawn.IsAiming() 0x519BB10 is never called - it is the native walk
+        // that crashed every "ADS only" gate.
+        return local->get_IsAimingSafe();
     return true;                                    // EAimTrigger::None
 }
 
@@ -612,6 +616,9 @@ inline bool IsUnlocked(void *instance) {
 // LoadoutWeaponsUIHelper.IsThisAttachmentUnlock 0x5D40528 and
 // WeaponAttr.IsAttachUnlock 0xA188634. See System/Hooks/MythicAttachments.h.
 #include "MythicAttachments.h"
+// Block Report Evidence - the client's four report / evidence senders. See
+// System/Hooks/ReportBlock.h for the dump rows each RVA comes from.
+#include "ReportBlock.h"
 
 // No Spectate Deelay
 inline bool (*o_NeedDelayProcess)(void *instance, int a, int b);
@@ -972,4 +979,17 @@ inline void InitializeAllHooks() {
     mythic_attachments::NoteLanded(mythic_attachments::GateList,       orig_GetAttachmentList != nullptr);
     mythic_attachments::NoteLanded(mythic_attachments::GateItem,       orig_AttachmentItemSetData != nullptr);
     mythic_attachments::NoteLanded(mythic_attachments::GateCell,       orig_AttachmentCellSetData != nullptr);
+
+    //-- Block Report Evidence (see ReportBlock.h). Default ON; the SETTINGS
+    //   row is the only switch, and with it off every one of these calls the
+    //   game's own function with the caller's own arguments.
+    HOOK_LIB("libunity.so", "0xB23D358", DoReport, orig_DoReport);
+    HOOK_LIB("libunity.so", "0x8FB4B60", DoReportPlayer, orig_DoReportPlayer);
+    HOOK_LIB("libunity.so", "0x5620BAC", BeginReportPlayerPull, orig_BeginReportPlayerPull);
+    HOOK_LIB("libunity.so", "0x5620F9C", EndReportPlayerPull, orig_EndReportPlayerPull);
+
+    report_block::NoteLanded(report_block::GateDoReport, orig_DoReport != nullptr);
+    report_block::NoteLanded(report_block::GateVoice,    orig_DoReportPlayer != nullptr);
+    report_block::NoteLanded(report_block::GateBegin,    orig_BeginReportPlayerPull != nullptr);
+    report_block::NoteLanded(report_block::GateEnd,      orig_EndReportPlayerPull != nullptr);
 }

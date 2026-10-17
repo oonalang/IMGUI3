@@ -52,6 +52,9 @@ void SaveConfiguration(const std::string& filename) {
     config["ExtraMenu"]["Scope"] = Config.ExtraMenu.Scope;
     config["ExtraMenu"]["Switch"] = Config.ExtraMenu.Switch;
     config["ExtraMenu"]["KineticArmor"] = Config.ExtraMenu.Kinetic;
+    // Block Report Evidence - default ON, so a config written before this row
+    // existed still loads with it on.
+    config["ExtraMenu"]["BlockReport"] = Config.ExtraMenu.BlockReport;
 
     config["isJumpAdjustmentEnabled"] = isJumpAdjustmentEnabled;
     config["jumpHeightMultiplier"] = jumpHeightMultiplier;
@@ -142,6 +145,10 @@ bool LoadConfiguration(const std::string& filename) {
             Config.ExtraMenu.Scope = config["ExtraMenu"]["Scope"].get<bool>();
             Config.ExtraMenu.Switch = config["ExtraMenu"]["Switch"].get<bool>();
             Config.ExtraMenu.Kinetic = config["ExtraMenu"]["Kinetic"].get<bool>();
+            // Absent in a config saved before the row existed: keep the default
+            // (ON) instead of loading false.
+            if (config["ExtraMenu"].contains("BlockReport"))
+                Config.ExtraMenu.BlockReport = config["ExtraMenu"]["BlockReport"].get<bool>();
     if (config.contains("NewFeatures")) {
         Config.NewFeaturesMenu.NoCrouch = config["NewFeatures"]["NoCrouch"].get<bool>();
         Config.NewFeaturesMenu.Triggerbot = config["NewFeatures"]["Triggerbot"].get<bool>();

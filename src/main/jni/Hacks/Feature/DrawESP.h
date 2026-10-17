@@ -1117,7 +1117,12 @@ void WeaponHandlerByAstral(ThisType thiz, Vector3 startPos, Vector3& dir, Args..
     if (Config.Aim.Trigger == EAimTrigger::Shooting) {
         triggerReady = ((bool(*)(uintptr_t))(Class_Pawn_get_IsFiring))(LocalPawn);
     } else if (Config.Aim.Trigger == EAimTrigger::Scoping) {
-        triggerReady = ((bool(*)(uintptr_t))(Class_Pawn_IsAiming))(LocalPawn);
+        // "Scoping" is answered by the pawn's own held weapon, read as two
+        // FIELDS (Pawn::get_IsAimingSafe -> Weapon::m_IsAiming). The old call
+        // was Pawn.IsAiming() 0x519BB10, a native method that walks the pawn's
+        // weapon / fire-component chain - the call that crashed every "ADS
+        // only" gate in this repo.
+        triggerReady = ((Pawn *)LocalPawn)->get_IsAimingSafe();
     }
 
     if (!triggerReady) return;

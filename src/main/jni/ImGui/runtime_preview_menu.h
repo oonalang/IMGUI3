@@ -449,6 +449,8 @@ inline void RenderSettingsTab(float contentWidth, float contentHeight) {
         EndContentChild(configChild);
 
         const ChildFrame enhancementChild = BeginContentChild("ENHANCEMENT##RUNTIME_ENHANCEMENT", ImVec2(rightChildWidth, bottomChildHeight));
+        settings_tab::RenderPrivacyCard();
+        ImGui::Separator();
         settings_tab::RenderEnhancementCard();
         EndContentChild(enhancementChild);
     }

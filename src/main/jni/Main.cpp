@@ -2246,6 +2246,11 @@ if (runtimeState.activeTab == 4) {
                                 settings_tab::RenderConfigCard();
                                 EndContentChild(configChild);
                                 const ChildFrame enhancementChild = BeginContentChild("ENHANCEMENT", ImVec2(rightChildWidth, bottomChildHeight));
+                                // PRIVACY sits at the top of this card so it is
+                                // visible without scrolling: "Block Report
+                                // Evidence" is ON by default.
+                                settings_tab::RenderPrivacyCard();
+                                ImGui::Separator();
                                 settings_tab::RenderEnhancementCard();
                                 EndContentChild(enhancementChild);
                             }

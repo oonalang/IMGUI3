@@ -201,6 +201,13 @@ sColorsESPBOT sColorsESPBOT{0};
         // question (see System/Hooks/MythicAttachments.h). ON by default - this
         // is what makes an applied mythic behave as if it were really owned.
         bool MythicAttachments = true;
+        // Block Report Evidence (System/Hooks/ReportBlock.h): while ON, the
+        // client's own report / evidence senders (ReportWindowController.
+        // DoReport, GVoiceSystem.DoReportPlayer, NetworkManager.
+        // BeginReportPlayerPull / EndReportPlayerPull) are swallowed, so no
+        // report payload leaves this phone. ON by default - the SETTINGS row
+        // is the only place it is turned off.
+        bool BlockReport = true;
 		bool Blueprints;
 		bool ClearDisplay;
 		bool ResetGuest;

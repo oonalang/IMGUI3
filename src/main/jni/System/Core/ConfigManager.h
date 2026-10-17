@@ -52,6 +52,9 @@ void LoadConfig() {
         else if (key == "Aim.Target") Config.Aim.Target = static_cast<EAimTarget>(std::stoi(valueStr));
         else if (key == "Aim.Trigger") Config.Aim.Trigger = static_cast<EAimTrigger>(std::stoi(valueStr));
         else if (key == "Aim.By") Config.Aim.By = static_cast<EAim>(std::stoi(valueStr));
+        // Block Report Evidence - the row only exists in files written after
+        // the feature shipped; the default (ON) stands otherwise.
+        else if (key == "ExtraMenu.BlockReport") Config.ExtraMenu.BlockReport = (valueStr == "1");
         else if (key == "ExtraMenu.Kinetic") Config.ExtraMenu.Kinetic = (valueStr == "1");
         else if (key == "ExtraMenu.Recoil") Config.ExtraMenu.Recoil = (valueStr == "1");
         else if (key == "ExtraMenu.Spread") Config.ExtraMenu.Spread = (valueStr == "1");
@@ -119,6 +122,7 @@ void SaveConfig() {
     file << "Aim.Target " << Config.Aim.Target << "\n";
     file << "Aim.Trigger " << Config.Aim.Trigger << "\n";
     file << "Aim.By " << Config.Aim.By << "\n";
+    file << "ExtraMenu.BlockReport " << Config.ExtraMenu.BlockReport << "\n";
     file << "ExtraMenu.Kinetic " << Config.ExtraMenu.Kinetic << "\n";
     file << "ExtraMenu.Recoil " << Config.ExtraMenu.Recoil << "\n";
     file << "ExtraMenu.Spread " << Config.ExtraMenu.Spread << "\n";
