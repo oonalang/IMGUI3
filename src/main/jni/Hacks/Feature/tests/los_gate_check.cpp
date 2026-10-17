@@ -2027,6 +2027,52 @@ static void testSameFrameGuard()
     resetWorld();
 }
 
+// ---------------------------------------------------------------------------
+// 13. Letting go of the trigger on a weapon that no longer exists
+//
+// The report: "after the trigger detects an enemy it crashes". Pressing is one
+// native call and releasing is another; the release used to hand StopFire
+// whatever pointer it had recorded at press time, and a weapon that died in
+// between (death, weapon swap, round end - all of which happen right after a
+// kill) has a cleared m_CachedPtr. This is the same liveness rule every other
+// native call on the path already had, and it is the release that was missing.
+// ---------------------------------------------------------------------------
+static void testReleaseGuard()
+{
+    fn_Weapon_StopFire = fake_stopFire;
+
+    // A live weapon: the release still tells the game we let go.
+    objInit(g_weaponObj);
+    g_stopFireCalls = 0;
+    g_afireHoldingFire = true;
+    g_afireFiringOn    = g_weaponObj.b;
+    A_FireReleaseTrigger(nullptr);
+    CHECK(g_stopFireCalls == 1, "R1 a live weapon is still released");
+    CHECK(!g_afireHoldingFire && g_afireFiringOn == nullptr,
+          "R1 ... and the trigger record is cleared");
+
+    // The same weapon, Destroy()ed while the trigger was down: no native call.
+    objInit(g_weaponObj);
+    *(void **)(g_weaponObj.b + 0x10) = nullptr;      // m_CachedPtr cleared
+    g_stopFireCalls = 0;
+    g_afireHoldingFire = true;
+    g_afireFiringOn    = g_weaponObj.b;
+    A_FireReleaseTrigger(nullptr);
+    CHECK(g_stopFireCalls == 0, "R2 a destroyed weapon is never handed to StopFire");
+    CHECK(!g_afireHoldingFire && g_afireFiringOn == nullptr,
+          "R2 ... and the stale record is dropped instead of retried");
+
+    // A release with nothing pressed stays a no-op.
+    objInit(g_weaponObj);
+    g_stopFireCalls = 0;
+    g_afireHoldingFire = false;
+    g_afireFiringOn    = nullptr;
+    A_FireReleaseTrigger(nullptr);
+    CHECK(g_stopFireCalls == 0, "R3 releasing an idle trigger calls nothing");
+
+    fn_Weapon_StopFire = nullptr;
+}
+
 int main()
 {
     installFns();
@@ -2044,6 +2090,7 @@ int main()
     testAdsGate();
     testRepressPacing();
     testSameFrameGuard();
+    testReleaseGuard();
 
     if (g_failures == 0) {
         printf("\nOK: all LOS gate checks passed\n");

@@ -1941,7 +1941,8 @@ namespace NewFeatures
     // accepting the pawn's own transform and its two known bones. A bone hit and a
     // body-mesh hit both reach the pawn's root transform, so the walk is what
     // makes this work for any collider layout without a hitbox enumeration API.
-    inline bool A_FireHitIsTarget(void *hitTransform, Pawn *pawn, int *depthOut = nullptr)
+    inline bool A_FireHitIsTarget(void *hitTransform, Pawn *pawn, int *depthOut = nullptr,
+                                  void *collider = nullptr)
     {
         if (depthOut != nullptr) *depthOut = -1;
         if (!A_FireObjectAlive(hitTransform) || !A_FireObjectAlive((void *)pawn)) return false;
@@ -1954,10 +1955,13 @@ namespace NewFeatures
         // names a DIFFERENT target, that hit is not this pawn. Registry has
         // no record (common for root transforms and skeleton bones) - keep
         // walking below; the parent-chain walk still owns those cases.
-        if (fn_AtkMapGetTargetForCollider != nullptr) {
+        // The registry is keyed by COLLIDER (dump 961623) - it is only asked
+        // when the ray still carries the Collider it hit; a Transform handed to
+        // it is the wrong object type for the game's own lookup.
+        if (collider != nullptr && fn_AtkMapGetTargetForCollider != nullptr) {
             void *map = fn_GameGetAttackableColliderMap ? fn_GameGetAttackableColliderMap() : nullptr;
             if (A_FireObjectAlive(map)) {
-                void *target = fn_AtkMapGetTargetForCollider(map, hitTransform);
+                void *target = fn_AtkMapGetTargetForCollider(map, collider);
                 if (A_FireObjectAlive(target) && target != (void *)pawn)
                     return false;
             }
@@ -2028,6 +2032,7 @@ namespace NewFeatures
     struct AF_NamedHit
     {
         void *transform = nullptr;
+        void *collider  = nullptr;   // the registry is keyed by Collider, not Transform
         float distance  = -1.0f;
         bool  isTarget  = false;
     };
@@ -2073,8 +2078,9 @@ namespace NewFeatures
             void *collider = A_FireHitCollider(elem);            // null when unusable
             void *hitT     = A_FireColliderTransform(collider);  // named when readable
 
-            if (hitT != nullptr && target != nullptr && A_FireHitIsTarget(hitT, target)) {
+            if (hitT != nullptr && target != nullptr && A_FireHitIsTarget(hitT, target, nullptr, collider)) {
                 out.transform = hitT;
+                out.collider  = collider;
                 out.distance  = bestDist;
                 out.isTarget  = true;
                 return true;                                     // the enemy himself
@@ -2093,6 +2099,7 @@ namespace NewFeatures
             // Named solid blocker, or a hit that could not be named at all
             // (transform null): either way this is the deciding record.
             out.transform = hitT;
+            out.collider  = collider;
             out.distance  = bestDist;
             return true;
         }
@@ -2169,11 +2176,11 @@ namespace NewFeatures
             void *collider   = A_FireHitCollider(hitBuf);
             void *hitTransform = A_FireColliderTransform(collider);
             if (Tools::IsPtrValid(hitTransform)) {
-                if (A_FireHitIsTarget(hitTransform, target)) {
+                if (A_FireHitIsTarget(hitTransform, target, nullptr, collider)) {
                     if (identified != nullptr) *identified = true;
                     return AF_Ray::Clear;                    // the enemy himself
                 }
-                if (localPawn != nullptr && A_FireHitIsTarget(hitTransform, localPawn)) {
+                if (localPawn != nullptr && A_FireHitIsTarget(hitTransform, localPawn, nullptr, collider)) {
                     // OUR body/weapon is first on the line: the ray learned
                     // nothing about the target. Hand the verdict to the game.
                     g_triggerDiag.selfHitsSkipped++;
@@ -2242,18 +2249,19 @@ namespace NewFeatures
     // Returns 0 = the registry has no record (or is missing, no opinion),
     // 1 = the game says the collider IS this pawn's shootable body,
     // -1 = the game says it is NOT this pawn's body (another target's volume).
-    inline int A_FireRegistryOwnerIs(void *hitTransform, Pawn *pawn)
+    inline int A_FireRegistryOwnerIs(void *collider, Pawn *pawn)
     {
-        if (fn_AtkMapGetTargetForCollider == nullptr) return 0;
+        if (collider == nullptr || fn_AtkMapGetTargetForCollider == nullptr) return 0;
         void *map = fn_GameGetAttackableColliderMap ? fn_GameGetAttackableColliderMap() : nullptr;
         if (!A_FireObjectAlive(map)) return 0;                     // no record -> no opinion
-        void *target = fn_AtkMapGetTargetForCollider(map, hitTransform);
+        void *target = fn_AtkMapGetTargetForCollider(map, collider);
         if (!A_FireObjectAlive(target)) return 0;                  // no record -> no opinion
         return target == (void *)pawn ? 1 : -1;
     }
 
     inline Pawn *A_FirePawnFromHitTransform(void *hitTransform, Pawn **items, int count,
-                                            int *depthOut = nullptr)
+                                            int *depthOut = nullptr,
+                                            void *collider = nullptr)
     {
         if (depthOut != nullptr) *depthOut = -1;
         if (!A_FireObjectAlive(hitTransform) || !Tools::IsPtrValid((void *)items)) return nullptr;
@@ -2277,10 +2285,10 @@ namespace NewFeatures
         // when that target is not on this list. Bones / body meshes usually
         // carry no registry record of their own, so a "no record" passes
         // through to the parent-chain walk below.
-        if (fn_AtkMapGetTargetForCollider != nullptr) {
+        if (collider != nullptr && fn_AtkMapGetTargetForCollider != nullptr) {
             void *map = fn_GameGetAttackableColliderMap ? fn_GameGetAttackableColliderMap() : nullptr;
             if (A_FireObjectAlive(map)) {
-                void *target = fn_AtkMapGetTargetForCollider(map, hitTransform);
+                void *target = fn_AtkMapGetTargetForCollider(map, collider);
                 if (A_FireObjectAlive(target) && A_FireObjectAlive(target)) {
                     for (int i = 0; i < count; i++) {
                         Pawn *p = items[i];
@@ -2361,7 +2369,8 @@ namespace NewFeatures
                 if (h.distance < 0.0f) return nullptr;   // the crosshair is on the sky
                 if (hitDistOut != nullptr) *hitDistOut = h.distance;
                 if (h.transform == nullptr) return nullptr;  // cannot name the hit
-                return A_FirePawnFromHitTransform(h.transform, items, count);
+                return A_FirePawnFromHitTransform(h.transform, items, count, nullptr,
+                                                  h.collider);
             }
             // RaycastAll unusable -> single-ray path below.
         }
@@ -2379,13 +2388,15 @@ namespace NewFeatures
         const float hd = *(const float *)(hitBuf + AF_RAYHIT_DISTOFF);
         if (hitDistOut != nullptr && hd >= 0.0f) *hitDistOut = hd;
 
-        void *hitTransform = A_FireColliderTransform(A_FireHitCollider(hitBuf));
+        void *hitCollider  = A_FireHitCollider(hitBuf);
+        void *hitTransform = A_FireColliderTransform(hitCollider);
         if (A_FireObjectAlive(hitTransform) && localPawn != nullptr &&
-            A_FireHitIsTarget(hitTransform, localPawn)) {
+            A_FireHitIsTarget(hitTransform, localPawn, nullptr, hitCollider)) {
             g_triggerDiag.selfHitsSkipped++;   // first thing on the line is US
             return nullptr;
         }
-        return A_FirePawnFromHitTransform(hitTransform, items, count);
+        return A_FirePawnFromHitTransform(hitTransform, items, count, nullptr,
+                                          hitCollider);
     }
 
     // =====================================================================
@@ -3055,7 +3066,11 @@ namespace NewFeatures
     {
         if (!g_afireHoldingFire) return;
         if (instance == nullptr || instance == g_afireFiringOn) {
-            if (fn_Weapon_StopFire != nullptr && g_afireFiringOn != nullptr)
+            // The weapon we pressed may be gone (death, weapon swap, round end)
+            // by the time the trigger is let go; StopFire is a native call and a
+            // destroyed weapon has a cleared m_CachedPtr - the same check every
+            // other native call on this path already makes.
+            if (fn_Weapon_StopFire != nullptr && A_FireObjectAlive(g_afireFiringOn))
                 fn_Weapon_StopFire(g_afireFiringOn, false);
             g_afireHoldingFire = false;
             g_afireFiringOn = nullptr;
@@ -3114,7 +3129,7 @@ namespace NewFeatures
 
         Weapon *held = local->get_CurrentWeapon();
         d.heldWeapon = (void *)held;
-        if (!Tools::IsPtrValid((void *)held)) { d.testFireStatus = 3; return; }
+        if (!A_FireObjectAlive((void *)held)) { d.testFireStatus = 3; return; }
 
         if (fn_Weapon_StartFire == nullptr) { d.testFireStatus = 4; return; }
 

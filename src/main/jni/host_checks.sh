@@ -41,6 +41,14 @@ trap 'rm -rf "$OUT_DIR"' EXIT
     -o "$OUT_DIR/mythic_attachments_check" System/Hooks/tests/mythic_attachments_check.cpp
 "$OUT_DIR/mythic_attachments_check"
 
+# The triggerbot's LOS gate, target choice, fire pacing and release guard, run
+# against a fake il2cpp physics world. It was outside this script, so a change
+# to the fire path could regress without any check noticing.
+"$CXX" -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -D'__fastcall=' \
+    -I Skin/tests/stubs -I . -I ImGui -I Includes \
+    -o "$OUT_DIR/los_gate_check" Hacks/Feature/tests/los_gate_check.cpp
+"$OUT_DIR/los_gate_check"
+
 "$CXX" -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -D'__fastcall=' \
     -I Skin/tests/stubs -I . -I ImGui -I Includes \
     -o "$OUT_DIR/blueprint_equip_check" System/Hooks/tests/blueprint_equip_check.cpp
