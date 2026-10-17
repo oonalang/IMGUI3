@@ -1,19 +1,6 @@
-// Host test for System/Hooks/BlueprintEquip.h - the client gates between the
-// blueprint list and the equip request sent by LoadoutWeaponsResettingController.
-//
-// It drives the REAL hook bodies with fake originals that record every call and
-// answer "locked", which is what the game answers for a blueprint the account
-// does not own. What is pinned here:
-//
-//   * OFF -> every gate forwards to the original exactly once and returns its
-//     answer, for every input;
-//   * ON  -> a blueprint weapon id is answered true without running the original
-//     (nothing native is asked), a non-blueprint id still goes to the original;
-//   * a null receiver never gets a fabricated answer;
-//   * with the originals not installed (null), every gate answers false instead
-//     of dereferencing a null pointer;
-//   * the 12-byte BagIdentifier argument arrives at the original unchanged.
-//
+// Host test for System/Hooks/BlueprintEquip.h: OFF forwards to the game, ON
+// grants blueprints, null receivers and missing originals fail closed, and the
+// 12-byte BagIdentifier argument survives the hop.
 // Run it with src/main/jni/host_checks.sh.
 #include <cstdint>
 #include <cstdio>

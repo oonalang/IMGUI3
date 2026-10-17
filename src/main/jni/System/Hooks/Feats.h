@@ -610,8 +610,7 @@ inline bool IsUnlocked(void *instance) {
     return orig_IsUnlocked(instance);
 }
 
-// Blueprint equip gates (System/Hooks/BlueprintEquip.h), installed below next
-// to the IsUnlocked hook they complete.
+// Blueprint equip gates (BlueprintEquip.h), installed below.
 #include "BlueprintEquip.h"
 
 // Mythic Attachments (unlock-as-if-owned) lives in its own header: the four
@@ -962,9 +961,7 @@ inline void InitializeAllHooks() {
     //   IsWeaponAttachmentUnlock(int attachment) @0xA61AA00 is the first of them.
     HOOK_LIB("libunity.so", "0x901F988", IsUnlocked, orig_IsUnlocked);
 
-    //-- Unlock Blueprints (SKINS tab), the equip path (BlueprintEquip.h): the
-    //   classifier plus the four client gates between the blueprint list and
-    //   the equip request. RVAs from the dump, same convention as above.
+    //-- Unlock Blueprints (SKINS tab), the equip path (BlueprintEquip.h).
     HOOK_LIB("libunity.so", "0x8D49D00", IsBlueprintWeaponID, orig_IsBlueprintWeaponID);
     HOOK_LIB("libunity.so", "0x8D33914", IsThisItemCanBeEquipedInMP, orig_IsThisItemCanBeEquipedInMP);
     HOOK_LIB("libunity.so", "0x5D30134", IsSelectBlueprintWeaponUnlock, orig_IsSelectBlueprintWeaponUnlock);

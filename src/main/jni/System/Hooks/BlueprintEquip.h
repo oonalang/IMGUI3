@@ -29,8 +29,7 @@ namespace blueprint_equip
         return Config.ExtraMenu.Blueprints;
     }
 
-    // BagIdentifier (dump.cs 2285560) is a 12-byte value type, so it is forwarded
-    // as its own bytes instead of three int parameters.
+    // BagIdentifier is a 12-byte value type passed by value (dump.cs 2285560).
     struct BagIdentifierRaw
     {
         int32_t bag_type;
