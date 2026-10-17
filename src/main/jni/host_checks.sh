@@ -54,6 +54,13 @@ trap 'rm -rf "$OUT_DIR"' EXIT
     -o "$OUT_DIR/blueprint_equip_check" System/Hooks/tests/blueprint_equip_check.cpp
 "$OUT_DIR/blueprint_equip_check"
 
+# Crash breadcrumb (Hacks/Feature/CrashBreadcrumb.h): the formatter and the real
+# append-the-line writer the signal handler calls. No signals are raised here -
+# only the bytes the user will send back are proven.
+"$CXX" -std=c++17 -I. -IHacks/Feature -o "$OUT_DIR/crash_breadcrumb_check" \
+    Hacks/Feature/tests/crash_breadcrumb_check.cpp
+"$OUT_DIR/crash_breadcrumb_check"
+
 # Apply Skin On Equip (Skin/AutoEquipSkin.h): the real resolver + tick, over fake
 # WeaponConfConfig / WeaponSkinConfig rows. Links the real Tools.cpp, so
 # Tools::IsPtrValid is the one the device runs.

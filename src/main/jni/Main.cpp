@@ -37,6 +37,9 @@
 // NoSprintFireDelayActive() so that each dump address is hooked exactly once.
 #include "Hacks/Feature/NewFeatures.h"
 #include "Hacks/Feature/Crosshair.h"
+// Crash breadcrumb: the triggerbot's live state, written from a signal handler
+// so a native crash in the game process leaves a name behind.
+#include "Hacks/Feature/CrashBreadcrumb.h"
 #include "MainFeatureIncludes.h"
 // Apply Skin On Equip: takes the id the equip gates recorded and puts that skin
 // on the gun locally (Skin/AutoEquipSkin.h).
@@ -2170,8 +2173,14 @@ if (runtimeState.activeTab == 4) {
                                     // weapon (its get_IsFiring still true). A number
                                     // stuck at 0 with Fire above it means the
                                     // getter did not resolve and the guard is off.
-                                    ImGui::TextColored(dim, "SameFrame=%d",
-                                        td.sameFrameSkips);
+                                    // Kind guard: native calls refused because the
+                                    // slot we held is still a live object but no
+                                    // longer a Weapon (recycled after a death,
+                                    // weapon swap or round end). Non-zero after a
+                                    // long session is the "15 s then it crashes"
+                                    // crash class being refused, not a bug.
+                                    ImGui::TextColored(dim, "SameFrame=%d KindSkips=%d",
+                                        td.sameFrameSkips, td.kindSkips);
                                     // Which path accepted (or would accept) the shot, and
                                     // what the visibility ray actually hit. "Rays=id/blk"
                                     // is the anti-wall gate: id = the nearest thing on the
@@ -2666,6 +2675,9 @@ __attribute__((constructor))
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     jvm = vm; VM = vm;
     ZEL_SetVM(vm);
+    // Before any thread or hook exists: a crash from here on leaves one line of
+    // triggerbot state in <files>/crash_breadcrumb.txt (see CrashBreadcrumb.h).
+    CrashBreadcrumb_Install();
     std::thread(Init_Thread).detach();
     std::thread(Init_Thread2).detach();
     std::thread(Skins_Thread).detach();

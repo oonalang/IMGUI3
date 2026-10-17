@@ -1,5 +1,9 @@
 #pragma once
 
+// The crash breadcrumb ("it dies after ~15 s of use" needs a name): the live
+// triggerbot state + a signal handler that appends it to a file.
+#include "CrashBreadcrumb.h"
+
 // ============================================================================
 //  NewFeatures.h  -  combat (Triggerbot) features
 //
@@ -501,6 +505,21 @@ namespace NewFeatures
         if (!Tools::IsPtrValid(obj)) return false;
         void *cached = *(void **)((uintptr_t)obj + AF_OBJ_CACHEDPTR);
         return Tools::IsPtrValid(cached);
+    }
+
+    // The il2cpp object header's first word is the object's own Il2CppClass*.
+    // m_CachedPtr answers "is this slot still a live managed object"; the class
+    // answers the different question "is it still the SAME KIND of object".
+    // A slot freed and recycled for another type passes the first check, and a
+    // native call made through it then runs the wrong class' code - a crash
+    // class that only appears once enough objects have died and been reused,
+    // i.e. after a while of playing, not on the first shot.
+    constexpr size_t AF_OBJ_KLASS = 0x0;
+    inline void *A_FireObjectKind(void *obj)
+    {
+        if (!Tools::IsPtrValid(obj)) return nullptr;
+        void *klass = *(void **)((uintptr_t)obj + AF_OBJ_KLASS);
+        return Tools::IsPtrValid(klass) ? klass : nullptr;
     }
 
     // The managed pawn lists hand out raw 8-byte object references. An il2cpp
@@ -1540,6 +1559,13 @@ namespace NewFeatures
     // State - game thread only.
     inline bool     g_afireHoldingFire       = false;
     inline void    *g_afireFiringOn          = nullptr;
+    // The Il2CppClass* the pressed slot had WHEN WE PRESSED IT. The release is
+    // the one native call that happens later, on a pointer recorded earlier, so
+    // it is the one that can meet a recycled slot (see A_FireObjectKind).
+    inline void    *g_afireFiringOnKind      = nullptr;
+    // Same idea for the held weapon across the length of ONE scan: the scan can
+    // take milliseconds and the weapon can die inside it.
+    inline void    *g_afireHeldKind          = nullptr;
     inline double   g_afireLastPressTime     = -1000.0;
     // The WEAPON of the last press. A_FireReleaseTrigger clears g_afireFiringOn
     // (that is what "let go" means), so the released weapon cannot be recognised
@@ -1572,6 +1598,7 @@ namespace NewFeatures
         int    targets;         // scans that returned a pawn
         int    fires;           // StartFire calls made by the trigger
         int    sameFrameSkips;  // scans skipped because our fire request is still on the weapon
+        int    kindSkips;       // native calls refused: the slot was recycled as another class
         int    losBlocked;      // lifetime: candidates rejected by geometry
         int    losBlockedScan;  // THIS scan (reset every scan, menu reads it)
         float  radiusPx;        // crosshair radius used by the last scan
@@ -1822,6 +1849,10 @@ namespace NewFeatures
         const int idx = (int)b;
         d.lastBlock = idx;
         if (idx >= 0 && idx < (int)FireBlock::Count) d.blockCount[idx]++;
+        // One line of live state for the crash breadcrumb (Hacks/Feature/
+        // CrashBreadcrumb.h): which reason this scan reached and how far the
+        // session had got. Written once per scan, three plain stores.
+        CrashBreadcrumb_NoteScan(idx, d.scans, d.fires, d.sameFrameSkips, d.kindSkips);
     }
 
 
@@ -2993,6 +3024,10 @@ namespace NewFeatures
         Weapon *held = localPawn->get_CurrentWeapon();
         d.heldWeapon = (void *)held;
         if (!A_FireObjectAlive((void *)held)) return FireBlock::NoWeapon;
+        // The class this slot has RIGHT NOW. The scan below takes milliseconds
+        // (rays, team reads, projections) and the weapon can die inside it, so
+        // every later native call on `held` re-asks what is behind the pointer.
+        g_afireHeldKind = A_FireObjectKind((void *)held);
 
         // ADVISORY: a weapon that is mid-switch, mid-reload or between shots does
         // not need to stop the trigger - Weapon.StartFire itself refuses an illegal
@@ -3070,10 +3105,27 @@ namespace NewFeatures
             // by the time the trigger is let go; StopFire is a native call and a
             // destroyed weapon has a cleared m_CachedPtr - the same check every
             // other native call on this path already makes.
-            if (fn_Weapon_StopFire != nullptr && A_FireObjectAlive(g_afireFiringOn))
+            //
+            // And it may no longer BE A WEAPON. A slot freed and recycled for
+            // another managed type keeps a live m_CachedPtr, so the liveness
+            // test passes while the class behind it does not: StopFire then runs
+            // weapon code on an object that has none. This is the crash class
+            // that needs TIME to appear - a sustained session presses hundreds
+            // of times and every kill/respawn/match end frees objects, so the
+            // same build is fine in a short test and dies in a long one. The
+            // class the slot had at press time is recorded with the pointer and
+            // a slot that answers with a different class is never called.
+            CrashBreadcrumb_NoteStage(3);
+            const bool kindOk = (g_afireFiringOnKind == nullptr) ||
+                                (A_FireObjectKind(g_afireFiringOn) == g_afireFiringOnKind);
+            if (fn_Weapon_StopFire != nullptr && A_FireObjectAlive(g_afireFiringOn) && kindOk)
                 fn_Weapon_StopFire(g_afireFiringOn, false);
+            else if (fn_Weapon_StopFire != nullptr && g_afireFiringOn != nullptr &&
+                     A_FireObjectAlive(g_afireFiringOn))
+                g_triggerDiag.kindSkips++;              // alive, but not our class
             g_afireHoldingFire = false;
             g_afireFiringOn = nullptr;
+            g_afireFiringOnKind = nullptr;
         }
     }
 
@@ -3229,6 +3281,8 @@ namespace NewFeatures
         TriggerTarget target{};
         const FireBlock block = A_FireShouldFire(target);
         A_FireReportBlock(block);
+        CrashBreadcrumb_NoteObjects(d.localPawn, d.heldWeapon, g_afireFiringOn,
+                                    (void *)target.pawn);
 
         if (block != FireBlock::Fired || !Tools::IsPtrValid((void *)target.pawn)) {
             A_FireReleaseTrigger(nullptr);
@@ -3241,7 +3295,11 @@ namespace NewFeatures
         s_dbgTriggerState = 1;
 
         Weapon *held = (Weapon *)d.heldWeapon;
-        if (!A_FireObjectAlive((void *)held)) {
+        if (!A_FireObjectAlive((void *)held) ||
+            (g_afireHeldKind != nullptr && A_FireObjectKind((void *)held) != g_afireHeldKind)) {
+            // Dead, or the slot was recycled as another class while the scan
+            // ran: pressing through it would run weapon code on a non-weapon.
+            if (A_FireObjectAlive((void *)held)) d.kindSkips++;
             A_FireReleaseTrigger(nullptr);
             g_afireInTick = false;
             return;
@@ -3354,8 +3412,10 @@ namespace NewFeatures
             return;
         }
 
+        CrashBreadcrumb_NoteStage(2);
         g_afireHoldingFire    = true;
         g_afireFiringOn       = (void *)held;
+        g_afireFiringOnKind   = g_afireHeldKind;
         g_afireTargetPawn     = (void *)target.pawn;
         g_afireLastPressWeapon = (void *)held;
         g_afireLastPressTime  = now;
@@ -3382,6 +3442,8 @@ namespace NewFeatures
         g_afireHoldingFire = false;
         g_afireTargetPawn  = nullptr;
         g_afireFiringOn    = nullptr;
+        g_afireFiringOnKind = nullptr;
+        g_afireHeldKind    = nullptr;
         g_afireLastPressTime = -1000.0;
         g_afireLastPressWeapon = nullptr;
         g_afireCanFireLast   = false;
