@@ -121,7 +121,28 @@ namespace c
         style.WindowPadding = ImVec2(0.0f, 0.0f);
         style.ItemSpacing = ImVec2(10.0f * scale, 10.0f * scale);
         style.WindowBorderSize = 0.0f;
-        style.ScrollbarSize = 8.0f * scale;
+        // IMGUI5 chrome for everything ImGui draws that is not one of our
+        // widgets: a hairline scrollbar with only a grab, flat rounded popups,
+        // hairline borders. Without this the lists kept the old bright grab
+        // which read as part of the old menu.
+        style.ScrollbarSize = 6.0f * scale;
+        style.ScrollbarRounding = 3.0f * scale;
+        style.GrabMinSize = 10.0f * scale;
+        style.GrabRounding = 3.0f * scale;
+        style.WindowRounding = 14.0f;
+        style.ChildRounding = 14.0f;
+        style.PopupRounding = 12.0f;
+        style.FrameRounding = 5.0f * scale;
+        style.ChildBorderSize = 0.0f;
+        style.PopupBorderSize = 1.0f;
+        style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(1.0f, 1.0f, 1.0f, 0.10f);
+        style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(1.0f, 1.0f, 1.0f, 0.18f);
+        style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(1.0f, 1.0f, 1.0f, 0.28f);
+        style.Colors[ImGuiCol_PopupBg] = ImVec4(20.0f / 255.0f, 20.0f / 255.0f, 29.0f / 255.0f, 0.96f);
+        style.Colors[ImGuiCol_Border] = ImVec4(31.0f / 255.0f, 34.0f / 255.0f, 44.0f / 255.0f, 1.0f);
+        style.Colors[ImGuiCol_Text] = ImVec4(207.0f / 255.0f, 209.0f / 255.0f, 218.0f / 255.0f, 1.0f);
+        style.Colors[ImGuiCol_TextDisabled] = ImVec4(92.0f / 255.0f, 96.0f / 255.0f, 107.0f / 255.0f, 1.0f);
     }
 
     inline void UpdateTheme(bool dark_mode, const float* accent_rgba, float dt)

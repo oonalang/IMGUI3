@@ -4,6 +4,7 @@
 #include "Includes/Utils.h"
 #include "ImGui/Call_ImGui.h"
 #include "ImGui/menu_layout.h"
+#include "ImGui/nl_style.h"
 #include "IL2CppSDKGenerator/BasicStructs/Call_BasicStructs.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Call_IL2Cpp.h"
 #include "Hacks/Hacks.h"
@@ -1638,10 +1639,11 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         const ImVec2 bodyMin = runtimeWindowPos;
                         const ImVec2 bodyMax(runtimeWindowPos.x + runtimeWindowSize.x,
                                              runtimeWindowPos.y + runtimeWindowSize.y);
-                        runtimeDrawList->AddRectFilled(bodyMin, bodyMax, ImGui::GetColorU32(c::bg::background), c::bg::rounding);
-                        runtimeDrawList->AddRect(bodyMin, bodyMax,
-                                                 main_runtime_theme::GetAccentTintU32(0.70f, 0.55f),
-                                                 c::bg::rounding, 0, 1.0f);
+                        // IMGUI5 shell: a near-black plate with one hairline
+                        // border. The accent is the user's hue, but it lives in
+                        // the controls, not in a glowing frame.
+                        runtimeDrawList->AddRectFilled(bodyMin, bodyMax, ImGui::GetColorU32(nl::Shell()), 14.0f);
+                        runtimeDrawList->AddRect(bodyMin, bodyMax, ImGui::GetColorU32(nl::CardBorder()), 14.0f, 0, 1.0f);
                     }
 
                     const float outerPad = 14.0f;
@@ -1670,8 +1672,11 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     runtimeState.page = ImClamp(runtimeState.page, 1, 6);
                     runtimeState.activeTab = ImClamp(runtimeState.activeTab, 1, 6);
 
-                    runtimeDrawList->AddRectFilled(headerMin, headerMax, IM_COL32(7, 10, 20, 236), 11.0f);
-                    runtimeDrawList->AddRect(headerMin, headerMax, main_runtime_theme::GetAccentTintU32(0.70f, 0.70f), 11.0f, 0, 1.0f);
+                    // IMGUI5 header: the mark and the title sit straight on the
+                    // panel, closed off by a hairline instead of a boxed card.
+                    runtimeDrawList->AddLine(ImVec2(headerMin.x, headerMax.y - 1.0f),
+                                             ImVec2(headerMax.x, headerMax.y - 1.0f),
+                                             ImGui::GetColorU32(nl::RowDivider()));
 
                     const ImVec2 flameCenter(headerMin.x + 28.0f, headerMin.y + headerHeight * 0.5f);
                     {
@@ -1696,8 +1701,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     const ImVec2 subtitlePos(headerMin.x + 57.0f, headerMin.y + 38.0f);
                     runtimeDrawList->AddText(runtimeTitleFont, 10.0f, subtitlePos, IM_COL32(135, 143, 165, 220), "PLAY LIKE A PLAYER  |  NOT A CHEATER");
 
-                    const ImVec2 trackMin(headerMin.x + headerMainWidth * 0.58f, headerMin.y + 28.0f);
-                    const ImVec2 trackMax(headerMax.x - 18.0f, trackMin.y + 8.0f);
+                    const ImVec2 trackMin(headerMin.x + headerMainWidth * 0.58f, headerMin.y + 31.0f);
+                    const ImVec2 trackMax(headerMax.x - 18.0f, trackMin.y + 3.0f);
                     ImGui::SetCursorScreenPos(ImVec2(trackMin.x - 4.0f, trackMin.y - 7.0f));
                     ImGui::InvisibleButton("##main_runtime_menu_color_slider_new", ImVec2((trackMax.x - trackMin.x) + 8.0f, 22.0f));
                     if (ImGui::IsItemActive()) {
@@ -1721,8 +1726,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                             ImGui::ColorConvertFloat4ToU32(ImVec4(r0,g0,b0,1)));
                     }
                     const float hueX = trackMin.x + ImClamp(main_runtime_theme::g_menuHue, 0.0f, 1.0f) * (trackMax.x - trackMin.x);
-                    runtimeDrawList->AddCircleFilled(ImVec2(hueX, trackMin.y + 4.0f), 5.0f, IM_COL32(245,245,250,255), 20);
-                    runtimeDrawList->AddCircle(ImVec2(hueX, trackMin.y + 4.0f), 6.5f, main_runtime_theme::GetAccentU32(), 20, 1.5f);
+                    runtimeDrawList->AddCircleFilled(ImVec2(hueX, trackMin.y + 1.5f), 5.5f, IM_COL32(247,248,252,255), 20);
 
                     if (custom::shell::DrawCloseCard(closeCardMin, closeCardSize)) {
                         runtime_preview_menu::CollapseMenu(runtimeState);
@@ -1731,17 +1735,17 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     runtimeState.tabAlpha = ImClamp(runtimeState.tabAlpha + (4.0f * ImGui::GetIO().DeltaTime * (runtimeState.page == runtimeState.activeTab ? 1.0f : -1.0f)), 0.0f, 1.0f);
                     if (runtimeState.tabAlpha == 0.0f && runtimeState.tabAdd == 0.0f) runtimeState.activeTab = runtimeState.page;
 
-                    runtimeDrawList->AddRectFilled(hostMin, hostMax, ImGui::GetColorU32(main_runtime_theme::GetSidebarShellBackgroundColor()), 11.0f);
+                    runtimeDrawList->AddRectFilled(hostMin, hostMax, ImGui::GetColorU32(nl::Rgb(13, 15, 22, 225)), 14.0f);
+                    runtimeDrawList->AddRect(hostMin, hostMax, ImGui::GetColorU32(nl::CardBorder()), 14.0f, 0, 1.0f);
 
                     // LANX shell: a horizontal segmented tab strip across the top
                     // of the panel replaces the left sidebar, so every page gets
                     // the full width of the window.
-                    const float tabBarH = 40.0f;
+                    const float tabBarH = 36.0f;
                     const ImVec2 tabBarMin(contentInnerMin.x, contentInnerMin.y);
                     const ImVec2 tabBarMax(hostMax.x - contentPadding, contentInnerMin.y + tabBarH);
-                    runtimeDrawList->AddRectFilled(tabBarMin, tabBarMax, IM_COL32(9, 11, 19, 210), 10.0f);
-                    runtimeDrawList->AddRect(tabBarMin, tabBarMax,
-                                             main_runtime_theme::GetAccentTintU32(0.20f, 0.30f), 10.0f, 0, 1.0f);
+                    runtimeDrawList->AddRectFilled(tabBarMin, tabBarMax, IM_COL32(11, 13, 20, 225), 9.0f);
+                    runtimeDrawList->AddRect(tabBarMin, tabBarMax, ImGui::GetColorU32(nl::CardBorder()), 9.0f, 0, 1.0f);
 
                     static const char *tabIcons[] = { ICON_FA_HOME, ICON_FA_EYE, ICON_FA_MICROCHIP,
                                                       ICON_FA_STAR, ICON_FA_SLIDERS_H, ICON_FA_COG };
@@ -1754,8 +1758,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     const float tabW = ImMax(1.0f, ((tabBarMax.x - tabBarMin.x) - tabGap * (tabCount + 1)) / (float)tabCount);
 
                     for (int i = 0; i < tabCount; ++i) {
-                        const ImVec2 pMin(tabBarMin.x + tabGap + (tabW + tabGap) * i, tabBarMin.y + 5.0f);
-                        const ImVec2 pMax(pMin.x + tabW, tabBarMax.y - 5.0f);
+                        const ImVec2 pMin(tabBarMin.x + tabGap + (tabW + tabGap) * i, tabBarMin.y + 4.0f);
+                        const ImVec2 pMax(pMin.x + tabW, tabBarMax.y - 4.0f);
                         char tId[40];
                         snprintf(tId, sizeof(tId), "##lanx_tab_%d", tabIds[i]);
                         ImGui::SetCursorScreenPos(pMin);
@@ -1763,15 +1767,12 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         const bool hov = ImGui::IsItemHovered();
                         const bool act = (runtimeState.page == tabIds[i]);
 
+                        // IMGUI5 nav row: a flat filled pill. The accent lives
+                        // in the icon, the label just brightens. No underline.
                         if (act || hov) {
                             runtimeDrawList->AddRectFilled(pMin, pMax,
-                                act ? main_runtime_theme::GetAccentTintU32(0.22f, 0.30f)
-                                    : IM_COL32(22, 25, 36, 200), 8.0f);
-                        }
-                        if (act) {
-                            runtimeDrawList->AddRectFilled(ImVec2(pMin.x + 6.0f, pMax.y - 2.0f),
-                                                           ImVec2(pMax.x - 6.0f, pMax.y),
-                                                           main_runtime_theme::GetAccentU32(), 1.0f);
+                                act ? ImGui::GetColorU32(nl::NavHover())
+                                    : ImGui::GetColorU32(nl::Rgb(26, 29, 39, 190)), 6.0f);
                         }
 
                         const ImU32 ink = act ? IM_COL32(245, 245, 250, 255)

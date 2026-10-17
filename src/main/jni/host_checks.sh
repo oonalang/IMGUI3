@@ -16,6 +16,27 @@ trap 'rm -rf "$OUT_DIR"' EXIT
     ImGui/imgui.cpp ImGui/imgui_draw.cpp ImGui/imgui_widgets.cpp ImGui/imgui_tables.cpp
 "$OUT_DIR/text_input_check"
 
+# The reskinned widgets (IMGUI5 pass): a slider whose drag track moved to the
+# right of the row, a select field with a tick-marked popup, the button, the
+# switch and the card. Driven with real mouse events, because the hit regions
+# are what the features depend on - the pixels are not.
+"$CXX" -std=c++17 -O1 -I. -IImGui -o "$OUT_DIR/widget_interaction_check" \
+    ImGui/tests/widget_interaction_check.cpp \
+    ImGui/custom_widgets.cpp \
+    ImGui/imgui.cpp ImGui/imgui_draw.cpp ImGui/imgui_widgets.cpp ImGui/imgui_tables.cpp
+"$OUT_DIR/widget_interaction_check"
+
+# The offscreen preview renderer (dev tool): it rasterizes the real widgets with
+# the real fonts, so it rots loudly instead of silently if the widget headers
+# drift. Its output is not compared pixel-wise, only produced and sized.
+"$CXX" -std=c++17 -O1 -I. -IImGui -o "$OUT_DIR/ui_preview_render" \
+    ImGui/tests/ui_preview_render.cpp \
+    ImGui/custom_widgets.cpp \
+    ImGui/imgui.cpp ImGui/imgui_draw.cpp ImGui/imgui_widgets.cpp ImGui/imgui_tables.cpp
+"$OUT_DIR/ui_preview_render" "$OUT_DIR/ui_preview.rgb" >/dev/null
+preview_bytes=$(stat -c %s "$OUT_DIR/ui_preview.rgb" 2>/dev/null || stat -f %z "$OUT_DIR/ui_preview.rgb")
+[ "$preview_bytes" -eq $((1000 * 560 * 3)) ] || { echo "ui_preview_render wrote $preview_bytes bytes"; exit 1; }
+
 "$CXX" -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -D'__fastcall=' -I. -IImGui -IIncludes \
     -o "$OUT_DIR/custom_widgets_link_check" \
     ImGui/tests/custom_widgets_link_check.cpp ImGui/custom_widgets.cpp \
