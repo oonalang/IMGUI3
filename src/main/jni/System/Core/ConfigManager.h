@@ -58,6 +58,8 @@ void LoadConfig() {
         else if (key == "ExtraMenu.Kinetic") Config.ExtraMenu.Kinetic = (valueStr == "1");
         else if (key == "ExtraMenu.MythicAttachments") Config.ExtraMenu.MythicAttachments = (valueStr == "1");
         else if (key == "ExtraMenu.Blueprints") Config.ExtraMenu.Blueprints = (valueStr == "1");
+        // Apply Skin On Equip - absent in older files, which keep the ON default.
+        else if (key == "ExtraMenu.AutoSkin") Config.ExtraMenu.AutoSkin = (valueStr == "1");
         else if (key == "ExtraMenu.Recoil") Config.ExtraMenu.Recoil = (valueStr == "1");
         else if (key == "ExtraMenu.Spread") Config.ExtraMenu.Spread = (valueStr == "1");
         else if (key == "ExtraMenu.Reload") Config.ExtraMenu.Reload = (valueStr == "1");
@@ -128,6 +130,7 @@ void SaveConfig() {
     file << "ExtraMenu.Kinetic " << Config.ExtraMenu.Kinetic << "\n";
     file << "ExtraMenu.MythicAttachments " << Config.ExtraMenu.MythicAttachments << "\n";
     file << "ExtraMenu.Blueprints " << Config.ExtraMenu.Blueprints << "\n";
+    file << "ExtraMenu.AutoSkin " << Config.ExtraMenu.AutoSkin << "\n";
     file << "ExtraMenu.Recoil " << Config.ExtraMenu.Recoil << "\n";
     file << "ExtraMenu.Spread " << Config.ExtraMenu.Spread << "\n";
     file << "ExtraMenu.Reload " << Config.ExtraMenu.Reload << "\n";

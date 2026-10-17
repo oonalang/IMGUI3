@@ -49,7 +49,7 @@ extern "C" void MSHookFunction(void *symbol, void *replace, void **result)
     if (result) *result = nullptr;
 }
 
-struct Skin_ExtraMenuStub { bool CamoTest; int CamoTestMode; };
+struct Skin_ExtraMenuStub { bool CamoTest; int CamoTestMode; bool AutoSkin; };
 struct Skin_ConfigStub { Skin_ExtraMenuStub ExtraMenu; };
 static Skin_ConfigStub Config;
 

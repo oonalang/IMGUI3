@@ -54,6 +54,15 @@ trap 'rm -rf "$OUT_DIR"' EXIT
     -o "$OUT_DIR/blueprint_equip_check" System/Hooks/tests/blueprint_equip_check.cpp
 "$OUT_DIR/blueprint_equip_check"
 
+# Apply Skin On Equip (Skin/AutoEquipSkin.h): the real resolver + tick, over fake
+# WeaponConfConfig / WeaponSkinConfig rows. Links the real Tools.cpp, so
+# Tools::IsPtrValid is the one the device runs.
+"$CXX" -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -D'__fastcall=' \
+    -I Skin/tests/stubs -I . -I ImGui -I Includes \
+    -o "$OUT_DIR/auto_equip_check" Skin/tests/auto_equip_check.cpp \
+    IL2CppSDKGenerator/IL2Cpp/Tools.cpp -lpthread
+"$OUT_DIR/auto_equip_check"
+
 "$CXX" -std=c++17 -fsyntax-only -DIMGUI_DEFINE_MATH_OPERATORS -D'__fastcall=' \
     -include Skin/tests/stubs/host_aarch64_shim.h \
     -I Skin/tests/stubs -I . -I ImGui -I Includes \

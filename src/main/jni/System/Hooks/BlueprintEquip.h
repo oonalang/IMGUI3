@@ -2,6 +2,10 @@
 
 #include "Hacks/Feature/Init_Hacks.h"
 
+// Apply-skin-on-equip: this header only records the item id the equip gates are
+// asked about; the write happens per frame in Skin/AutoEquipSkin.h.
+#include "Skin/AutoEquipState.h"
+
 #include <cstdint>
 
 namespace blueprint_equip
@@ -49,6 +53,13 @@ inline bool (*orig_IsThisItemCanBeEquipedInMP)(void *instance, uint32_t itemID,
 inline bool IsThisItemCanBeEquipedInMP(void *instance, uint32_t itemID,
                                        blueprint_equip::BagIdentifierRaw bag)
 {
+    // The item being put in a bag is named here and nowhere else at equip time,
+    // so this is where the "apply the skin I just equipped" pick is taken from.
+    // Nothing is written from inside this hook: Skin/AutoEquipSkin.h does that
+    // once per rendered frame.
+    if (itemID != 0 && Config.ExtraMenu.AutoSkin)
+        AutoEquipSkin_NoteCandidate(itemID);
+
     if (itemID != 0 && blueprint_equip::UnlockBlueprints() && IsBlueprintWeaponID(itemID))
         return true;
     return orig_IsThisItemCanBeEquipedInMP != nullptr

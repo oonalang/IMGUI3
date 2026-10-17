@@ -38,6 +38,9 @@
 #include "Hacks/Feature/NewFeatures.h"
 #include "Hacks/Feature/Crosshair.h"
 #include "MainFeatureIncludes.h"
+// Apply Skin On Equip: takes the id the equip gates recorded and puts that skin
+// on the gun locally (Skin/AutoEquipSkin.h).
+#include "Skin/AutoEquipSkin.h"
 
 #include <jni.h>
 #include <android/log.h>
@@ -1388,6 +1391,10 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     // trusts) the getter hooks. Runs once per rendered frame and only writes
     // when the value actually differs.
     KillDecoration_ApplyLocalInventoryInfo();
+    // Same rule, different feature: the equip gates only record the item id, so
+    // the config-table write behind "apply the skin I just equipped" happens
+    // here, once per frame, never inside a hooked native call.
+    AutoEquipSkin_Tick(Config.ExtraMenu.AutoSkin);
     floating_info::Render(draw, screenWidth, screenHeight);
 
     if (windowCollapsed) {

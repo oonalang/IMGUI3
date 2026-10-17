@@ -209,6 +209,11 @@ sColorsESPBOT sColorsESPBOT{0};
         // is the only place it is turned off.
         bool BlockReport = true;
 		bool Blueprints;
+        // Apply Skin On Equip (Skin/AutoEquipSkin.h): a skin picked in the GAME's
+        // own loadout is mirrored onto the gun locally, so nothing has to be
+        // searched for in the SKINS tab first. ON by default - the pick is taken
+        // from the equip gates, and nothing but the config table is written.
+        bool AutoSkin = true;
 		bool ClearDisplay;
 		bool ResetGuest;
 		bool RedWallhack;

@@ -18,6 +18,7 @@
 #include "../Skin/Fields.h"
 #include "../Skin/Thread.h"
 #include "../Skin/Camo.h"
+#include "../Skin/AutoEquipSkin.h"
 
 extern float menu[4];
 extern char searchQuery[256];
@@ -523,6 +524,22 @@ case 3:
     break;
 
     case 4:
+
+        // Apply Skin On Equip (Skin/AutoEquipSkin.h). The pick is taken from
+        // the game's own equip gates (System/Hooks/BlueprintEquip.h) instead of
+        // this list, so a skin equipped in the loadout lands on the gun without
+        // being searched for here first. The counters are the evidence: cand =
+        // ids the gates named, ok = ids that resolved to a base gun, writes =
+        // DefWeaponSkinID writes, noskin = an id that was the gun itself, drop =
+        // ids that never resolved (tables not loaded), last = id -> base gun.
+        custom::Checkbox("Apply Skin On Equip", &Config.ExtraMenu.AutoSkin);
+        ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1),
+            "Equip auto: cand=%d ok=%d writes=%d noskin=%d drop=%d last=%u->%d",
+            g_autoEquipSkinDiag.candidates, g_autoEquipSkinDiag.resolved,
+            g_autoEquipSkinDiag.writes, g_autoEquipSkinDiag.notSkin,
+            g_autoEquipSkinDiag.unresolved, g_autoEquipSkinDiag.lastID,
+            g_autoEquipSkinDiag.lastBase);
+        ImGui::Dummy(ImVec2(0, 4));
 
         if (!itemData.empty())
         {

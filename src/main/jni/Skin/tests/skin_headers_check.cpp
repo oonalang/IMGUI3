@@ -37,7 +37,7 @@
 #include <mutex>
 #include "Hacks/StructGame/StructGame.h"
 
-struct Skin_ExtraMenuStub { bool CamoTest; int CamoTestMode; };
+struct Skin_ExtraMenuStub { bool CamoTest; int CamoTestMode; bool AutoSkin; };
 struct Skin_ConfigStub { Skin_ExtraMenuStub ExtraMenu; };
 static Skin_ConfigStub Config;
 

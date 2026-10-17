@@ -56,6 +56,7 @@ void SaveConfiguration(const std::string& filename) {
     // startup defaults on every launch.
     config["ExtraMenu"]["MythicAttachments"] = Config.ExtraMenu.MythicAttachments;
     config["ExtraMenu"]["Blueprints"] = Config.ExtraMenu.Blueprints;
+    config["ExtraMenu"]["AutoSkin"] = Config.ExtraMenu.AutoSkin;
     // Block Report Evidence - default ON, so a config written before this row
     // existed still loads with it on.
     config["ExtraMenu"]["BlockReport"] = Config.ExtraMenu.BlockReport;
@@ -156,6 +157,10 @@ bool LoadConfiguration(const std::string& filename) {
                 Config.ExtraMenu.MythicAttachments = config["ExtraMenu"]["MythicAttachments"].get<bool>();
             if (config["ExtraMenu"].contains("Blueprints"))
                 Config.ExtraMenu.Blueprints = config["ExtraMenu"]["Blueprints"].get<bool>();
+            // Absent in a config written before this row existed: keep the ON
+            // default rather than loading false.
+            if (config["ExtraMenu"].contains("AutoSkin"))
+                Config.ExtraMenu.AutoSkin = config["ExtraMenu"]["AutoSkin"].get<bool>();
             // Absent in a config saved before the row existed: keep the default
             // (ON) instead of loading false.
             if (config["ExtraMenu"].contains("BlockReport"))
