@@ -98,26 +98,13 @@ void RenderLogoSettings(ImDrawList* draw)
     ImGui::SetCursorPosX(buttonInsetX);
     ImVec2 buttonSize = ImVec2(ImMax(1.0f, ImGui::GetContentRegionAvail().x - buttonInsetX), buttonHeight);
     
-    ImGui::PushStyleColor(ImGuiCol_Button, c::button::background_hovered);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, c::button::background_active);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, c::button::background_active);
-    ImGui::PushStyleColor(ImGuiCol_Border, c::button::outline);
-    ImGui::PushStyleColor(ImGuiCol_Text, c::text::text_active);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, c::button::rounding);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-    
-    if (ImGui::Button("RESET LOGO", buttonSize))
+    if (custom::Button("RESET LOGO", buttonSize))
     {
         SetLogoOpacity(1.0f);
         SetLogoSizeMultiplier(1.0f);
     }
-    
-    ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor(5);
 }
 
-// Config management is handled by the side panel (SAV/LOD/RST buttons).
-// Kept as empty stub for any legacy call sites.
 void RenderConfigManagement(ImDrawList* draw) {}
 
 void RenderEnhancement()

@@ -2027,6 +2027,127 @@ static void testSameFrameGuard()
     resetWorld();
 }
 
+// ---------------------------------------------------------------------------
+// 13. Letting go of the trigger on a weapon that no longer exists
+//
+// The report: "after the trigger detects an enemy it crashes". Pressing is one
+// native call and releasing is another; the release used to hand StopFire
+// whatever pointer it had recorded at press time, and a weapon that died in
+// between (death, weapon swap, round end - all of which happen right after a
+// kill) has a cleared m_CachedPtr. This is the same liveness rule every other
+// native call on the path already had, and it is the release that was missing.
+// ---------------------------------------------------------------------------
+static void testReleaseGuard()
+{
+    fn_Weapon_StopFire = fake_stopFire;
+
+    // A live weapon: the release still tells the game we let go.
+    objInit(g_weaponObj);
+    g_stopFireCalls = 0;
+    g_afireHoldingFire = true;
+    g_afireFiringOn    = g_weaponObj.b;
+    A_FireReleaseTrigger(nullptr);
+    CHECK(g_stopFireCalls == 1, "R1 a live weapon is still released");
+    CHECK(!g_afireHoldingFire && g_afireFiringOn == nullptr,
+          "R1 ... and the trigger record is cleared");
+
+    // The same weapon, Destroy()ed while the trigger was down: no native call.
+    objInit(g_weaponObj);
+    *(void **)(g_weaponObj.b + 0x10) = nullptr;      // m_CachedPtr cleared
+    g_stopFireCalls = 0;
+    g_afireHoldingFire = true;
+    g_afireFiringOn    = g_weaponObj.b;
+    A_FireReleaseTrigger(nullptr);
+    CHECK(g_stopFireCalls == 0, "R2 a destroyed weapon is never handed to StopFire");
+    CHECK(!g_afireHoldingFire && g_afireFiringOn == nullptr,
+          "R2 ... and the stale record is dropped instead of retried");
+
+    // A release with nothing pressed stays a no-op.
+    objInit(g_weaponObj);
+    g_stopFireCalls = 0;
+    g_afireHoldingFire = false;
+    g_afireFiringOn    = nullptr;
+    A_FireReleaseTrigger(nullptr);
+    CHECK(g_stopFireCalls == 0, "R3 releasing an idle trigger calls nothing");
+
+    fn_Weapon_StopFire = nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// 13b. The slot is ALIVE but no longer a weapon
+//
+// The report: "I use the triggerbot for 15 s then it crashes." m_CachedPtr (the
+// liveness check every native call makes) answers "this slot is a live managed
+// object" - it does NOT answer "this slot is still a Weapon". A weapon freed by
+// a death / weapon swap / round end and then reused for another managed type
+// keeps a live m_CachedPtr, so StopFire used to run weapon code on an object
+// that has none. That needs a long session to happen at all (hundreds of
+// presses, many frees), which is exactly the shape of the report.
+//
+// The fix records the object's Il2CppClass* with the pointer at press time and
+// refuses the call when the slot now answers with a different class.
+// ---------------------------------------------------------------------------
+static void testReleaseKindGuard()
+{
+    fn_Weapon_StopFire = fake_stopFire;
+
+    // Two stand-ins for the Il2CppClass* words (an object's first 8 bytes).
+    static FakeObj kindWeapon, kindOther;
+    objInit(kindWeapon);
+    objInit(kindOther);
+
+    auto setKind = [](FakeObj &obj, FakeObj *kind) {
+        *(void **)(obj.b + 0x00) = kind ? kind->b : nullptr;
+    };
+
+    // (a) the same class as at press time: the release still goes out.
+    objInit(g_weaponObj);
+    setKind(g_weaponObj, &kindWeapon);
+    g_stopFireCalls = 0;
+    g_afireHoldingFire   = true;
+    g_afireFiringOn      = g_weaponObj.b;
+    g_afireFiringOnKind  = kindWeapon.b;
+    A_FireReleaseTrigger(nullptr);
+    CHECK(g_stopFireCalls == 1, "K1 a live slot of the recorded class is still released");
+    CHECK(g_afireFiringOnKind == nullptr, "K1 ... and the recorded class is dropped with the pointer");
+
+    // (b) the slot is alive but now names another class: no native call.
+    objInit(g_weaponObj);
+    setKind(g_weaponObj, &kindOther);            // recycled as something else
+    const int kindSkipsBefore = g_triggerDiag.kindSkips;
+    g_stopFireCalls = 0;
+    g_afireHoldingFire  = true;
+    g_afireFiringOn     = g_weaponObj.b;
+    g_afireFiringOnKind = kindWeapon.b;
+    A_FireReleaseTrigger(nullptr);
+    CHECK(g_stopFireCalls == 0, "K2 a recycled slot is never handed to StopFire");
+    CHECK(g_triggerDiag.kindSkips == kindSkipsBefore + 1,
+          "K2 ... and the refusal is counted for the panel");
+    CHECK(!g_afireHoldingFire && g_afireFiringOn == nullptr,
+          "K2 ... and the trigger record is cleared, not retried");
+
+    // (c) no class was recorded (unreadable header): the old liveness rule
+    //     stands, so a device where the class word is unreadable keeps working.
+    objInit(g_weaponObj);
+    setKind(g_weaponObj, nullptr);
+    g_stopFireCalls = 0;
+    g_afireHoldingFire  = true;
+    g_afireFiringOn     = g_weaponObj.b;
+    g_afireFiringOnKind = nullptr;
+    A_FireReleaseTrigger(nullptr);
+    CHECK(g_stopFireCalls == 1, "K3 with no recorded class the liveness rule still fires");
+
+    // (d) A_FireObjectKind itself: the class word, or nothing.
+    objInit(g_weaponObj);
+    setKind(g_weaponObj, &kindWeapon);
+    CHECK(A_FireObjectKind(g_weaponObj.b) == (void *)kindWeapon.b,
+          "K4 A_FireObjectKind reads the object header's class word");
+    CHECK(A_FireObjectKind(nullptr) == nullptr, "K4 ... and answers null for null");
+
+    fn_Weapon_StopFire = nullptr;
+    g_triggerDiag = TriggerbotDiag{};
+}
+
 int main()
 {
     installFns();
@@ -2044,6 +2165,8 @@ int main()
     testAdsGate();
     testRepressPacing();
     testSameFrameGuard();
+    testReleaseGuard();
+    testReleaseKindGuard();
 
     if (g_failures == 0) {
         printf("\nOK: all LOS gate checks passed\n");

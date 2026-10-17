@@ -1,376 +1,386 @@
 #pragma once
 
-// ============================================================================
-//  Keyboard.h  -  the menu's on-screen keyboard (the search fields)
-//
-//  Seven rows: digits, TWO rows of punctuation (so '-' and the rest of the
-//  ASCII symbols can actually be typed - the field is used to search skin and
-//  camo names, which contain both), the three letter rows, and the action row.
-//  Tapping anywhere that is NOT the panel closes it (see the bottom of
-//  RenderVirtualKeyboard); the tap that opened it, and a tap on the search box
-//  itself, do not - the search box sets the flag in the same frame.
-// ============================================================================
-
 #include "../../ImGui/imgui.h"
+#include "../../ImGui/imgui_internal.h"
+#include "../../ImGui/imgui_settings.h"
+#include "../../ImGui/ime_target.h"
 
-#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstddef>
+#include <cstdio>
 #include <cstring>
-#include <map>
 #include <string>
 
-struct KeyboardAnimationState {
-    float hover_alpha = 0.0f;
-    float press_alpha = 0.0f;
-    float press_time = 0.0f;
-};
+#if defined(__ANDROID__)
+std::string getClipboard();
+#endif
 
-struct KeyboardState {
-    bool is_visible = false;
-    float show_time = 0.0f;
-    bool allow_clicks = false;
-    float open_progress = 0.0f;
-    float last_frame_time = 0.0f;
-};
-
-static std::map<std::string, KeyboardState> keyboardStates;
-
-namespace keyboard_ui {
-
-inline size_t SafeLen(const char* text, size_t max_len) {
-    if (text == nullptr || max_len == 0) {
-        return 0;
-    }
-    size_t len = 0;
-    while (len < max_len && text[len] != '\0') {
-        ++len;
-    }
-    return len;
-}
-
-inline void AppendText(char* buffer, size_t capacity, const char* text) {
-    if (buffer == nullptr || text == nullptr || capacity == 0) {
-        return;
-    }
-
-    size_t current_len = SafeLen(buffer, capacity);
-    if (current_len >= capacity - 1) {
-        return;
-    }
-
-    size_t add_len = std::strlen(text);
-    size_t remaining = (capacity - 1) - current_len;
-    size_t copy_len = std::min(add_len, remaining);
-    if (copy_len == 0) {
-        return;
-    }
-
-    std::memcpy(buffer + current_len, text, copy_len);
-    buffer[current_len + copy_len] = '\0';
-}
-
-inline void Backspace(char* buffer, size_t capacity) {
-    if (buffer == nullptr || capacity == 0) {
-        return;
-    }
-
-    size_t len = SafeLen(buffer, capacity);
-    if (len > 0) {
-        buffer[len - 1] = '\0';
-    }
-}
-
-inline float EaseOutSmoothstep(float t) {
-    t = ImClamp(t, 0.0f, 1.0f);
-    return t * t * (3.0f - 2.0f * t);
-}
-
-inline float ComputeDeltaTime(float current_time, float& last_time) {
-    float dt = current_time - last_time;
-    if (last_time <= 0.0f || dt <= 0.0f || dt > 0.1f) {
-        dt = 1.0f / 60.0f;
-    }
-    last_time = current_time;
-    return dt;
-}
-
-inline bool DrawKeyButton(
-    ImDrawList* draw,
-    const std::string& full_id,
-    const char* label,
-    const ImVec2& rect_min,
-    const ImVec2& rect_max,
-    bool allow_clicks,
-    float current_time,
-    float dt,
-    float ui_alpha,
-    bool dark_key,
-    std::map<std::string, KeyboardAnimationState>& key_animations)
+// The keyboard is drawn in its own window because the menu's content child is
+// clipped: a panel docked to the bottom of the display cannot live inside it.
+// Keys are hit-tested against their rects instead of being ImGui items, so a
+// tap never moves the active id off the text field - writing into an ImGui
+// item would end the edit session on the very tap meant to type.
+namespace lanx_ime
 {
-    auto& anim = key_animations[full_id];
-
-    const bool hovered = ImGui::IsMouseHoveringRect(rect_min, rect_max);
-    const bool clicked = hovered && allow_clicks && ImGui::IsMouseClicked(0);
-
-    const float target_hover = hovered ? 1.0f : 0.0f;
-    anim.hover_alpha += (target_hover - anim.hover_alpha) * (12.0f * dt);
-    anim.hover_alpha = ImClamp(anim.hover_alpha, 0.0f, 1.0f);
-
-    if (clicked) {
-        anim.press_time = current_time;
-        anim.press_alpha = 1.0f;
-    }
-
-    const float since_press = current_time - anim.press_time;
-    if (since_press < 0.15f) {
-        anim.press_alpha = 1.0f - (since_press / 0.15f);
-    } else {
-        anim.press_alpha = 0.0f;
-    }
-
-    const float effect_alpha = ImMax(anim.hover_alpha * 0.30f, anim.press_alpha * 0.50f);
-    const float base_alpha = dark_key ? 0.70f : 0.50f;
-    const float fill_alpha = ImClamp(base_alpha + effect_alpha, 0.0f, 1.0f) * ui_alpha;
-    const ImU32 fill_col = dark_key
-        ? ImColor(60, 60, 60, (int)(255.0f * fill_alpha))
-        : ImColor(100, 100, 100, (int)(255.0f * fill_alpha));
-
-    const float rounding = 13.0f;
-    draw->AddRectFilled(rect_min, rect_max, fill_col, rounding);
-
-    const ImVec2 text_size = ImGui::CalcTextSize(label);
-    const float rect_w = rect_max.x - rect_min.x;
-    const float rect_h = rect_max.y - rect_min.y;
-    const ImVec2 text_pos(
-        rect_min.x + (rect_w - text_size.x) * 0.5f,
-        rect_min.y + (rect_h - text_size.y) * 0.5f
-    );
-    draw->AddText(text_pos, ImColor(255, 255, 255, (int)(255.0f * ui_alpha)), label);
-
-    return clicked;
-}
-
-} // namespace keyboard_ui
-
-inline void RenderVirtualKeyboard(const char* id, char* searchQuery, size_t querySize, bool* showKeyboard) {
-    if (id == nullptr || searchQuery == nullptr || querySize == 0 || showKeyboard == nullptr) {
-        return;
-    }
-
-    static std::map<std::string, KeyboardAnimationState> key_animations;
-
-    const std::string keyboard_id(id);
-    KeyboardState& kb_state = keyboardStates[keyboard_id];
-    const float now = (float)ImGui::GetTime();
-
-    const bool stale_hidden = (now - kb_state.last_frame_time) > 0.25f;
-    if (*showKeyboard && (!kb_state.is_visible || stale_hidden)) {
-        kb_state.is_visible = true;
-        kb_state.show_time = now;
-        kb_state.allow_clicks = false;
-        kb_state.open_progress = 0.0f;
-        kb_state.last_frame_time = now;
-    } else if (!*showKeyboard) {
-        kb_state.is_visible = false;
-        kb_state.open_progress = 0.0f;
-        kb_state.allow_clicks = false;
-        return;
-    }
-
-    if (!kb_state.is_visible) {
-        return;
-    }
-
-    const float dt = keyboard_ui::ComputeDeltaTime(now, kb_state.last_frame_time);
-
-    kb_state.open_progress += (1.0f - kb_state.open_progress) * (8.0f * dt);
-    if (kb_state.open_progress > 0.995f) {
-        kb_state.open_progress = 1.0f;
-    }
-
-    if ((now - kb_state.show_time) > 0.10f) {
-        kb_state.allow_clicks = true;
-    }
-
-    const float ease = keyboard_ui::EaseOutSmoothstep(kb_state.open_progress);
-    const float slide_offset_y = (1.0f - ease) * 34.0f;
-    const float ui_alpha = ease;
-
-    ImGuiIO& io = ImGui::GetIO();
-    const float screen_w = io.DisplaySize.x;
-    const float screen_h = io.DisplaySize.y;
-    const float keyboard_h = screen_h * 0.56f;
-
-    ImGui::SetNextWindowPos(ImVec2(0.0f, screen_h - keyboard_h), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(screen_w, keyboard_h), ImGuiCond_Always);
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 13.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 18.0f));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(18.0f / 255.0f, 18.0f / 255.0f, 20.0f / 255.0f, (230.0f / 255.0f) * ui_alpha));
-
-    ImGui::Begin(
-        id,
-        nullptr,
-        ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoTitleBar |
-        ImGuiWindowFlags_NoScrollbar |
-        ImGuiWindowFlags_NoCollapse |
-        ImGuiWindowFlags_NoSavedSettings
-    );
-
-    ImDrawList* draw = ImGui::GetWindowDrawList();
-    // The panel's own screen rect: the "inside" of the tap-outside test after
-    // ImGui::End() below.
-    const ImVec2 kb_min  = ImGui::GetWindowPos();
-    const ImVec2 kb_size = ImGui::GetWindowSize();
-    const ImVec2 kb_max(kb_min.x + kb_size.x, kb_min.y + kb_size.y);
-    const ImVec2 origin = ImGui::GetCursorScreenPos();
-    const float content_w = ImGui::GetContentRegionAvail().x;
-    const float content_h = ImGui::GetContentRegionAvail().y;
-
-    const float key_spacing_x = 8.0f;
-    const float key_spacing_y = 10.0f;
-    // digits + 2 punctuation rows + 3 letter rows + the action row
-    const int row_count = 7;
-    const float key_w = (content_w - key_spacing_x * 9.0f) / 10.0f;
-    const float max_key_h = 60.0f;
-    float min_key_h = 34.0f;
-    const float auto_key_h = (content_h - key_spacing_y * (row_count - 1)) / row_count;
-    // A row drawn OUTSIDE the panel is worse than a short one: on a short screen
-    // the 34 px floor has to give way to the panel itself, so seven rows fit on
-    // every screen. On a normal phone (720p and up) the keys stay 40-60 px tall,
-    // above the floor anyway.
-    if (auto_key_h < min_key_h) min_key_h = auto_key_h;
-    const float key_h = ImClamp(auto_key_h, min_key_h, max_key_h);
-    const float bottom_key_h = key_h;
-
-    auto row_start_x = [&](int key_count, float key_width) -> float {
-        const float total_w = key_count * key_width + (key_count - 1) * key_spacing_x;
-        return origin.x + (content_w - total_w) * 0.5f;
+    enum KeyAction
+    {
+        KeyAction_None = 0,
+        KeyAction_Shift,
+        KeyAction_Backspace,
+        KeyAction_LayerLetters,
+        KeyAction_LayerSymbols,
+        KeyAction_LayerSymbols2,
+        KeyAction_Space,
+        KeyAction_Done,
+        KeyAction_Paste,
     };
 
-    auto draw_char_row = [&](const char* row_chars, float y) -> float {
-        const int count = (int)std::strlen(row_chars);
-        const float start_x = row_start_x(count, key_w);
-
-        for (int i = 0; i < count; ++i) {
-            const char ch[2] = { row_chars[i], '\0' };
-            const float x = start_x + i * (key_w + key_spacing_x);
-            const ImVec2 rect_min(x, y + slide_offset_y);
-            const ImVec2 rect_max(x + key_w, y + key_h + slide_offset_y);
-
-            const std::string full_id = keyboard_id + "_" + ch;
-            if (keyboard_ui::DrawKeyButton(draw, full_id, ch, rect_min, rect_max, kb_state.allow_clicks, now, dt, ui_alpha, false, key_animations)) {
-                keyboard_ui::AppendText(searchQuery, querySize, ch);
-            }
-        }
-
-        return y + key_h + key_spacing_y;
+    enum Layer
+    {
+        Layer_Letters = 0,
+        Layer_Symbols,
+        Layer_Symbols2,
     };
 
-    float y = origin.y;
-
-    y = draw_char_row("1234567890", y);
-    // Punctuation: '-' and the rest of what a search field needs (the skin and
-    // camo names in this menu contain both '-' and '.'), then the second tier.
-    y = draw_char_row("-_.@#!?&+/", y);
-    y = draw_char_row(":$%'\"(),=*", y);
-    y = draw_char_row("QWERTYUIOP", y);
-    y = draw_char_row("ASDFGHJKL", y);
-
+    struct KeyDef
     {
-        const float start_x = row_start_x(9, key_w);
-        const char* special_left = "[M]";
-        const char* letters = "ZXCVBNM";
-        const char* special_right = "del";
+        const char* label;
+        char        ch;
+        int         action;
+        float       units;
+    };
 
-        const ImVec2 m_rect_min(start_x, y + slide_offset_y);
-        const ImVec2 m_rect_max(start_x + key_w, y + key_h + slide_offset_y);
-        if (keyboard_ui::DrawKeyButton(draw, keyboard_id + "_[M]", special_left, m_rect_min, m_rect_max, kb_state.allow_clicks, now, dt, ui_alpha, true, key_animations)) {
-            keyboard_ui::AppendText(searchQuery, querySize, special_left);
+    struct State
+    {
+        bool  shift = false;
+        bool  caps = false;
+        int   layer = Layer_Letters;
+        float shiftTapAt = -1.0f;
+        int   pressedKey = -1;
+        int   pressedLayer = -1;
+        float pressedAt = -1.0f;
+        int   heldKey = -1;
+        float heldFor = 0.0f;
+    };
+
+    inline State& Get()
+    {
+        static State state;
+        return state;
+    }
+
+    inline const KeyDef* LettersRow(int row, int* count)
+    {
+        static const KeyDef row0[] = {
+            { "q", 'q', 0, 1 }, { "w", 'w', 0, 1 }, { "e", 'e', 0, 1 }, { "r", 'r', 0, 1 }, { "t", 't', 0, 1 },
+            { "y", 'y', 0, 1 }, { "u", 'u', 0, 1 }, { "i", 'i', 0, 1 }, { "o", 'o', 0, 1 }, { "p", 'p', 0, 1 },
+        };
+        static const KeyDef row1[] = {
+            { "a", 'a', 0, 1 }, { "s", 's', 0, 1 }, { "d", 'd', 0, 1 }, { "f", 'f', 0, 1 }, { "g", 'g', 0, 1 },
+            { "h", 'h', 0, 1 }, { "j", 'j', 0, 1 }, { "k", 'k', 0, 1 }, { "l", 'l', 0, 1 },
+        };
+        static const KeyDef row2[] = {
+            { "shift", 0, KeyAction_Shift, 1.5f },
+            { "z", 'z', 0, 1 }, { "x", 'x', 0, 1 }, { "c", 'c', 0, 1 }, { "v", 'v', 0, 1 },
+            { "b", 'b', 0, 1 }, { "n", 'n', 0, 1 }, { "m", 'm', 0, 1 },
+            { "del", 0, KeyAction_Backspace, 1.5f },
+        };
+        static const KeyDef row3[] = {
+            { "?123", 0, KeyAction_LayerSymbols, 1.6f },
+            { ",", ',', 0, 1 },
+            { "space", ' ', 0, 3.6f },
+            { ".", '.', 0, 1 },
+            { "paste", 0, KeyAction_Paste, 1.3f },
+            { "done", 0, KeyAction_Done, 1.5f },
+        };
+
+        const KeyDef* rows[] = { row0, row1, row2, row3 };
+        const int counts[] = { IM_ARRAYSIZE(row0), IM_ARRAYSIZE(row1), IM_ARRAYSIZE(row2), IM_ARRAYSIZE(row3) };
+        *count = counts[row];
+        return rows[row];
+    }
+
+    inline const KeyDef* SymbolsRow(int row, int* count)
+    {
+        static const KeyDef row0[] = {
+            { "1", '1', 0, 1 }, { "2", '2', 0, 1 }, { "3", '3', 0, 1 }, { "4", '4', 0, 1 }, { "5", '5', 0, 1 },
+            { "6", '6', 0, 1 }, { "7", '7', 0, 1 }, { "8", '8', 0, 1 }, { "9", '9', 0, 1 }, { "0", '0', 0, 1 },
+        };
+        static const KeyDef row1[] = {
+            { "@", '@', 0, 1 }, { "#", '#', 0, 1 }, { "$", '$', 0, 1 }, { "%", '%', 0, 1 }, { "&", '&', 0, 1 },
+            { "-", '-', 0, 1 }, { "+", '+', 0, 1 }, { "(", '(', 0, 1 }, { ")", ')', 0, 1 }, { "/", '/', 0, 1 },
+        };
+        static const KeyDef row2[] = {
+            { "#+=", 0, KeyAction_LayerSymbols2, 1.5f },
+            { "*", '*', 0, 1 }, { "\"", '"', 0, 1 }, { "'", '\'', 0, 1 }, { ":", ':', 0, 1 },
+            { ";", ';', 0, 1 }, { "!", '!', 0, 1 }, { "?", '?', 0, 1 },
+            { "del", 0, KeyAction_Backspace, 1.5f },
+        };
+        static const KeyDef row3[] = {
+            { "abc", 0, KeyAction_LayerLetters, 1.6f },
+            { ",", ',', 0, 1 },
+            { "space", ' ', 0, 3.6f },
+            { ".", '.', 0, 1 },
+            { "paste", 0, KeyAction_Paste, 1.3f },
+            { "done", 0, KeyAction_Done, 1.5f },
+        };
+
+        const KeyDef* rows[] = { row0, row1, row2, row3 };
+        const int counts[] = { IM_ARRAYSIZE(row0), IM_ARRAYSIZE(row1), IM_ARRAYSIZE(row2), IM_ARRAYSIZE(row3) };
+        *count = counts[row];
+        return rows[row];
+    }
+
+    inline const KeyDef* Symbols2Row(int row, int* count)
+    {
+        static const KeyDef row0[] = {
+            { "~", '~', 0, 1 }, { "`", '`', 0, 1 }, { "|", '|', 0, 1 }, { "^", '^', 0, 1 }, { "=", '=', 0, 1 },
+            { "[", '[', 0, 1 }, { "]", ']', 0, 1 }, { "{", '{', 0, 1 }, { "}", '}', 0, 1 }, { "\\", '\\', 0, 1 },
+        };
+        static const KeyDef row1[] = {
+            { "<", '<', 0, 1 }, { ">", '>', 0, 1 }, { "_", '_', 0, 1 }, { "@", '@', 0, 1 }, { "=", '=', 0, 1 },
+            { "|", '|', 0, 1 }, { "~", '~', 0, 1 }, { "[", '[', 0, 1 }, { "]", ']', 0, 1 }, { "\\", '\\', 0, 1 },
+        };
+        static const KeyDef row2[] = {
+            { "?123", 0, KeyAction_LayerSymbols, 1.5f },
+            { ":", ':', 0, 1 }, { ";", ';', 0, 1 }, { "!", '!', 0, 1 }, { "?", '?', 0, 1 },
+            { "\"", '"', 0, 1 }, { "'", '\'', 0, 1 }, { "*", '*', 0, 1 },
+            { "del", 0, KeyAction_Backspace, 1.5f },
+        };
+        static const KeyDef row3[] = {
+            { "abc", 0, KeyAction_LayerLetters, 1.6f },
+            { ",", ',', 0, 1 },
+            { "space", ' ', 0, 3.6f },
+            { ".", '.', 0, 1 },
+            { "paste", 0, KeyAction_Paste, 1.3f },
+            { "done", 0, KeyAction_Done, 1.5f },
+        };
+
+        const KeyDef* rows[] = { row0, row1, row2, row3 };
+        const int counts[] = { IM_ARRAYSIZE(row0), IM_ARRAYSIZE(row1), IM_ARRAYSIZE(row2), IM_ARRAYSIZE(row3) };
+        *count = counts[row];
+        return rows[row];
+    }
+
+    inline const KeyDef* LayerRow(int layer, int row, int* count)
+    {
+        if (layer == Layer_Symbols2)
+            return Symbols2Row(row, count);
+        if (layer == Layer_Symbols)
+            return SymbolsRow(row, count);
+        return LettersRow(row, count);
+    }
+
+    inline void EmitChar(char c)
+    {
+        char text[2] = { c, '\0' };
+        ImGui::GetIO().AddInputCharactersUTF8(text);
+    }
+
+    inline void EmitKey(ImGuiKey key)
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        io.AddKeyEvent(key, true);
+        io.AddKeyEvent(key, false);
+    }
+
+    inline void Close()
+    {
+        custom_ime::Forget();
+        ImGui::ClearActiveID();
+    }
+
+    inline void HandleKey(const KeyDef& key, State& state, float now)
+    {
+        if (key.ch != 0)
+        {
+            char c = key.ch;
+            if (c >= 'a' && c <= 'z')
+                c = (char)((state.shift != state.caps) ? (c - 'a' + 'A') : c);
+            EmitChar(c);
+            if (state.shift && !state.caps)
+                state.shift = false;
+            return;
         }
 
-        for (int i = 0; i < 7; ++i) {
-            char ch[2] = { letters[i], '\0' };
-            const float x = start_x + (i + 1) * (key_w + key_spacing_x);
-            const ImVec2 rect_min(x, y + slide_offset_y);
-            const ImVec2 rect_max(x + key_w, y + key_h + slide_offset_y);
-
-            if (keyboard_ui::DrawKeyButton(draw, keyboard_id + "_" + ch, ch, rect_min, rect_max, kb_state.allow_clicks, now, dt, ui_alpha, false, key_animations)) {
-                keyboard_ui::AppendText(searchQuery, querySize, ch);
+        switch (key.action)
+        {
+        case KeyAction_Shift:
+            if (state.shiftTapAt >= 0.0f && (now - state.shiftTapAt) < 0.30f)
+            {
+                state.caps = !state.caps;
+                state.shift = false;
+                state.shiftTapAt = -1.0f;
             }
+            else
+            {
+                state.shift = !state.shift;
+                state.shiftTapAt = now;
+            }
+            break;
+        case KeyAction_Backspace:
+            EmitKey(ImGuiKey_Backspace);
+            break;
+        case KeyAction_Space:
+            EmitChar(' ');
+            break;
+        case KeyAction_LayerLetters:
+            state.layer = Layer_Letters;
+            state.shift = false;
+            break;
+        case KeyAction_LayerSymbols:
+            state.layer = Layer_Symbols;
+            break;
+        case KeyAction_LayerSymbols2:
+            state.layer = Layer_Symbols2;
+            break;
+        case KeyAction_Paste:
+#if defined(__ANDROID__)
+            ImGui::GetIO().AddInputCharactersUTF8(getClipboard().c_str());
+#endif
+            break;
+        case KeyAction_Done:
+            EmitKey(ImGuiKey_Enter);
+            Close();
+            break;
+        default:
+            break;
         }
-
-        const float del_x = start_x + 8 * (key_w + key_spacing_x);
-        const ImVec2 del_rect_min(del_x, y + slide_offset_y);
-        const ImVec2 del_rect_max(del_x + key_w, y + key_h + slide_offset_y);
-        if (keyboard_ui::DrawKeyButton(draw, keyboard_id + "_del", special_right, del_rect_min, del_rect_max, kb_state.allow_clicks, now, dt, ui_alpha, true, key_animations)) {
-            keyboard_ui::Backspace(searchQuery, querySize);
-        }
-
-        y += key_h + key_spacing_y;
     }
 
+    inline float PanelHeight(const ImVec2& display)
     {
-        const float side_w = key_w;
-        const float space_w = key_w * 5.5f + key_spacing_x * 4.5f;
-        const float total_w = side_w + key_spacing_x + side_w + key_spacing_x + space_w + key_spacing_x + side_w;
-        const float start_x = origin.x + (content_w - total_w) * 0.5f;
-
-        const ImVec2 l_rect_min(start_x, y + slide_offset_y);
-        const ImVec2 l_rect_max(start_x + side_w, y + bottom_key_h + slide_offset_y);
-        if (keyboard_ui::DrawKeyButton(draw, keyboard_id + "_[L]", "[L]", l_rect_min, l_rect_max, kb_state.allow_clicks, now, dt, ui_alpha, true, key_animations)) {
-            keyboard_ui::AppendText(searchQuery, querySize, "[L]");
-        }
-
-        const float e_x = start_x + side_w + key_spacing_x;
-        const ImVec2 e_rect_min(e_x, y + slide_offset_y);
-        const ImVec2 e_rect_max(e_x + side_w, y + bottom_key_h + slide_offset_y);
-        if (keyboard_ui::DrawKeyButton(draw, keyboard_id + "_[E]", "[E]", e_rect_min, e_rect_max, kb_state.allow_clicks, now, dt, ui_alpha, true, key_animations)) {
-            keyboard_ui::AppendText(searchQuery, querySize, "[E]");
-        }
-
-        const float space_x = e_x + side_w + key_spacing_x;
-        const ImVec2 space_rect_min(space_x, y + slide_offset_y);
-        const ImVec2 space_rect_max(space_x + space_w, y + bottom_key_h + slide_offset_y);
-        if (keyboard_ui::DrawKeyButton(draw, keyboard_id + "_space", "space", space_rect_min, space_rect_max, kb_state.allow_clicks, now, dt, ui_alpha, false, key_animations)) {
-            keyboard_ui::AppendText(searchQuery, querySize, " ");
-        }
-
-        const float clear_x = space_x + space_w + key_spacing_x;
-        const ImVec2 clear_rect_min(clear_x, y + slide_offset_y);
-        const ImVec2 clear_rect_max(clear_x + side_w, y + bottom_key_h + slide_offset_y);
-        if (keyboard_ui::DrawKeyButton(draw, keyboard_id + "_clear", "Clear", clear_rect_min, clear_rect_max, kb_state.allow_clicks, now, dt, ui_alpha, true, key_animations)) {
-            searchQuery[0] = '\0';
-        }
+        const float scale = c::scale;
+        const float keyHeight = ImClamp(display.y * 0.045f, 44.0f * scale, 62.0f * scale);
+        return 8.0f * scale * 2.0f + keyHeight * 4.0f + 6.0f * scale * 3.0f;
     }
 
-    ImGui::End();
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar(3);
+    inline void Render()
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        State& state = Get();
 
-    // ---- TAP OUTSIDE CLOSES ------------------------------------------------
-    // Any tap that does not land on this panel ends the typing session, which is
-    // what the search box's fields expect: no Close button to hunt for, and the
-    // keyboard cannot be left covering half the menu.
-    //
-    // Two taps are deliberately NOT outside-taps:
-    //   * the one that OPENED it - allow_clicks is only true 100 ms after the
-    //     panel appeared, so the opening tap cannot close what it opened;
-    //   * a tap another live widget claimed - the search box that owns this
-    //     keyboard sets its flag in THIS frame (it is drawn before us), so
-    //     without this the box would open the keyboard and we would close it
-    //     again on the same tap.
-    // The old test lived in the skin tab, above the list, and keyed off the
-    // search box's own IsItemActive(): while the box was active - i.e. always,
-    // while typing - it never closed, which is why the panel looked stuck.
-    if (kb_state.allow_clicks && ImGui::IsMouseClicked(0) &&
-        !ImGui::IsMouseHoveringRect(kb_min, kb_max, false) &&
-        !ImGui::IsAnyItemActive()) {
-        *showKeyboard = false;
-        kb_state.is_visible = false;
-        kb_state.open_progress = 0.0f;
-        kb_state.allow_clicks = false;
+        if (!io.WantTextInput)
+        {
+            state.heldKey = -1;
+            state.heldFor = 0.0f;
+            state.pressedKey = -1;
+            return;
+        }
+
+        const float scale = c::scale;
+        const float pad = 8.0f * scale;
+        const float gap = 6.0f * scale;
+        const float keyHeight = ImClamp(io.DisplaySize.y * 0.045f, 44.0f * scale, 62.0f * scale);
+        const float panelHeight = PanelHeight(io.DisplaySize);
+        const float panelWidth = io.DisplaySize.x;
+        const ImVec2 panelMin(0.0f, io.DisplaySize.y - panelHeight);
+
+        ImGui::SetNextWindowPos(panelMin, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(panelWidth, panelHeight), ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(22.0f / 255.0f, 22.0f / 255.0f, 22.0f / 255.0f, 250.0f / 255.0f));
+        ImGui::Begin("##lanx_keyboard", nullptr,
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |
+                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoNavFocus |
+                     ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
+
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        const float now = (float)ImGui::GetTime();
+        const float unit = (panelWidth - pad * 2.0f - gap * 9.0f) / 10.0f;
+
+        float y = panelMin.y + pad;
+        for (int row = 0; row < 4; ++row)
+        {
+            int count = 0;
+            const KeyDef* keys = LayerRow(state.layer, row, &count);
+
+            float rowWidth = gap * (float)(count - 1);
+            for (int i = 0; i < count; ++i)
+                rowWidth += keys[i].units * unit;
+
+            float x = (panelWidth - rowWidth) * 0.5f;
+            for (int i = 0; i < count; ++i)
+            {
+                const KeyDef& key = keys[i];
+                const float width = key.units * unit;
+                const ImVec2 keyMin(x, y);
+                const ImVec2 keyMax(x + width, y + keyHeight);
+                x += width + gap;
+
+                const bool hovered = ImGui::IsMouseHoveringRect(keyMin, keyMax, false);
+                const bool clicked = hovered && ImGui::IsMouseClicked(0);
+                const bool mouseDown = hovered && ImGui::IsMouseDown(0);
+                const bool isPressed = (state.pressedKey == i && state.pressedLayer == row &&
+                                        (now - state.pressedAt) < 0.12f);
+
+                const bool toggled = (key.action == KeyAction_Shift && (state.shift || state.caps)) ||
+                                     (key.action == KeyAction_LayerSymbols && state.layer == Layer_Symbols) ||
+                                     (key.action == KeyAction_LayerSymbols2 && state.layer == Layer_Symbols2);
+                const bool accent = isPressed || toggled || key.action == KeyAction_Done;
+
+                ImVec4 fill = accent ? c::accent
+                                     : (hovered ? c::button::background_hovered : c::elements::background);
+                if (accent && !isPressed)
+                    fill.w *= 0.88f;
+
+                draw->AddRectFilled(keyMin, keyMax, ImGui::GetColorU32(fill), c::elements::rounding * 2.0f);
+
+                char label[16];
+                std::snprintf(label, sizeof(label), "%c", key.ch);
+                if (key.ch >= 'a' && key.ch <= 'z')
+                {
+                    const bool upper = (state.shift != state.caps);
+                    label[0] = (char)(upper ? (key.ch - 'a' + 'A') : key.ch);
+                }
+                else if (key.ch == 0)
+                {
+                    std::snprintf(label, sizeof(label), "%s", key.label);
+                }
+                if (key.action == KeyAction_Shift)
+                    std::snprintf(label, sizeof(label), "%s", state.caps ? "CAPS" : "shift");
+
+                const ImVec2 textSize = ImGui::CalcTextSize(label);
+                draw->AddText(ImVec2(keyMin.x + (width - textSize.x) * 0.5f, keyMin.y + (keyHeight - textSize.y) * 0.5f),
+                              ImGui::GetColorU32(accent ? c::bg::background : c::text::text_active), label);
+
+                if (clicked)
+                {
+                    state.pressedKey = i;
+                    state.pressedLayer = row;
+                    state.pressedAt = now;
+                    HandleKey(key, state, now);
+                    if (key.action == KeyAction_Backspace)
+                    {
+                        state.heldKey = i;
+                        state.heldFor = 0.0f;
+                    }
+                    if (state.heldKey != i)
+                    {
+                        state.heldKey = -1;
+                        state.heldFor = 0.0f;
+                    }
+                    custom_ime::Restore();
+                }
+                else if (mouseDown && state.heldKey == i && key.action == KeyAction_Backspace)
+                {
+                    state.heldFor += io.DeltaTime;
+                    if (state.heldFor >= 0.40f)
+                    {
+                        EmitKey(ImGuiKey_Backspace);
+                        state.heldFor -= 0.06f;
+                    }
+                }
+            }
+            y += keyHeight + gap;
+        }
+
+        ImGui::End();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(3);
     }
 }

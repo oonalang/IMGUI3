@@ -1,6 +1,5 @@
 #pragma once
 
-// ============================================================================
 //  MythicAttachments.h  -  "Mythic Attachments": an applied weapon skin behaves
 //  as if it were REALLY OWNED, so the weapon's attachments (the mythic's own
 //  ones included) are unlocked instead of shown locked.
@@ -94,7 +93,6 @@
 //  the game structs (Hacks/Hacks.h -> Feature/Feature.h -> Init_Hacks.h), the
 //  same contract Feats.h itself has. It includes Init_Hacks.h so a test TU can
 //  pull just this file after the structs.
-// ============================================================================
 
 #include "Hacks/Feature/Init_Hacks.h"
 

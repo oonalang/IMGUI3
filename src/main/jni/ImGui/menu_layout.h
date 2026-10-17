@@ -12,12 +12,18 @@
 // 640 px up. A fixed 900x600 window therefore read as "the menu is so big" on a
 // small surface and as a corner widget on a big one, and the skin / character
 // lists - the tabs that actually need room - were the ones squeezed. The window
-// follows the display instead: 92% of it, with a 16 px margin all round, a floor
-// for the two-column tabs and a hard ceiling of the surface itself.
+// follows the display instead: HALF of it in both directions (the report: "it
+// covers 95% of the screen, I want 50%"), a floor for the two-column tabs and a
+// hard ceiling of the surface itself. `kMenuDisplayFraction` is the one number
+// that decides this.
 //
 // The tab switcher is a sidebar inside the window (it replaced the floating
 // radial wheel), so the window no longer shares the screen with a second
 // overlay: it is centred on its own and the sidebar lives in its own column.
+// How much of the render surface the window takes, per axis. 0.5 = half the
+// width and half the height, i.e. a quarter of the screen's area.
+constexpr float kMenuDisplayFraction = 0.50f;
+
 struct MenuLayout
 {
     float  menuW, menuH;    // the @ThaxxylHax window
@@ -31,12 +37,12 @@ inline MenuLayout ComputeMenuLayout(const ImVec2 &display)
     const float availW = ImMax(1.0f, display.x - pad * 2.0f);
     const float availH = ImMax(1.0f, display.y - pad * 2.0f);
 
-    // 92% of the display, but never past the margin, never below the minimum a
+    // Half the display, but never past the margin, never below the minimum a
     // two-column tab can render in, and never bigger than the surface itself -
     // on a surface smaller than the minimum the margin wins, because a window
     // wider than the screen is worse than a cramped one.
-    L.menuW = ImClamp(display.x * 0.92f, ImMin(360.0f, availW), availW);
-    L.menuH = ImClamp(display.y * 0.92f, ImMin(320.0f, availH), availH);
+    L.menuW = ImClamp(display.x * kMenuDisplayFraction, ImMin(360.0f, availW), availW);
+    L.menuH = ImClamp(display.y * kMenuDisplayFraction, ImMin(320.0f, availH), availH);
 
     // Centred, and never hanging off the screen.
     L.menuPos.x = ImClamp((display.x - L.menuW) * 0.5f, 0.0f, ImMax(0.0f, display.x - L.menuW));

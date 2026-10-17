@@ -33,8 +33,6 @@ namespace custom
         float               Normalize(float value, float minValue, float maxValue);
         void                DrawPanelShell(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, float rounding, bool highlighted = false);
         bool                DrawSidebarButton(const char* id, const char* icon, bool active, const ImVec2& min, const ImVec2& size);
-        void                DrawTitleCard(const ImVec2& min, const ImVec2& size, const char* title);
-        bool                DrawMenuColorCard(const ImVec2& min, const ImVec2& size);
         bool                DrawCloseCard(const ImVec2& min, const ImVec2& size);
     }
 
@@ -64,6 +62,9 @@ namespace custom
     bool                Combo(const char* label, int* current_item, const char* items_separated_by_zeros, int popup_max_height_in_items = -1);
     bool                Combo(const char* label, int* current_item, const char* (*getter)(void* user_data, int idx), void* user_data, int items_count, int popup_max_height_in_items = -1);
 
+    inline bool         InputText(const char* label, char* buf, size_t buf_size, ImGuiInputTextFlags flags = 0, const ImVec2& size_arg = ImVec2(0, 0));
+    inline bool         InputTextWithHint(const char* label, const char* hint, char* buf, size_t buf_size, ImGuiInputTextFlags flags = 0, const ImVec2& size_arg = ImVec2(0, 0));
+
     bool                ColorButton(const char* desc_id, const ImVec4& col, ImGuiColorEditFlags flags = 0, const ImVec2& size = ImVec2(0, 0));
     bool                ColorEdit4(const char* label, float col[4], ImGuiColorEditFlags flags = 0);
     bool                ColorPicker4(const char* label, float col[4], ImGuiColorEditFlags flags = 0, const float* ref_col = NULL);
@@ -84,5 +85,7 @@ namespace custom
     void                Separator();
 
 }
+
+#include "custom_input_text.h"
 
 #endif // CUSTOM_WIDGETS_HPP

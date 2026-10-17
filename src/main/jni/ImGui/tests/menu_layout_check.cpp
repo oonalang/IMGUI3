@@ -7,13 +7,8 @@
 // sidebar inside that window plus a rail with the hamburger that folds it, and
 // all six tab rows have to fit the window height at any size.
 //
-// Host test, nothing is linked from ImGui (ImVec2 / ImMax / ImClamp are all
-// header-only), so no NDK and no menu runtime is needed:
-//   g++ -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -I src/main/jni \
-//       src/main/jni/ImGui/tests/menu_layout_check.cpp -o /tmp/menu_layout_check \
-//       && /tmp/menu_layout_check
-// Android.mk's wildcard for ImGui is $(LOCAL_PATH)/ImGui/*.c*, i.e. not
-// recursive, so this file never reaches the APK.
+// Nothing is linked from ImGui (ImVec2 / ImMax / ImClamp are header-only), so
+// no NDK and no menu runtime is needed. Run it with src/main/jni/host_checks.sh.
 #include <cstdio>
 
 #include "ImGui/menu_layout.h"
@@ -41,13 +36,14 @@ static void checkDisplay(float w, float h, const char *tag)
     CHECK(L.menuPos.x >= -0.05f && L.menuPos.y >= -0.05f &&
           L.menuPos.x + L.menuW <= w + 0.05f && L.menuPos.y + L.menuH <= h + 0.05f, buf);
 
-    // Auto-resize: 92% of the display, floored for the two-column tabs and
-    // capped by the surface (the 16 px margin).
+    // Auto-resize: half of the display on each axis (kMenuDisplayFraction),
+    // floored for the two-column tabs and capped by the surface (the margin).
     snprintf(buf, sizeof buf, "%s: %gx%g the window follows the display", tag, w, h);
     CHECK(L.menuW >= ImMin(360.0f, w) - 0.05f && L.menuH >= ImMin(320.0f, h) - 0.05f &&
           L.menuW <= w + 0.05f && L.menuH <= h + 0.05f, buf);
-    snprintf(buf, sizeof buf, "%s: %gx%g the window uses most of the display", tag, w, h);
-    CHECK(L.menuW >= w * 0.5f && L.menuH >= h * 0.5f, buf);
+    snprintf(buf, sizeof buf, "%s: %gx%g the window is half the display, not most of it", tag, w, h);
+    CHECK(L.menuW >= w * kMenuDisplayFraction - 0.05f &&
+          L.menuH >= h * kMenuDisplayFraction - 0.05f, buf);
 
     snprintf(buf, sizeof buf, "%s: %gx%g the window is centred", tag, w, h);
     CHECK(L.menuPos.x > 0.0f && L.menuPos.y >= 0.0f, buf);
@@ -101,13 +97,15 @@ int main()
     // The auto-resize rule itself, on a surface where it is not clamped.
     {
         const MenuLayout big = ComputeMenuLayout(ImVec2(1920.0f, 1080.0f));
-        CHECK(ImAbs(big.menuW - 1920.0f * 0.92f) < 0.05f &&
-              ImAbs(big.menuH - 1080.0f * 0.92f) < 0.05f,
-              "1080p gets the full 92% of the display");
+        CHECK(ImAbs(big.menuW - 1920.0f * 0.50f) < 0.05f &&
+              ImAbs(big.menuH - 1080.0f * 0.50f) < 0.05f,
+              "1080p gets exactly half the display on each axis");
+        CHECK(ImAbs(kMenuDisplayFraction - 0.50f) < 0.0001f,
+              "the display fraction is the 50% the report asked for, not 92%");
         const MenuLayout small = ComputeMenuLayout(ImVec2(640.0f, 480.0f));
         CHECK(small.menuW < big.menuW && small.menuH < big.menuH,
               "... and a small surface gets a smaller window");
-        // 92% of a 300 px surface would be under the floor, and the floor is
+        // Half of a 300 px surface would be under the floor, and the floor is
         // itself clamped by the margin: the window fills the surface instead of
         // hanging off it.
         const MenuLayout floored = ComputeMenuLayout(ImVec2(300.0f, 260.0f));

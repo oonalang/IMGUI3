@@ -1,6 +1,5 @@
 #pragma once
 
-// ============================================================================
 //  ReportBlock.h  -  "Block Report Evidence": YOUR client never uploads the
 //  report / evidence payload when someone reports you.
 //
@@ -43,7 +42,6 @@
 //  structs (Hacks/Hacks.h -> Feature/Feature.h -> Init_Hacks.h), the same
 //  contract Feats.h has. It includes Init_Hacks.h so a test TU can pull just
 //  this file after the structs.
-// ============================================================================
 
 #include "Hacks/Feature/Init_Hacks.h"
 

@@ -358,7 +358,6 @@ int main()
               "M6 with no original installed the pass-through answers false, it does not dereference null");
     }
 
-    // ==== Layer 2: the client-side DATA writes ==============================
     // These three hooks do not answer a question, they rewrite the client's own
     // objects (dump field layout) exactly the way the Skin tab writes config rows
     // when it applies a mythic - so the lock disappears without any of the four

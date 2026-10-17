@@ -18,7 +18,6 @@
 #include "System/UI/LoadingAnimation.h"
 #include "System/UI/Logo.h"
 #include "System/UI/FloatingInfo.h"
-#include "System/Texture/main.h"
 #include "IMAGE/astral.h"
 
 #include "AstralPrtctn/StrEnc.h"
@@ -33,5 +32,6 @@
 
 #include "Fonts/Iconcpp.h"
 #include "Fonts/fonts.h"
-#include "Fonts/SPECIAL.h"
-#include "Fonts/poppins.h"
+// Neverlose/HexSync (IMGUI5) UI faces: SSTMedium for body text, SSTBold for
+// titles and bold labels (subset, see the header). Replaces Poppins.
+#include "Fonts/nl_fonts.h"

@@ -4,6 +4,7 @@
 #include "Includes/Utils.h"
 #include "ImGui/Call_ImGui.h"
 #include "ImGui/menu_layout.h"
+#include "ImGui/nl_style.h"
 #include "IL2CppSDKGenerator/BasicStructs/Call_BasicStructs.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Call_IL2Cpp.h"
 #include "Hacks/Hacks.h"
@@ -37,7 +38,13 @@
 // NoSprintFireDelayActive() so that each dump address is hooked exactly once.
 #include "Hacks/Feature/NewFeatures.h"
 #include "Hacks/Feature/Crosshair.h"
+// Crash breadcrumb: the triggerbot's live state, written from a signal handler
+// so a native crash in the game process leaves a name behind.
+#include "Hacks/Feature/CrashBreadcrumb.h"
 #include "MainFeatureIncludes.h"
+// Apply Skin On Equip: takes the id the equip gates recorded and puts that skin
+// on the gun locally (Skin/AutoEquipSkin.h).
+#include "Skin/AutoEquipSkin.h"
 
 #include <jni.h>
 #include <android/log.h>
@@ -878,52 +885,12 @@ namespace font {
     ImFont* icomoon_logo = nullptr;
     ImFont* inter_semibold = nullptr;
     ImFont* icomoon_page = nullptr;
-    ImFont* esp_font = nullptr;
+    ImFont* icon_notify = nullptr;
     ImFont* regular_m = nullptr;
     ImFont* regular_l = nullptr;
-    ImFont* s_inter_semibold = nullptr;
-    ImFont* bold_font = nullptr;
     ImFont* inter_medium = nullptr;
-}
-
-// Display density of the game's own window, read once before the font atlas
-// is built. Pure field reads through the ActivityThread application context -
-// no view access, so it is safe from the render thread.
-static float QueryDisplayDensity()
-{
-    if (jvm == nullptr) return 2.0f;
-    JNIEnv *env = nullptr;
-    if (jvm->AttachCurrentThread(&env, nullptr) != JNI_OK || env == nullptr) return 2.0f;
-
-    float density = 2.0f;
-    jclass atCls = env->FindClass("android/app/ActivityThread");
-    jobject at = nullptr;
-    if (atCls != nullptr) {
-        jfieldID cur = env->GetStaticFieldID(atCls, "sCurrentActivityThread", "Landroid/app/ActivityThread;");
-        if (cur != nullptr) at = env->GetStaticObjectField(atCls, cur);
-    }
-    if (at != nullptr && !env->ExceptionCheck()) {
-        jclass atClass = env->GetObjectClass(at);
-        jmethodID getRes = atClass ? env->GetMethodID(atClass, "getResources", "()Landroid/content/res/Resources;") : nullptr;
-        jobject res = getRes ? env->CallObjectMethod(at, getRes) : nullptr;
-        if (res != nullptr && !env->ExceptionCheck()) {
-            jclass resCls = env->GetObjectClass(res);
-            jmethodID getDm = resCls ? env->GetMethodID(resCls, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;") : nullptr;
-            jobject dm = getDm ? env->CallObjectMethod(res, getDm) : nullptr;
-            if (dm != nullptr && !env->ExceptionCheck()) {
-                jclass dmCls = env->GetObjectClass(dm);
-                jfieldID dField = dmCls ? env->GetFieldID(dmCls, "density", "F") : nullptr;
-                if (dField != nullptr) density = env->GetFloatField(dm, dField);
-            }
-            if (env->ExceptionCheck()) { env->ExceptionClear(); density = 2.0f; }
-        } else if (env->ExceptionCheck()) {
-            env->ExceptionClear();
-        }
-    } else if (env->ExceptionCheck()) {
-        env->ExceptionClear();
-    }
-    if (!(density > 0.1f) || density > 6.0f) density = 2.0f;
-    return density;
+    ImFont* bold_font = nullptr;
+    ImFont* esp_font = nullptr;
 }
 
 static int g_GlWidth, g_GlHeight;
@@ -950,7 +917,6 @@ float AVIWA = 119.167f;
 bool wallh;
 bool active = false;
 float AimSmooth = 1.0f;
-bool showKeyboard = false;
 static bool g_RuntimeClearDisplayInit = false;
 
 struct ClearDisplayDefaultInit {
@@ -978,7 +944,7 @@ static float tabAdd = 0.0f;
 static int page = 1;
 static int activeTab = 1;
 bool g_LogoPreviewMode = false;
-static bool isLogin = false;
+static bool isLogin = true;
 static std::string err;
 static std::string storedKey = "";
 static char s[256];
@@ -1348,36 +1314,35 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         if (!g_imguiBackendReady) { ImGui::DestroyContext(); return old_eglSwapBuffers(dpy, surface); }
         g_imguiDisplay = dpy; g_imguiContext = currentContext; g_imguiSurface = surface;
 
-        // One ui_scale for every font size in the menu: the display's own
-        // density against the 2.75 dppx the layout was authored at, clamped so
-        // a 560 dpi panel cannot grow the menu past the screen and a low-dpi
-        // surface cannot shrink the text into noise.
-        c::ui_scale = ImClamp(QueryDisplayDensity() / 2.75f, 0.8f, 2.5f);
-        const float fs = c::ui_scale;
+        char lcdDensity[PROP_VALUE_MAX] = {};
+        if (__system_property_get("ro.sf.lcd_density", lcdDensity) > 0)
+            font::SetDensity((float)atoi(lcdDensity) / 160.0f);
+        const float uiScale = font::UiScale();
+        const ImWchar* textRanges = io.Fonts->GetGlyphRangesCyrillic();
 
-        ImFontConfig ilc; ilc.MergeMode = false; ilc.PixelSnapH = true; ilc.FontDataOwnedByAtlas = false;
-        font::icomoon_logo = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 32.f * fs, &ilc);
+        ImFontConfig textCfg; textCfg.PixelSnapH = true; textCfg.FontDataOwnedByAtlas = false;
+        textCfg.OversampleH = 2; textCfg.OversampleV = 2;
+        // Neverlose/HexSync faces (Fonts/nl_fonts.h, from oonalang/IMGUI5). The
+        // font:: slot names are unchanged on purpose: every tab, ESP label and
+        // widget already draws through them, so the reskin needs no feature edit.
+        font::regular_m = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_medium, nl_sst_medium_size, 17.0f * uiScale, &textCfg, textRanges);
+        font::regular_l = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_medium, nl_sst_medium_size, 20.0f * uiScale, &textCfg, textRanges);
+        font::inter_medium = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_medium, nl_sst_medium_size, 15.0f * uiScale, &textCfg, textRanges);
+        font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_bold, nl_sst_bold_size, 16.0f * uiScale, &textCfg, textRanges);
+        font::bold_font = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_bold, nl_sst_bold_size, 25.0f * uiScale, &textCfg, textRanges);
 
-        ImFontConfig ic; ic.MergeMode = false; ic.PixelSnapH = true; ic.FontDataOwnedByAtlas = false;
-        font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsSemiBold, sizeof(PoppinsSemiBold), 17.f * fs, &ic, io.Fonts->GetGlyphRangesCyrillic());
-
-        ImFontConfig pc; pc.MergeMode = false; pc.PixelSnapH = true; pc.FontDataOwnedByAtlas = false;
-        font::icomoon_page = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 18.f * fs, &pc);
-
-        ImFontConfig pmc; pmc.MergeMode = false; pmc.PixelSnapH = true; pmc.FontDataOwnedByAtlas = false;
-        font::regular_m = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsMedium, sizeof(PoppinsMedium), 21.f * fs, &pmc, io.Fonts->GetGlyphRangesCyrillic());
-        font::regular_l = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsMedium, sizeof(PoppinsMedium), 41.f * fs, &pmc, io.Fonts->GetGlyphRangesCyrillic());
-        font::s_inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsSemiBold, sizeof(PoppinsSemiBold), 17.f * fs, &pmc, io.Fonts->GetGlyphRangesCyrillic());
-        font::bold_font = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsBold, sizeof(PoppinsBold), 23.f * fs, &pmc, io.Fonts->GetGlyphRangesCyrillic());
-        font::inter_medium = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsMedium, sizeof(PoppinsMedium), 17.f * fs, &pmc, io.Fonts->GetGlyphRangesCyrillic());
-        font::esp_font = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsRegular, sizeof(PoppinsRegular), 17.f * fs, &pmc, io.Fonts->GetGlyphRangesCyrillic());
+        ImFontConfig iconCfg; iconCfg.PixelSnapH = true; iconCfg.FontDataOwnedByAtlas = false;
+        font::icomoon_page = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 18.0f * uiScale, &iconCfg);
+        font::icomoon_logo = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 20.0f * uiScale, &iconCfg);
+        font::icon_notify = io.Fonts->AddFontFromMemoryTTF((void*)icon_notify, sizeof(icon_notify), 16.0f * uiScale, &iconCfg);
 
         static const ImWchar icons_ranges[] = { 0xe000, 0xf8ff, 0 };
         ImFontConfig iconsCfg; iconsCfg.MergeMode = true; iconsCfg.PixelSnapH = true;
         iconsCfg.OversampleH = 2.5f; iconsCfg.OversampleV = 2.5f; iconsCfg.FontDataOwnedByAtlas = false;
-        F107 = io.Fonts->AddFontFromMemoryCompressedTTF((void*)font_awesome_data1, (int)font_awesome_size1, 25.f * fs, &iconsCfg, icons_ranges);
-        F50 = io.Fonts->AddFontFromMemoryTTF((void *)F50_data, F50_size, 30.f * fs, NULL, io.Fonts->GetGlyphRangesDefault());
-        if (!F107) F107 = font::inter_semibold;
+        F107 = io.Fonts->AddFontFromMemoryCompressedTTF((void*)font_awesome_data1, (int)font_awesome_size1, 25.0f * uiScale, &iconsCfg, icons_ranges);
+        F50 = font::bold_font;
+        font::esp_font = font::inter_semibold;
+        if (!F107) F107 = font::icomoon_page;
         if (font::inter_semibold) io.FontDefault = font::inter_semibold;
         io.Fonts->Build();
         ImGui_ImplOpenGL3_CreateFontsTexture();
@@ -1433,6 +1398,10 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     // trusts) the getter hooks. Runs once per rendered frame and only writes
     // when the value actually differs.
     KillDecoration_ApplyLocalInventoryInfo();
+    // Same rule, different feature: the equip gates only record the item id, so
+    // the config-table write behind "apply the skin I just equipped" happens
+    // here, once per frame, never inside a hooked native call.
+    AutoEquipSkin_Tick(Config.ExtraMenu.AutoSkin);
     floating_info::Render(draw, screenWidth, screenHeight);
 
     if (windowCollapsed) {
@@ -1534,8 +1503,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             ImGui::SetNextWindowSize({WW, WH}, ImGuiCond_Always);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 20.0f);
-            ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(20, 10, 35, 240));
-            ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(160, 80, 255, 180));
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(22, 22, 22, 244));
+            ImGui::PushStyleColor(ImGuiCol_Border, main_runtime_theme::GetAccentU32(0.75f));
 
             if (ImGui::Begin("##premium_login", nullptr,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
@@ -1547,19 +1516,19 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 ImFont* titleFont = F50 ? F50 : ImGui::GetFont();
                 ImFont* bodyFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
 
-                dl->AddRectFilled(wp, {wp.x + WW, wp.y + WH}, IM_COL32(20, 10, 35, 240), 20.0f);
-                dl->AddRect(wp, {wp.x + WW, wp.y + WH}, IM_COL32(160, 80, 255, 100), 20.0f, 0, 1.5f);
-                dl->AddRect({wp.x + 6, wp.y + 6}, {wp.x + WW - 6, wp.y + WH - 6}, IM_COL32(160, 80, 255, 30), 16.0f, 0, 1.0f);
+                dl->AddRectFilled(wp, {wp.x + WW, wp.y + WH}, IM_COL32(22, 22, 22, 244), 20.0f);
+                dl->AddRect(wp, {wp.x + WW, wp.y + WH}, main_runtime_theme::GetAccentU32(0.45f), 20.0f, 0, 1.5f);
+                dl->AddRect({wp.x + 6, wp.y + 6}, {wp.x + WW - 6, wp.y + WH - 6}, main_runtime_theme::GetAccentU32(0.14f), 16.0f, 0, 1.0f);
 
                 const char* brand = "ETHNIR NOIR";
                 ImVec2 brandSize = titleFont->CalcTextSizeA(32.0f, FLT_MAX, 0.0f, brand);
-                dl->AddText(titleFont, 32.0f, {wp.x + (WW - brandSize.x) * 0.5f, wp.y + 40.0f}, IM_COL32(160, 80, 255, 255), brand);
+                dl->AddText(titleFont, 32.0f, {wp.x + (WW - brandSize.x) * 0.5f, wp.y + 40.0f}, main_runtime_theme::GetAccentU32(1.0f), brand);
 
                 const char* sub = "AUTHENTICATION";
                 ImVec2 subSize = bodyFont->CalcTextSizeA(12.0f, FLT_MAX, 0.0f, sub);
                 dl->AddText(bodyFont, 12.0f, {wp.x + (WW - subSize.x) * 0.5f, wp.y + 88.0f}, IM_COL32(180, 180, 200, 200), sub);
 
-                dl->AddLine({wp.x + 60, wp.y + 110}, {wp.x + WW - 60, wp.y + 110}, IM_COL32(160, 80, 255, 60), 1.0f);
+                dl->AddLine({wp.x + 60, wp.y + 110}, {wp.x + WW - 60, wp.y + 110}, main_runtime_theme::GetAccentU32(0.28f), 1.0f);
 
                 const char* prompt = "Enter your license key to continue";
                 ImVec2 promptSize = bodyFont->CalcTextSizeA(10.5f, FLT_MAX, 0.0f, prompt);
@@ -1570,32 +1539,13 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 const float inputY = wp.y + 156.0f;
                 const float inputH = 44.0f;
 
-                dl->AddRectFilled({inputX, inputY}, {inputX + inputW, inputY + inputH}, IM_COL32(30, 15, 50, 220), 10.0f);
-                static bool keyFocused = false;
-                ImU32 bc = keyFocused ? IM_COL32(160, 80, 255, 255) : IM_COL32(160, 80, 255, 80);
-                dl->AddRect({inputX, inputY}, {inputX + inputW, inputY + inputH}, bc, 10.0f, 0, keyFocused ? 2.0f : 1.0f);
-
-                ImGui::SetCursorScreenPos({inputX + 12.0f, inputY + 10.0f});
-                ImGui::PushItemWidth(inputW);
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 220, 240, 255));
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {0, 0});
-                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0));
-                ImGui::PushStyleColor(ImGuiCol_FrameBgActive, IM_COL32(0, 0, 0, 0));
-                ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 0));
-                ImGui::InputText("##license_key", s, sizeof(s), ImGuiInputTextFlags_CharsNoBlank);
-                keyFocused = ImGui::IsItemActive() || ImGui::IsItemHovered();
-                ImGui::PopStyleColor(4);
-                ImGui::PopStyleVar(2);
-                ImGui::PopItemWidth();
+                ImGui::SetCursorScreenPos({inputX, inputY});
+                custom::InputTextWithHint("##license_key", "License key", s, sizeof(s),
+                                          ImGuiInputTextFlags_CharsNoBlank, {inputW, inputH});
 
                 float btnY = inputY + inputH + 16.0f;
                 ImGui::SetCursorScreenPos({inputX, btnY});
-                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(160, 80, 255, 220));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(190, 110, 255, 255));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(120, 50, 200, 255));
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(15, 12, 25, 255));
-                if (ImGui::Button("AUTHENTICATE", {inputW, 44.0f})) {
+                if (custom::Button("AUTHENTICATE", {inputW, 44.0f})) {
                     err = Login(s);
                     if (err == "OK") {
                         strncpy(logintext, s, sizeof(logintext) - 1);
@@ -1607,20 +1557,14 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         
                     }
                 }
-                ImGui::PopStyleColor(4);
 
                 float pasteBtnY = btnY + 44.0f + 8.0f;
                 ImGui::SetCursorScreenPos({inputX, pasteBtnY});
-                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(160, 80, 255, 40));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(160, 80, 255, 80));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(160, 80, 255, 120));
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(160, 80, 255, 220));
-                if (ImGui::Button("PASTE FROM CLIPBOARD", {inputW, 36.0f})) {
+                if (custom::Button("PASTE FROM CLIPBOARD", {inputW, 36.0f})) {
                     std::string clip = getClipboard();
                     strncpy(s, clip.c_str(), sizeof(s) - 1);
                     s[sizeof(s) - 1] = '\0';
                 }
-                ImGui::PopStyleColor(4);
 
                 if (!err.empty() && err != "OK") {
                     float errY = pasteBtnY + 36.0f + 8.0f;
@@ -1653,9 +1597,10 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             float openAlpha = 0.2f + 0.8f * openEase;
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, openAlpha);
 
-            // Position and size both come from the display, so the window fits
-            // whatever the render surface is (ImGui/menu_layout.h).
-            const MenuLayout menuLayout = ComputeMenuLayout(ioDisplaySize);
+            ImVec2 layoutDisplay = ioDisplaySize;
+            if (ImGui::GetIO().WantTextInput)
+                layoutDisplay.y = ImMax(240.0f, layoutDisplay.y - lanx_ime::PanelHeight(ioDisplaySize));
+            const MenuLayout menuLayout = ComputeMenuLayout(layoutDisplay);
             const float menuW = menuLayout.menuW;
             const float menuH = menuLayout.menuH;
             ImVec2 menuPos = menuLayout.menuPos;
@@ -1689,18 +1634,16 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     const ImVec2 runtimeWindowPos = ImGui::GetWindowPos();
                     ImDrawList *runtimeDrawList = ImGui::GetWindowDrawList();
 
-                    // Flat body panel. The wobbling 22px glow that used to outline
-                    // this window is gone, so the window draws one plain rounded
-                    // rectangle with the same 1px accent border the header uses -
-                    // no wobble, no halo, no animation.
+                    // One flat rounded panel with the header's 1px accent border.
                     {
                         const ImVec2 bodyMin = runtimeWindowPos;
                         const ImVec2 bodyMax(runtimeWindowPos.x + runtimeWindowSize.x,
                                              runtimeWindowPos.y + runtimeWindowSize.y);
-                        runtimeDrawList->AddRectFilled(bodyMin, bodyMax, IM_COL32(7, 10, 20, 236), 16.0f);
-                        runtimeDrawList->AddRect(bodyMin, bodyMax,
-                                                 main_runtime_theme::GetAccentTintU32(0.70f, 0.70f),
-                                                 16.0f, 0, 1.0f);
+                        // IMGUI5 shell: a near-black plate with one hairline
+                        // border. The accent is the user's hue, but it lives in
+                        // the controls, not in a glowing frame.
+                        runtimeDrawList->AddRectFilled(bodyMin, bodyMax, ImGui::GetColorU32(nl::Shell()), 14.0f);
+                        runtimeDrawList->AddRect(bodyMin, bodyMax, ImGui::GetColorU32(nl::CardBorder()), 14.0f, 0, 1.0f);
                     }
 
                     const float outerPad = 14.0f;
@@ -1729,12 +1672,13 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     runtimeState.page = ImClamp(runtimeState.page, 1, 6);
                     runtimeState.activeTab = ImClamp(runtimeState.activeTab, 1, 6);
 
-                    runtimeDrawList->AddRectFilled(headerMin, headerMax, IM_COL32(7, 10, 20, 236), 11.0f);
-                    runtimeDrawList->AddRect(headerMin, headerMax, main_runtime_theme::GetAccentTintU32(0.70f, 0.70f), 11.0f, 0, 1.0f);
+                    // IMGUI5 header: the mark and the title sit straight on the
+                    // panel, closed off by a hairline instead of a boxed card.
+                    runtimeDrawList->AddLine(ImVec2(headerMin.x, headerMax.y - 1.0f),
+                                             ImVec2(headerMax.x, headerMax.y - 1.0f),
+                                             ImGui::GetColorU32(nl::RowDivider()));
 
                     const ImVec2 flameCenter(headerMin.x + 28.0f, headerMin.y + headerHeight * 0.5f);
-                    // No glow halo behind the icon any more - the accent circle used
-                    // to be a soft light spill ("neon"); the icon itself stays.
                     {
                         ImFont *iconFont = custom::shell::GetIconFont();
                         const char *logoIcon = ICON_FA_FIRE;
@@ -1757,8 +1701,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     const ImVec2 subtitlePos(headerMin.x + 57.0f, headerMin.y + 38.0f);
                     runtimeDrawList->AddText(runtimeTitleFont, 10.0f, subtitlePos, IM_COL32(135, 143, 165, 220), "PLAY LIKE A PLAYER  |  NOT A CHEATER");
 
-                    const ImVec2 trackMin(headerMin.x + headerMainWidth * 0.58f, headerMin.y + 28.0f);
-                    const ImVec2 trackMax(headerMax.x - 18.0f, trackMin.y + 8.0f);
+                    const ImVec2 trackMin(headerMin.x + headerMainWidth * 0.58f, headerMin.y + 31.0f);
+                    const ImVec2 trackMax(headerMax.x - 18.0f, trackMin.y + 3.0f);
                     ImGui::SetCursorScreenPos(ImVec2(trackMin.x - 4.0f, trackMin.y - 7.0f));
                     ImGui::InvisibleButton("##main_runtime_menu_color_slider_new", ImVec2((trackMax.x - trackMin.x) + 8.0f, 22.0f));
                     if (ImGui::IsItemActive()) {
@@ -1782,8 +1726,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                             ImGui::ColorConvertFloat4ToU32(ImVec4(r0,g0,b0,1)));
                     }
                     const float hueX = trackMin.x + ImClamp(main_runtime_theme::g_menuHue, 0.0f, 1.0f) * (trackMax.x - trackMin.x);
-                    runtimeDrawList->AddCircleFilled(ImVec2(hueX, trackMin.y + 4.0f), 5.0f, IM_COL32(245,245,250,255), 20);
-                    runtimeDrawList->AddCircle(ImVec2(hueX, trackMin.y + 4.0f), 6.5f, main_runtime_theme::GetAccentU32(), 20, 1.5f);
+                    runtimeDrawList->AddCircleFilled(ImVec2(hueX, trackMin.y + 1.5f), 5.5f, IM_COL32(247,248,252,255), 20);
 
                     if (custom::shell::DrawCloseCard(closeCardMin, closeCardSize)) {
                         runtime_preview_menu::CollapseMenu(runtimeState);
@@ -1792,112 +1735,70 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     runtimeState.tabAlpha = ImClamp(runtimeState.tabAlpha + (4.0f * ImGui::GetIO().DeltaTime * (runtimeState.page == runtimeState.activeTab ? 1.0f : -1.0f)), 0.0f, 1.0f);
                     if (runtimeState.tabAlpha == 0.0f && runtimeState.tabAdd == 0.0f) runtimeState.activeTab = runtimeState.page;
 
-                    runtimeDrawList->AddRectFilled(hostMin, hostMax, ImGui::GetColorU32(main_runtime_theme::GetSidebarShellBackgroundColor()), 11.0f);
+                    runtimeDrawList->AddRectFilled(hostMin, hostMax, ImGui::GetColorU32(nl::Rgb(13, 15, 22, 225)), 14.0f);
+                    runtimeDrawList->AddRect(hostMin, hostMax, ImGui::GetColorU32(nl::CardBorder()), 14.0f, 0, 1.0f);
 
-                    // ---- Sidebar: the tab switcher -------------------------
-                    // Tabs used to be picked from a floating radial wheel beside
-                    // the window. They live in a sidebar inside the window now,
-                    // with a hamburger at the top of the rail that folds it
-                    // away. The sizes are pure functions of the host area
-                    // (ImGui/menu_layout.h), so the rail, the panel and the tab
-                    // content can never overlap whatever the surface is.
-                    static bool  g_sidebarOpen = true;
-                    static float g_sidebarAnim = 1.0f;
-                    const float  sidebarTarget = g_sidebarOpen ? 1.0f : 0.0f;
-                    g_sidebarAnim += (sidebarTarget - g_sidebarAnim) *
-                                     ImMin(1.0f, ImGui::GetIO().DeltaTime * 12.0f);
-                    if (g_sidebarAnim > 0.998f)      g_sidebarAnim = 1.0f;
-                    else if (g_sidebarAnim < 0.002f) g_sidebarAnim = 0.0f;
+                    // LANX shell: a horizontal segmented tab strip across the top
+                    // of the panel replaces the left sidebar, so every page gets
+                    // the full width of the window.
+                    const float tabBarH = 36.0f;
+                    const ImVec2 tabBarMin(contentInnerMin.x, contentInnerMin.y);
+                    const ImVec2 tabBarMax(hostMax.x - contentPadding, contentInnerMin.y + tabBarH);
+                    runtimeDrawList->AddRectFilled(tabBarMin, tabBarMax, IM_COL32(11, 13, 20, 225), 9.0f);
+                    runtimeDrawList->AddRect(tabBarMin, tabBarMax, ImGui::GetColorU32(nl::CardBorder()), 9.0f, 0, 1.0f);
 
-                    const ImVec2 hostSize(ImMax(1.0f, hostMax.x - hostMin.x),
-                                          ImMax(1.0f, hostMax.y - hostMin.y));
-                    const SidebarLayout sidebar = ComputeSidebarLayout(hostSize, g_sidebarAnim);
+                    static const char *tabIcons[] = { ICON_FA_HOME, ICON_FA_EYE, ICON_FA_MICROCHIP,
+                                                      ICON_FA_STAR, ICON_FA_SLIDERS_H, ICON_FA_COG };
+                    static const char *tabNames[] = { "HOME", "ESP", "AIM", "SKINS", "MISC", "SETTINGS" };
+                    static const int   tabIds[]   = { 2, 1, 3, 4, 5, 6 };
+                    ImFont *tabIconFont = custom::shell::GetIconFont();
+                    ImFont *tabTextFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
+                    const int   tabCount = 6;
+                    const float tabGap = 5.0f;
+                    const float tabW = ImMax(1.0f, ((tabBarMax.x - tabBarMin.x) - tabGap * (tabCount + 1)) / (float)tabCount);
 
-                    const float  hostInnerH = ImMax(1.0f, (hostMax.y - contentPadding) - contentInnerMin.y);
-                    const ImVec2 railMin(contentInnerMin.x, contentInnerMin.y);
-                    const ImVec2 sidebarMin(railMin.x + sidebar.railW, contentInnerMin.y);
-                    const ImVec2 sidebarMax(sidebarMin.x + sidebar.panelW, contentInnerMin.y + hostInnerH);
-                    const ImVec2 contentMin(sidebarMin.x + sidebar.panelW + sidebar.gap, contentInnerMin.y);
-                    const ImVec2 contentSize(ImMax(1.0f, (hostMax.x - contentPadding) - contentMin.x),
-                                             hostInnerH);
+                    for (int i = 0; i < tabCount; ++i) {
+                        const ImVec2 pMin(tabBarMin.x + tabGap + (tabW + tabGap) * i, tabBarMin.y + 4.0f);
+                        const ImVec2 pMax(pMin.x + tabW, tabBarMax.y - 4.0f);
+                        char tId[40];
+                        snprintf(tId, sizeof(tId), "##lanx_tab_%d", tabIds[i]);
+                        ImGui::SetCursorScreenPos(pMin);
+                        ImGui::InvisibleButton(tId, ImVec2(tabW, pMax.y - pMin.y));
+                        const bool hov = ImGui::IsItemHovered();
+                        const bool act = (runtimeState.page == tabIds[i]);
 
-                    // The rail never goes away, so a folded sidebar can always
-                    // be brought back.
-                    if (custom::shell::DrawSidebarButton("##menu_sidebar_toggle", ICON_FA_BARS,
-                                                         g_sidebarOpen, railMin,
-                                                         ImVec2(sidebar.railW, sidebar.railW)))
-                        g_sidebarOpen = !g_sidebarOpen;
-                    if (sidebar.panelW > 1.0f) {
-                        runtimeDrawList->AddRectFilled(sidebarMin, sidebarMax,
-                            ImGui::GetColorU32(main_runtime_theme::GetActiveTabBackgroundColor()), 9.0f);
-                        runtimeDrawList->AddRect(sidebarMin, sidebarMax,
-                            main_runtime_theme::GetAccentTintU32(0.22f, 0.35f), 9.0f, 0, 1.0f);
-
-                        // Six pages, labelled with what they really draw: the
-                        // tab the wheel called HOME is the switch page (2), and
-                        // the one it called EXTRA is the changelog (5). Same
-                        // order the tab strip on main used, plus the HOME entry
-                        // the user asks for by name.
-                        static const char *sbIcons[] = { ICON_FA_HOME, ICON_FA_EYE, ICON_FA_MICROCHIP,
-                                                         ICON_FA_STAR, ICON_FA_SLIDERS_H, ICON_FA_COG };
-                        static const char *sbNames[] = { "HOME", "ESP", "AIM", "SKINS", "MISC", "SETTINGS" };
-                        static const int   sbIds[]   = { 2, 1, 3, 4, 5, 6 };
-
-                        ImFont *sbIconFont = custom::shell::GetIconFont();
-                        ImFont *sbTextFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
-
-                        // Clipped to the panel: while the fold animates the rows
-                        // slide away, and they must not paint over the content.
-                        ImGui::PushClipRect(sidebarMin, sidebarMax, true);
-                        float rowY = sidebarMin.y + sidebar.topPad;
-                        for (int i = 0; i < sidebar.rows; ++i) {
-                            const ImVec2 rMin(sidebarMin.x + sidebar.sidePad, rowY);
-                            const ImVec2 rSize(ImMax(1.0f, sidebar.panelW - sidebar.sidePad * 2.0f), sidebar.rowH);
-                            const ImVec2 rMax(rMin.x + rSize.x, rMin.y + rSize.y);
-
-                            ImGui::SetCursorScreenPos(rMin);
-                            char rId[48];
-                            snprintf(rId, sizeof(rId), "##menu_sidebar_%d", sbIds[i]);
-                            ImGui::InvisibleButton(rId, rSize);
-                            const bool hov = ImGui::IsItemHovered();
-                            const bool act = (runtimeState.page == sbIds[i]);
-
-                            if (act || hov) {
-                                runtimeDrawList->AddRectFilled(rMin, rMax,
-                                    act ? ImGui::GetColorU32(main_runtime_theme::GetActiveTabBackgroundColor())
-                                        : IM_COL32(18, 20, 29, 150), 8.0f);
-                            }
-                            if (act) {
-                                runtimeDrawList->AddRectFilled(rMin, ImVec2(rMin.x + 3.0f, rMax.y),
-                                    main_runtime_theme::GetAccentU32(), 2.0f);
-                            }
-
-                            if (sbIconFont) {
-                                runtimeDrawList->AddText(sbIconFont, 16.0f,
-                                    ImVec2(rMin.x + 10.0f, rMin.y + (rSize.y - 16.0f) * 0.5f),
-                                    act ? main_runtime_theme::GetAccentTintU32(0.98f, 1.0f)
-                                        : IM_COL32(154, 160, 182, hov ? 245 : 220),
-                                    sbIcons[i]);
-                            }
-
-                            if (rMax.x - 6.0f > rMin.x + 34.0f) {
-                                runtimeDrawList->AddText(sbTextFont, 12.5f,
-                                    ImVec2(rMin.x + 34.0f, rMin.y + (rSize.y - 12.5f) * 0.5f),
-                                    act ? IM_COL32(245, 245, 250, 255)
-                                        : IM_COL32(154, 160, 182, hov ? 245 : 205),
-                                    sbNames[i]);
-                            }
-
-                            if (ImGui::IsItemClicked()) {
-                                runtimeState.page = sbIds[i];
-                                runtimeState.activeTab = sbIds[i];
-                                g_LogoPreviewMode = false;
-                            }
-                            rowY += sidebar.rowH + sidebar.rowGap;
+                        // IMGUI5 nav row: a flat filled pill. The accent lives
+                        // in the icon, the label just brightens. No underline.
+                        if (act || hov) {
+                            runtimeDrawList->AddRectFilled(pMin, pMax,
+                                act ? ImGui::GetColorU32(nl::NavHover())
+                                    : ImGui::GetColorU32(nl::Rgb(26, 29, 39, 190)), 6.0f);
                         }
-                        ImGui::PopClipRect();
+
+                        const ImU32 ink = act ? IM_COL32(245, 245, 250, 255)
+                                              : IM_COL32(150, 157, 178, hov ? 245 : 205);
+                        if (tabIconFont) {
+                            const ImVec2 is = custom::shell::MeasureText(tabIconFont, 13.0f, tabIcons[i]);
+                            runtimeDrawList->AddText(tabIconFont, 13.0f,
+                                ImVec2(ImFloor(pMin.x + 9.0f), ImFloor((pMin.y + pMax.y - is.y) * 0.5f)),
+                                act ? main_runtime_theme::GetAccentTintU32(0.98f, 1.0f) : ink, tabIcons[i]);
+                        }
+                        if (tabTextFont && pMax.x - pMin.x > 46.0f) {
+                            const ImVec2 ts = custom::shell::MeasureText(tabTextFont, 11.5f, tabNames[i]);
+                            runtimeDrawList->AddText(tabTextFont, 11.5f,
+                                ImVec2(ImFloor(pMin.x + 26.0f), ImFloor((pMin.y + pMax.y - ts.y) * 0.5f)), ink, tabNames[i]);
+                        }
+
+                        if (ImGui::IsItemClicked()) {
+                            runtimeState.page = tabIds[i];
+                            runtimeState.activeTab = tabIds[i];
+                            g_LogoPreviewMode = false;
+                        }
                     }
 
+                    const ImVec2 contentMin(tabBarMin.x, tabBarMax.y + 8.0f);
+                    const ImVec2 contentSize(ImMax(1.0f, (hostMax.x - contentPadding) - contentMin.x),
+                                             ImMax(1.0f, (hostMax.y - contentPadding) - contentMin.y));
                     ImGui::SetCursorScreenPos(contentMin);
                     ImGui::BeginChild("##RuntimeContentHost", contentSize, false, ImGuiWindowFlags_NoBackground);
                     {
@@ -1927,7 +1828,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                 custom::Checkbox("Fast Scope", &Config.ExtraMenu.Scope);
                                 custom::Checkbox("Quick Switch", &Config.ExtraMenu.Switch);
                                 custom::Checkbox("Weapon Kinetic", &Config.ExtraMenu.Kinetic);
-                                // === NEW FEATURES: Home ===
                                 // No Slide Fatigue: remove the slide limit/fatigue system
                                 // (SlideTackleComponent::get_UseSlideTackleLimit -> false,
                                 // local pawn only). Unlimited slides, no idle-time decay.
@@ -1940,15 +1840,12 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                 custom::Checkbox("No Slide Fatigue", &Config.NewFeaturesMenu.NoSlideFatigue);
                                 custom::Separator();
                                 custom::Separator();
-                                // === NEW FEATURES: Misc ===
                                 custom::Checkbox("No Crouch", &Config.NewFeaturesMenu.NoCrouch);
                                 custom::Checkbox("No Hit Flinch", &Config.NewFeaturesMenu.NoHitFlinch);
-                                // === NEW FEATURES: Sniper ===
                                 // No Drift = breathing sway only (m_AimmingBreatheCountDown @0x774)
                                 // NOTE: the old broken disable came from Stable Scope's
                                 // always-zero breathe hook (removed with that feature).
                                 custom::Checkbox("No Drift (Hardscope)", &Config.NewFeaturesMenu.NoDrift);
-                                // === NEW FEATURES: Firing timing ===
                                 // (No Fire Delay and Stable Scope removed per request.)
                                 custom::Checkbox("No Sprint Fire Delay", &Config.NewFeaturesMenu.NoSprintToFireDelay);
                                 if (Config.NewFeaturesMenu.NoSprintToFireDelay) {
@@ -1966,7 +1863,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                 }
                                 custom::Checkbox("No Hipfire Delay", &Config.NewFeaturesMenu.NoHipfireDelay);
                                 custom::Separator();
-                                // Dev / Debug options
                                 custom::Separator();
                                 custom::Separator();
 
@@ -2158,7 +2054,6 @@ if (runtimeState.activeTab == 4) {
                                     // obeys is above (Mode) plus StartFire itself - and
                                     // its crosshair zone, which is the dot below.
                                 }
-                                // ---- The dot crosshair (the trigger's crosshair) --------
                                 // There is ONE crosshair now: this dot. The triggerbot
                                 // aims through its pixel and its zone IS the dot's own
                                 // radius, always - there is no separate trigger crosshair
@@ -2282,8 +2177,14 @@ if (runtimeState.activeTab == 4) {
                                     // weapon (its get_IsFiring still true). A number
                                     // stuck at 0 with Fire above it means the
                                     // getter did not resolve and the guard is off.
-                                    ImGui::TextColored(dim, "SameFrame=%d",
-                                        td.sameFrameSkips);
+                                    // Kind guard: native calls refused because the
+                                    // slot we held is still a live object but no
+                                    // longer a Weapon (recycled after a death,
+                                    // weapon swap or round end). Non-zero after a
+                                    // long session is the "15 s then it crashes"
+                                    // crash class being refused, not a bug.
+                                    ImGui::TextColored(dim, "SameFrame=%d KindSkips=%d",
+                                        td.sameFrameSkips, td.kindSkips);
                                     // Which path accepted (or would accept) the shot, and
                                     // what the visibility ray actually hit. "Rays=id/blk"
                                     // is the anti-wall gate: id = the nearest thing on the
@@ -2525,6 +2426,7 @@ if (runtimeState.activeTab == 4) {
             ImGui::PopStyleVar();
         }
 
+        lanx_ime::Render();
         ImGui::PopStyleVar();
     }
 
@@ -2658,7 +2560,6 @@ void Init_Thread() {
     Patches.NoSlideFatiguePve = MemoryPatch::createWithHex("libunity.so", 0x651274C,
         "00 00 80 D2 C0 03 5F D6");
 
-    // ------------------------------------------------------------------
     //  8-byte leaf getters: PATCHED, never hooked.
     //
     //  GR .57 dump sizes (jeudhehs/dump, "dump (GR .57).cs"); every one of
@@ -2778,6 +2679,9 @@ __attribute__((constructor))
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     jvm = vm; VM = vm;
     ZEL_SetVM(vm);
+    // Before any thread or hook exists: a crash from here on leaves one line of
+    // triggerbot state in <files>/crash_breadcrumb.txt (see CrashBreadcrumb.h).
+    CrashBreadcrumb_Install();
     std::thread(Init_Thread).detach();
     std::thread(Init_Thread2).detach();
     std::thread(Skins_Thread).detach();
