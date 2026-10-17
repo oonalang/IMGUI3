@@ -75,7 +75,21 @@ LOCAL_ARM_MODE         := arm
 LOCAL_LDLIBS           := -llog -landroid -lEGL -lGLESv3 -lGLESv2 -lGLESv1_CM -lz
 
 LOCAL_C_INCLUDES       += $(LOCAL_PATH)
-FILE_LIST              := $(wildcard $(LOCAL_PATH)/ImGui/*.c*)
+# The menu is the LANX one: every control it draws comes from
+# ImGui/custom_widgets.cpp, so that TU must be part of this library. The ImGui
+# sources are listed explicitly instead of globbed - a wildcard that silently
+# drops a file produces an "undefined reference to custom::..." at link time,
+# which is exactly how the missing textbox implementation was reported.
+FILE_LIST              := \
+    ImGui/ImguiPP.cpp \
+    ImGui/custom_widgets.cpp \
+    ImGui/imgui.cpp \
+    ImGui/imgui_draw.cpp \
+    ImGui/imgui_impl_android.cpp \
+    ImGui/imgui_impl_opengl3.cpp \
+    ImGui/imgui_tables.cpp \
+    ImGui/imgui_widgets.cpp \
+    ImGui/stb_image.cpp
 FILE_LIST              += $(wildcard $(LOCAL_PATH)/IL2CppSDKGenerator/IL2Cpp/*.c*)
 FILE_LIST              += $(wildcard $(LOCAL_PATH)/IL2CppSDKGenerator/KittyMemory/*.c*)
 FILE_LIST              += $(wildcard $(LOCAL_PATH)/System/Texture/*.c*)
