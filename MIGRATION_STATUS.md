@@ -127,3 +127,37 @@ commit messages.
 
 Legend: DONE = verified by grep and by a build; NOT DONE = at least one hit
 above is still in the tree.
+
+## Final verification (re-run after all phases)
+
+All greps below are clean in project code (`Main.cpp`, `System/`, the project's
+own `ImGui` additions). Third-party ImGui keeps its own guarded `_WIN32` block.
+
+| Check | Command | Result |
+|---|---|---|
+| Stock widgets in menu code | `grep -rnE "\bImGui::(Checkbox\|SliderFloat2?\|SliderInt\|Combo\|ColorEdit4\|ColorPicker[34]\|Button\|BeginTabItem\|BeginTabBar\|InputText(\|WithHint)\|Selectable\|BeginCombo)\b" Main.cpp System ImGui/runtime_preview*.h ImGui/custom_widgets.cpp` | no hits |
+| Windows / DirectX / async keys | `grep -rniE "windows\.h\|wtypes\|getasynckeystate\|d3d\|dxgi\|hwnd\|hinternet\|directx_blur"` over the same files | no hits |
+| Deleted legacy files still referenced | `grep -rn "ImguiPP\|fontch\|box_shadow\|System/Texture/main.h"` | no hits |
+| Old fonts still loaded | `grep -n "AddFontFromMemory" Main.cpp` | Poppins x4, LANX icon font (`icomoon_page`) at 18 and 20 px, `icon_notify`, plus the Font Awesome icon font whose codepoints the project's `ICON_FA_*` icons use (the LANX `icomoon_page` array is a 16-glyph subset, far too small to replace it) |
+| Useless comments | `grep -rnE "TODO\|FIXME\|@author\|@autor\|// ={6,}"` over project files | no hits |
+| Signed-in start | `grep -n "isLogin" Main.cpp` | `static bool isLogin = true;` |
+
+Repeatable build check: `src/main/jni/host_checks.sh` (textbox/keyboard 13 checks,
+menu layout 64 checks, Poppins + icon font atlas, skin include graph syntax,
+mythic-attachment 16 checks) - all pass.
+
+## Acceptance checklist
+
+| Item | Verdict |
+|---|---|
+| Builds with the provided build files, no unresolved symbols | PASS on the host harness (`host_checks.sh`). NOT VERIFIED on device: the NDK toolchain is not available here, so the AIDE/ndk-build link still has to be run by the user. The specific failure reported (`custom::InputTextWithHint`) is fixed root and branch. |
+| No `Windows.h`, `d3d`, `dxgi`, `D3DX`, `HWND`, `HINTERNET`, `GetAsyncKeyState` left | PASS (project code) |
+| LANX fonts and icon font load, sizes scale with density | PASS for loading (`fonts_check`); density scaling wired from `ro.sf.lcd_density`; visual check needs the device |
+| Window visibly more compact, fits portrait and landscape | PARTIAL: layout now comes from the display (`ComputeMenuLayout`), the old fixed 850x596 is not used; eyeball needed |
+| Tabs, buttons, checkboxes, sliders, combos, multi-combos, color pickers all `custom::` | PASS |
+| Skins page and all other pages use the LANX textbox, dropdown, color picker | PASS (no color picker exists on the Skins page in this project; ESP colors use `custom::ColorEdit4`) |
+| Tapping a textbox opens the keyboard; typing, backspace, Enter, paste, IME composition work; keyboard hides; menu not covered | PARTIAL: covered by the host test for tap/focus/typing/backspace/done/layers; the system-IME path was not used (no focusable View to attach to) and device confirmation is needed |
+| Overlay focus flags restored after input | NOT APPLICABLE: the menu runs on the game's EGL surface, no `WindowManager` overlay focus flags in this build |
+| All previous settings load and save correctly | NOT VERIFIED: config code was not touched, needs a device run |
+| Useless comments removed, third-party untouched | PASS |
+| Textures and fonts survive EGL context loss and pause/resume | NOT VERIFIED on device |
