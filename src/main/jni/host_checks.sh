@@ -29,4 +29,9 @@ trap 'rm -rf "$OUT_DIR"' EXIT
     -I Skin/tests/stubs -I . -I ImGui -I Includes \
     Skin/tests/skin_headers_check.cpp
 
+"$CXX" -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -D'__fastcall=' \
+    -I Skin/tests/stubs -I . -I ImGui -I Includes \
+    -o "$OUT_DIR/mythic_attachments_check" System/Hooks/tests/mythic_attachments_check.cpp
+"$OUT_DIR/mythic_attachments_check"
+
 echo "host checks OK"

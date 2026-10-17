@@ -808,7 +808,6 @@ case 3:
 
     case 5:
     {
-        // --- Camo: the whole camo table, applied to every gun ---
         ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "Camo - replaces the equipped camo on every gun");
         ImGui::Dummy(ImVec2(0, 10));
 
@@ -935,7 +934,6 @@ case 3:
 
     case 6:
         if (!snowboardData.empty()) {
-            // Selected (ON) first
             for (const auto& sb : snowboardData) {
                 if (strlen(searchQuery) >= MIN_SEARCH_LENGTH &&
                     ToLower(sb.skinName).find(searchLower) == std::string::npos)
@@ -960,7 +958,6 @@ case 3:
                     ImGui::PopStyleVar();
                 }
             }
-            // Unselected (OFF) below
             for (const auto& sb : snowboardData) {
                 if (strlen(searchQuery) >= MIN_SEARCH_LENGTH &&
                     ToLower(sb.skinName).find(searchLower) == std::string::npos)

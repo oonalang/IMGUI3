@@ -33,8 +33,6 @@ namespace custom
         float               Normalize(float value, float minValue, float maxValue);
         void                DrawPanelShell(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, float rounding, bool highlighted = false);
         bool                DrawSidebarButton(const char* id, const char* icon, bool active, const ImVec2& min, const ImVec2& size);
-        void                DrawTitleCard(const ImVec2& min, const ImVec2& size, const char* title);
-        bool                DrawMenuColorCard(const ImVec2& min, const ImVec2& size);
         bool                DrawCloseCard(const ImVec2& min, const ImVec2& size);
     }
 

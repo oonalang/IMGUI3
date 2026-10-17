@@ -7,13 +7,8 @@
 // sidebar inside that window plus a rail with the hamburger that folds it, and
 // all six tab rows have to fit the window height at any size.
 //
-// Host test, nothing is linked from ImGui (ImVec2 / ImMax / ImClamp are all
-// header-only), so no NDK and no menu runtime is needed:
-//   g++ -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -I src/main/jni \
-//       src/main/jni/ImGui/tests/menu_layout_check.cpp -o /tmp/menu_layout_check \
-//       && /tmp/menu_layout_check
-// Android.mk's wildcard for ImGui is $(LOCAL_PATH)/ImGui/*.c*, i.e. not
-// recursive, so this file never reaches the APK.
+// Nothing is linked from ImGui (ImVec2 / ImMax / ImClamp are header-only), so
+// no NDK and no menu runtime is needed. Run it with src/main/jni/host_checks.sh.
 #include <cstdio>
 
 #include "ImGui/menu_layout.h"

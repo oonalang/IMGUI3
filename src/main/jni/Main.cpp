@@ -1620,10 +1620,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     const ImVec2 runtimeWindowPos = ImGui::GetWindowPos();
                     ImDrawList *runtimeDrawList = ImGui::GetWindowDrawList();
 
-                    // Flat body panel. The wobbling 22px glow that used to outline
-                    // this window is gone, so the window draws one plain rounded
-                    // rectangle with the same 1px accent border the header uses -
-                    // no wobble, no halo, no animation.
+                    // One flat rounded panel with the header's 1px accent border.
                     {
                         const ImVec2 bodyMin = runtimeWindowPos;
                         const ImVec2 bodyMax(runtimeWindowPos.x + runtimeWindowSize.x,
@@ -1664,8 +1661,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     runtimeDrawList->AddRect(headerMin, headerMax, main_runtime_theme::GetAccentTintU32(0.70f, 0.70f), 11.0f, 0, 1.0f);
 
                     const ImVec2 flameCenter(headerMin.x + 28.0f, headerMin.y + headerHeight * 0.5f);
-                    // No glow halo behind the icon any more - the accent circle used
-                    // to be a soft light spill ("neon"); the icon itself stays.
                     {
                         ImFont *iconFont = custom::shell::GetIconFont();
                         const char *logoIcon = ICON_FA_FIRE;
@@ -1725,13 +1720,10 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
                     runtimeDrawList->AddRectFilled(hostMin, hostMax, ImGui::GetColorU32(main_runtime_theme::GetSidebarShellBackgroundColor()), 11.0f);
 
-                    // ---- Sidebar: the tab switcher -------------------------
-                    // Tabs used to be picked from a floating radial wheel beside
-                    // the window. They live in a sidebar inside the window now,
-                    // with a hamburger at the top of the rail that folds it
-                    // away. The sizes are pure functions of the host area
-                    // (ImGui/menu_layout.h), so the rail, the panel and the tab
-                    // content can never overlap whatever the surface is.
+                    // Sidebar inside the window, folded by the hamburger rail.
+                    // Sizes are pure functions of the host area
+                    // (ImGui/menu_layout.h), so rail, panel and content never
+                    // overlap whatever the surface is.
                     static bool  g_sidebarOpen = true;
                     static float g_sidebarAnim = 1.0f;
                     const float  sidebarTarget = g_sidebarOpen ? 1.0f : 0.0f;
@@ -1858,7 +1850,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                 custom::Checkbox("Fast Scope", &Config.ExtraMenu.Scope);
                                 custom::Checkbox("Quick Switch", &Config.ExtraMenu.Switch);
                                 custom::Checkbox("Weapon Kinetic", &Config.ExtraMenu.Kinetic);
-                                // === NEW FEATURES: Home ===
                                 // No Slide Fatigue: remove the slide limit/fatigue system
                                 // (SlideTackleComponent::get_UseSlideTackleLimit -> false,
                                 // local pawn only). Unlimited slides, no idle-time decay.
@@ -1871,15 +1862,12 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                 custom::Checkbox("No Slide Fatigue", &Config.NewFeaturesMenu.NoSlideFatigue);
                                 custom::Separator();
                                 custom::Separator();
-                                // === NEW FEATURES: Misc ===
                                 custom::Checkbox("No Crouch", &Config.NewFeaturesMenu.NoCrouch);
                                 custom::Checkbox("No Hit Flinch", &Config.NewFeaturesMenu.NoHitFlinch);
-                                // === NEW FEATURES: Sniper ===
                                 // No Drift = breathing sway only (m_AimmingBreatheCountDown @0x774)
                                 // NOTE: the old broken disable came from Stable Scope's
                                 // always-zero breathe hook (removed with that feature).
                                 custom::Checkbox("No Drift (Hardscope)", &Config.NewFeaturesMenu.NoDrift);
-                                // === NEW FEATURES: Firing timing ===
                                 // (No Fire Delay and Stable Scope removed per request.)
                                 custom::Checkbox("No Sprint Fire Delay", &Config.NewFeaturesMenu.NoSprintToFireDelay);
                                 if (Config.NewFeaturesMenu.NoSprintToFireDelay) {
@@ -1897,7 +1885,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                 }
                                 custom::Checkbox("No Hipfire Delay", &Config.NewFeaturesMenu.NoHipfireDelay);
                                 custom::Separator();
-                                // Dev / Debug options
                                 custom::Separator();
                                 custom::Separator();
 
@@ -2089,7 +2076,6 @@ if (runtimeState.activeTab == 4) {
                                     // obeys is above (Mode) plus StartFire itself - and
                                     // its crosshair zone, which is the dot below.
                                 }
-                                // ---- The dot crosshair (the trigger's crosshair) --------
                                 // There is ONE crosshair now: this dot. The triggerbot
                                 // aims through its pixel and its zone IS the dot's own
                                 // radius, always - there is no separate trigger crosshair
@@ -2590,7 +2576,6 @@ void Init_Thread() {
     Patches.NoSlideFatiguePve = MemoryPatch::createWithHex("libunity.so", 0x651274C,
         "00 00 80 D2 C0 03 5F D6");
 
-    // ------------------------------------------------------------------
     //  8-byte leaf getters: PATCHED, never hooked.
     //
     //  GR .57 dump sizes (jeudhehs/dump, "dump (GR .57).cs"); every one of

@@ -4,13 +4,7 @@
 // window is a separate window from the field, so this also covers the tap that
 // lands outside the field's window and must not end the edit session.
 //
-// Build and run from src/main/jni:
-//   g++ -std=c++17 -O1 -I. -IImGui -o /tmp/text_input_check \
-//       ImGui/tests/text_input_check.cpp ImGui/custom_widgets.cpp ImGui/imgui.cpp \
-//       ImGui/imgui_draw.cpp ImGui/imgui_widgets.cpp ImGui/imgui_tables.cpp \
-//       System/Texture/box_shadow.cpp && /tmp/text_input_check
-// Android.mk's ImGui wildcard is not recursive, so this file never reaches the
-// APK.
+// Build and run with src/main/jni/host_checks.sh.
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "custom_widgets.hpp"

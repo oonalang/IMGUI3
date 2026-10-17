@@ -107,14 +107,23 @@ commit messages.
 
 ## Phase F - Comment cleanup
 
-**NOT DONE.**
+**DONE.**
 
-Evidence:
-
-- `Main.cpp`: 302 whole-line comments, part of them banners and restatements.
-- `SkinTab.h`: 73, `SettingsTab.h`: 9, `imgui_settings.h`: 23.
-- Unused-comment markers (`TODO`, `FIXME`, `HACK`, `@author`, `=====` banners)
-  are still present in project files.
+- Removed: the `// === NEW FEATURES: ... ===` and `// ---- ... ----` banners in
+  `Main.cpp`, the stale style-history comments (the "wobbling glow", "no glow
+  halo", "tabs used to be a radial wheel"), the `// --- Camo ---` banner and the
+  "Selected (ON) first / Unselected (OFF) below" restatements in `SkinTab.h`,
+  the `Dev / Debug options` label, and the two unused title helpers in
+  `custom_widgets.cpp` that carried LANX's "Zenx"/"Veld" comments.
+- Build instructions in the test files now point at `host_checks.sh` instead of
+  repeating command lines that mention deleted files.
+- Kept: comments that document a dump offset, hooking constraint, JNI/EGL
+  requirement or a magic number (e.g. the `get_UseSlideTackleLimit` 8-byte
+  patch explanation, the `EGL_ALPHA_SIZE` requirement, the SurfaceControl
+  `SKIP_SCREENSHOT` flags). Those fall under the "non-obvious logic" rule.
+- Untouched: ImGui/FreeType/stb/json/NDK sources and the embedded font headers.
+- `grep -rn "TODO\|FIXME\|HACK\|@author\|====="` in project UI files (excluding
+  third-party ImGui) now returns nothing.
 
 Legend: DONE = verified by grep and by a build; NOT DONE = at least one hit
 above is still in the tree.
