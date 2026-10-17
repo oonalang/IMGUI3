@@ -71,23 +71,25 @@ commit messages.
 
 ## Phase D - Pages, including Skins
 
-**NOT DONE.**
+**DONE.**
 
-Evidence:
-
-- Pages are already on `custom::` (`Main.cpp` 91 uses, `SkinTab.h` 20,
-  `SettingsTab.h` 21, `MiscTab.h` custom only), including the Skins search
-  fields, filter combo and color rows.
-- Legacy UI is still compiled and reachable:
-  - `ImGui/ImguiPP.{h,cpp}`: unused helper layer with `ImGui::Button` and an
-    author tag.
-  - `ImGui/runtime_preview_helpers.h`: 604 lines of the old amber/purple menu
-    (hand-drawn sliders, `ImGui::BeginCombo` / `Selectable` / `ColorEdit4` /
-    `Button`), included by `runtime_preview_menu.h`.
-  - `System/Texture/box_shadow.cpp`: the LANX shadow demo window keeps
-    `ImGui::Checkbox` / `SliderFloat` / `SliderInt` / `ColorPicker3`.
-- The sidebar is custom (`custom::shell::DrawSidebarButton`, `menu_layout.h`),
-  not the stock `BeginTabBar` / `BeginTabItem` path; no stock tab calls remain.
+- Every page is on `custom::` (`Main.cpp` 91 calls, `SkinTab.h` 20,
+  `SettingsTab.h` 21, `MiscTab.h` custom only, ESP/Aim in
+  `runtime_preview_menu.h`). The Skins page uses `custom::InputTextWithHint`
+  for both search fields, `custom::Combo` for the rarity filter and the target
+  dropdown, `custom::Page` for its seven sub-tabs, `custom::Checkbox` and
+  `custom::Child`; its data model and save/load path are unchanged.
+- Legacy UI deleted: `ImGui/ImguiPP.{h,cpp}` (unused `ImGui::Button` layer),
+  `ImGui/fontch.h` (unused Anonymous Pro font), `System/Texture/box_shadow.*`
+  and `System/Texture/main.h` (shadow demo window with stock widgets and no
+  caller). `runtime_preview_helpers.h` went from 604 lines of hand-drawn amber
+  widgets to the three LANX child-panel helpers the pages use.
+- Navigation is the project sidebar built on LANX surfaces
+  (`custom::shell::DrawSidebarButton`, `ComputeSidebarLayout`), plus
+  `custom::Page` for the Skins sub-tabs. No `BeginTabBar`/`BeginTabItem` and no
+  stock widget call remains in menu code.
+- Menu size comes from the display (`ComputeMenuLayout`, `menu_layout.h`), not
+  the old fixed 850x596 window.
 
 ## Phase E - Keyboard
 

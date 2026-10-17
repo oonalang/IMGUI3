@@ -18,7 +18,6 @@
 #include "System/UI/LoadingAnimation.h"
 #include "System/UI/Logo.h"
 #include "System/UI/FloatingInfo.h"
-#include "System/Texture/main.h"
 #include "IMAGE/astral.h"
 
 #include "AstralPrtctn/StrEnc.h"

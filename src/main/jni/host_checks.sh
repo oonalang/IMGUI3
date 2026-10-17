@@ -13,8 +13,7 @@ trap 'rm -rf "$OUT_DIR"' EXIT
 "$CXX" -std=c++17 -O1 -I. -IImGui -o "$OUT_DIR/text_input_check" \
     ImGui/tests/text_input_check.cpp \
     ImGui/custom_widgets.cpp \
-    ImGui/imgui.cpp ImGui/imgui_draw.cpp ImGui/imgui_widgets.cpp ImGui/imgui_tables.cpp \
-    System/Texture/box_shadow.cpp
+    ImGui/imgui.cpp ImGui/imgui_draw.cpp ImGui/imgui_widgets.cpp ImGui/imgui_tables.cpp
 "$OUT_DIR/text_input_check"
 
 "$CXX" -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -I. -IImGui -o "$OUT_DIR/menu_layout_check" \
