@@ -598,7 +598,8 @@ inline float DisperseBase(void * instance) {
     return orig_DisperseBase(instance);
 } 
 
-// Unlock Blueprints
+// Unlock Blueprints (SKINS tab switch). BlueprintWeaponInfo.IsUnlocked()
+// @0x901F988 takes no parameters, so this pointer's shape is the method's own.
 inline bool (*orig_IsUnlocked)(void *instance);
 inline bool IsUnlocked(void *instance) {
     if (instance != NULL) {
@@ -950,7 +951,11 @@ inline void InitializeAllHooks() {
   ///Camera Pov
   DobbyHook((void *) getAbsoluteAddress("libunity.so", 0xC347950), (void *)  &InputSettingConfig_Instant_GetMainCameraFov_3p, (void **) &oInputSettingConfig_Instant_GetMainCameraFov_3p); 
 
-    //-- Unlock Blueprints
+    //-- Unlock Blueprints (SKINS tab) at BlueprintWeaponInfo.IsUnlocked()
+    //   @0x901F988 - no parameters.
+    //-- Mythic attachments (HOME tab switch, ON by default) installs its four
+    //   gates itself: see MythicAttachments.h. WeaponPromotionInfo.
+    //   IsWeaponAttachmentUnlock(int attachment) @0xA61AA00 is the first of them.
     HOOK_LIB("libunity.so", "0x901F988", IsUnlocked, orig_IsUnlocked);
 
     //-- Unlock Attachments / Mythic Attachments (see MythicAttachments.h). The

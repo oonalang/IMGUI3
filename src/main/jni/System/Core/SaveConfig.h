@@ -52,6 +52,10 @@ void SaveConfiguration(const std::string& filename) {
     config["ExtraMenu"]["Scope"] = Config.ExtraMenu.Scope;
     config["ExtraMenu"]["Switch"] = Config.ExtraMenu.Switch;
     config["ExtraMenu"]["KineticArmor"] = Config.ExtraMenu.Kinetic;
+    // Both unlock switches persist: without this they flipped back to their
+    // startup defaults on every launch.
+    config["ExtraMenu"]["MythicAttachments"] = Config.ExtraMenu.MythicAttachments;
+    config["ExtraMenu"]["Blueprints"] = Config.ExtraMenu.Blueprints;
     // Block Report Evidence - default ON, so a config written before this row
     // existed still loads with it on.
     config["ExtraMenu"]["BlockReport"] = Config.ExtraMenu.BlockReport;
@@ -145,6 +149,13 @@ bool LoadConfiguration(const std::string& filename) {
             Config.ExtraMenu.Scope = config["ExtraMenu"]["Scope"].get<bool>();
             Config.ExtraMenu.Switch = config["ExtraMenu"]["Switch"].get<bool>();
             Config.ExtraMenu.Kinetic = config["ExtraMenu"]["Kinetic"].get<bool>();
+            // Guarded: a config file written before a switch existed keeps that
+            // switch's default (Mythic Attachments: on) instead of throwing out
+            // of the whole load.
+            if (config["ExtraMenu"].contains("MythicAttachments"))
+                Config.ExtraMenu.MythicAttachments = config["ExtraMenu"]["MythicAttachments"].get<bool>();
+            if (config["ExtraMenu"].contains("Blueprints"))
+                Config.ExtraMenu.Blueprints = config["ExtraMenu"]["Blueprints"].get<bool>();
             // Absent in a config saved before the row existed: keep the default
             // (ON) instead of loading false.
             if (config["ExtraMenu"].contains("BlockReport"))

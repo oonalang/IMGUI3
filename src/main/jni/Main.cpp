@@ -3,6 +3,7 @@
 #include "Includes/obfuscate.h"
 #include "Includes/Utils.h"
 #include "ImGui/Call_ImGui.h"
+#include "ImGui/menu_layout.h"
 #include "IL2CppSDKGenerator/BasicStructs/Call_BasicStructs.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Call_IL2Cpp.h"
 #include "Hacks/Hacks.h"
@@ -1338,7 +1339,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         // Mythic Attachments is ON by default: an applied skin behaves as if it
         // were really owned, so the weapon's attachments (the mythic's own ones
         // included) are not locked. Every other ExtraMenu option stays off; the
-        // checkbox that turns this one off lives in the SKINS tab, next to
+        // checkbox that turns this one off is in the HOME tab, directly
+        // above No Slide Fatigue; its live counters are in the SKINS tab, next to
         // Unlock Blueprints. See System/Hooks/MythicAttachments.h.
         Config.ExtraMenu.MythicAttachments = true;
         Config.Aim.AimAssistSize = 0.0f;
@@ -1590,16 +1592,12 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             float openAlpha = 0.2f + 0.8f * openEase;
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, openAlpha);
 
-            // Auto-resize, always centred. The pizza wheel that used to sit next
-            // to the menu is gone, so nothing shifts the window off centre any more,
-            // and the size follows the display instead of a fixed 900x600 box - the
-            // character / skin lists below get every pixel the phone has.
-            const float menuW = ImClamp(ioDisplaySize.x * 0.92f, 360.0f,
-                                        ImMax(1.0f, ioDisplaySize.x - 16.0f));
-            const float menuH = ImClamp(ioDisplaySize.y * 0.92f, 320.0f,
-                                        ImMax(1.0f, ioDisplaySize.y - 16.0f));
-            const ImVec2 menuPos((ioDisplaySize.x - menuW) * 0.5f,
-                                 (ioDisplaySize.y - menuH) * 0.5f);
+            // Position and size both come from the display, so the window fits
+            // whatever the render surface is (ImGui/menu_layout.h).
+            const MenuLayout menuLayout = ComputeMenuLayout(ioDisplaySize);
+            const float menuW = menuLayout.menuW;
+            const float menuH = menuLayout.menuH;
+            ImVec2 menuPos = menuLayout.menuPos;
 
             ImGui::SetNextWindowPos(menuPos, ImGuiCond_Always, ImVec2(0.0f, 0.0f));
             ImGui::SetNextWindowSize(ImVec2(menuW, menuH), ImGuiCond_Always);
@@ -1650,7 +1648,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     const float columnGap = 10.0f;
                     const float headerHeight = 64.0f;
                     const float closeHeaderWidth = 72.0f;
-                    const float tabStripHeight = 44.0f;
 
                     const float contentLeft = runtimeWindowPos.x + outerPad;
                     const float contentRight = runtimeWindowPos.x + runtimeWindowSize.x - outerPad;
@@ -1662,15 +1659,11 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     const ImVec2 closeCardMin(headerMax.x + layoutGap, headerTop);
                     const ImVec2 closeCardSize(closeHeaderWidth, headerHeight);
 
-                    const ImVec2 tabStripMin(contentLeft, headerTop + headerHeight + layoutGap);
-                    const ImVec2 tabStripMax(contentRight, tabStripMin.y + tabStripHeight);
-
-                    const ImVec2 hostMin(contentLeft, tabStripMax.y + layoutGap);
+                    const ImVec2 hostMin(contentLeft, headerTop + headerHeight + layoutGap);
                     const ImVec2 hostMax(contentRight, runtimeWindowPos.y + runtimeWindowSize.y - outerPad);
+                    // Top left of the content area inside the shell; the sidebar
+                    // below splits it into the rail, the panel and the tab host.
                     const ImVec2 contentInnerMin(hostMin.x + contentPadding, hostMin.y + contentPadding);
-                    const ImVec2 contentInnerSize(
-                        ImMax(0.0f, (hostMax.x - hostMin.x) - contentPadding * 2.0f),
-                        ImMax(0.0f, (hostMax.y - hostMin.y) - contentPadding * 2.0f));
 
                     runtimeState.page = ImClamp(runtimeState.page, 1, 6);
                     runtimeState.activeTab = ImClamp(runtimeState.activeTab, 1, 6);
@@ -1735,46 +1728,117 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         runtime_preview_menu::CollapseMenu(runtimeState);
                     }
 
-                    // ---- Tab strip: the floating pizza wheel is gone -------------
-                    // The tabs live in the menu now, as a strip right under the
-                    // header: same six pages the wheel could reach, nothing floats
-                    // over the game any more. Clicking one only sets `page`: the
-                    // content still cross-fades through the tabAlpha / activeTab
-                    // swap further down.
-                    {
-                        // id -> the page that tab really draws (see the activeTab
-                        // blocks below): the old wheel labelled 2 "HOME" and 5
-                        // "EXTRA" while those pages actually show the EXTRA switches
-                        // and the changelog. The labels now say what the page is.
-                        static const char *tabNames[] = {"ESP", "EXTRA", "AIM", "SKINS", "MISC", "SETTINGS"};
-                        static const int   tabIds[]   = {1, 2, 3, 4, 5, 6};
-                        const int   tabCount = 6;
-                        const float tabGap = 8.0f;
-                        const float tabW = ImMax(1.0f, (tabStripMax.x - tabStripMin.x - tabGap * (tabCount - 1)) / (float)tabCount);
-
-                        ImGui::SetCursorScreenPos(tabStripMin);
-                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(tabGap, 0.0f));
-                        ImFont *tabFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
-                        ImGui::PushFont(tabFont);
-                        for (int i = 0; i < tabCount; ++i) {
-                            if (i > 0) ImGui::SameLine();
-                            if (custom::Page(runtimeState.page == tabIds[i], tabNames[i],
-                                             ImVec2(tabW, tabStripHeight), false, false)) {
-                                runtimeState.page = tabIds[i];
-                                g_LogoPreviewMode = false;
-                            }
-                        }
-                        ImGui::PopFont();
-                        ImGui::PopStyleVar();
-                    }
-
                     runtimeState.tabAlpha = ImClamp(runtimeState.tabAlpha + (4.0f * ImGui::GetIO().DeltaTime * (runtimeState.page == runtimeState.activeTab ? 1.0f : -1.0f)), 0.0f, 1.0f);
                     if (runtimeState.tabAlpha == 0.0f && runtimeState.tabAdd == 0.0f) runtimeState.activeTab = runtimeState.page;
 
                     runtimeDrawList->AddRectFilled(hostMin, hostMax, ImGui::GetColorU32(main_runtime_theme::GetSidebarShellBackgroundColor()), 11.0f);
 
-                    ImGui::SetCursorScreenPos(contentInnerMin);
-                    ImGui::BeginChild("##RuntimeContentHost", contentInnerSize, false, ImGuiWindowFlags_NoBackground);
+                    // ---- Sidebar: the tab switcher -------------------------
+                    // Tabs used to be picked from a floating radial wheel beside
+                    // the window. They live in a sidebar inside the window now,
+                    // with a hamburger at the top of the rail that folds it
+                    // away. The sizes are pure functions of the host area
+                    // (ImGui/menu_layout.h), so the rail, the panel and the tab
+                    // content can never overlap whatever the surface is.
+                    static bool  g_sidebarOpen = true;
+                    static float g_sidebarAnim = 1.0f;
+                    const float  sidebarTarget = g_sidebarOpen ? 1.0f : 0.0f;
+                    g_sidebarAnim += (sidebarTarget - g_sidebarAnim) *
+                                     ImMin(1.0f, ImGui::GetIO().DeltaTime * 12.0f);
+                    if (g_sidebarAnim > 0.998f)      g_sidebarAnim = 1.0f;
+                    else if (g_sidebarAnim < 0.002f) g_sidebarAnim = 0.0f;
+
+                    const ImVec2 hostSize(ImMax(1.0f, hostMax.x - hostMin.x),
+                                          ImMax(1.0f, hostMax.y - hostMin.y));
+                    const SidebarLayout sidebar = ComputeSidebarLayout(hostSize, g_sidebarAnim);
+
+                    const float  hostInnerH = ImMax(1.0f, (hostMax.y - contentPadding) - contentInnerMin.y);
+                    const ImVec2 railMin(contentInnerMin.x, contentInnerMin.y);
+                    const ImVec2 sidebarMin(railMin.x + sidebar.railW, contentInnerMin.y);
+                    const ImVec2 sidebarMax(sidebarMin.x + sidebar.panelW, contentInnerMin.y + hostInnerH);
+                    const ImVec2 contentMin(sidebarMin.x + sidebar.panelW + sidebar.gap, contentInnerMin.y);
+                    const ImVec2 contentSize(ImMax(1.0f, (hostMax.x - contentPadding) - contentMin.x),
+                                             hostInnerH);
+
+                    // The rail never goes away, so a folded sidebar can always
+                    // be brought back.
+                    if (custom::shell::DrawSidebarButton("##menu_sidebar_toggle", ICON_FA_BARS,
+                                                         g_sidebarOpen, railMin,
+                                                         ImVec2(sidebar.railW, sidebar.railW)))
+                        g_sidebarOpen = !g_sidebarOpen;
+                    if (sidebar.panelW > 1.0f) {
+                        runtimeDrawList->AddRectFilled(sidebarMin, sidebarMax,
+                            ImGui::GetColorU32(main_runtime_theme::GetActiveTabBackgroundColor()), 9.0f);
+                        runtimeDrawList->AddRect(sidebarMin, sidebarMax,
+                            main_runtime_theme::GetAccentTintU32(0.22f, 0.35f), 9.0f, 0, 1.0f);
+
+                        // Six pages, labelled with what they really draw: the
+                        // tab the wheel called HOME is the switch page (2), and
+                        // the one it called EXTRA is the changelog (5). Same
+                        // order the tab strip on main used, plus the HOME entry
+                        // the user asks for by name.
+                        static const char *sbIcons[] = { ICON_FA_HOME, ICON_FA_EYE, ICON_FA_MICROCHIP,
+                                                         ICON_FA_STAR, ICON_FA_SLIDERS_H, ICON_FA_COG };
+                        static const char *sbNames[] = { "HOME", "ESP", "AIM", "SKINS", "MISC", "SETTINGS" };
+                        static const int   sbIds[]   = { 2, 1, 3, 4, 5, 6 };
+
+                        ImFont *sbIconFont = custom::shell::GetIconFont();
+                        ImFont *sbTextFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
+
+                        // Clipped to the panel: while the fold animates the rows
+                        // slide away, and they must not paint over the content.
+                        ImGui::PushClipRect(sidebarMin, sidebarMax, true);
+                        float rowY = sidebarMin.y + sidebar.topPad;
+                        for (int i = 0; i < sidebar.rows; ++i) {
+                            const ImVec2 rMin(sidebarMin.x + sidebar.sidePad, rowY);
+                            const ImVec2 rSize(ImMax(1.0f, sidebar.panelW - sidebar.sidePad * 2.0f), sidebar.rowH);
+                            const ImVec2 rMax(rMin.x + rSize.x, rMin.y + rSize.y);
+
+                            ImGui::SetCursorScreenPos(rMin);
+                            char rId[48];
+                            snprintf(rId, sizeof(rId), "##menu_sidebar_%d", sbIds[i]);
+                            ImGui::InvisibleButton(rId, rSize);
+                            const bool hov = ImGui::IsItemHovered();
+                            const bool act = (runtimeState.page == sbIds[i]);
+
+                            if (act || hov) {
+                                runtimeDrawList->AddRectFilled(rMin, rMax,
+                                    act ? ImGui::GetColorU32(main_runtime_theme::GetActiveTabBackgroundColor())
+                                        : IM_COL32(18, 20, 29, 150), 8.0f);
+                            }
+                            if (act) {
+                                runtimeDrawList->AddRectFilled(rMin, ImVec2(rMin.x + 3.0f, rMax.y),
+                                    main_runtime_theme::GetAccentU32(), 2.0f);
+                            }
+
+                            if (sbIconFont) {
+                                runtimeDrawList->AddText(sbIconFont, 16.0f,
+                                    ImVec2(rMin.x + 10.0f, rMin.y + (rSize.y - 16.0f) * 0.5f),
+                                    act ? main_runtime_theme::GetAccentTintU32(0.98f, 1.0f)
+                                        : IM_COL32(154, 160, 182, hov ? 245 : 220),
+                                    sbIcons[i]);
+                            }
+
+                            if (rMax.x - 6.0f > rMin.x + 34.0f) {
+                                runtimeDrawList->AddText(sbTextFont, 12.5f,
+                                    ImVec2(rMin.x + 34.0f, rMin.y + (rSize.y - 12.5f) * 0.5f),
+                                    act ? IM_COL32(245, 245, 250, 255)
+                                        : IM_COL32(154, 160, 182, hov ? 245 : 205),
+                                    sbNames[i]);
+                            }
+
+                            if (ImGui::IsItemClicked()) {
+                                runtimeState.page = sbIds[i];
+                                runtimeState.activeTab = sbIds[i];
+                                g_LogoPreviewMode = false;
+                            }
+                            rowY += sidebar.rowH + sidebar.rowGap;
+                        }
+                        ImGui::PopClipRect();
+                    }
+
+                    ImGui::SetCursorScreenPos(contentMin);
+                    ImGui::BeginChild("##RuntimeContentHost", contentSize, false, ImGuiWindowFlags_NoBackground);
                     {
                         const bool pushedContentFont = (font::inter_semibold != nullptr);
                         if (pushedContentFont) ImGui::PushFont(font::inter_semibold);
@@ -1806,6 +1870,12 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                 // No Slide Fatigue: remove the slide limit/fatigue system
                                 // (SlideTackleComponent::get_UseSlideTackleLimit -> false,
                                 // local pawn only). Unlimited slides, no idle-time decay.
+                                // Mythic Attachments: an applied weapon skin behaves as
+                                // if it were really owned, so its attachments (the
+                                // mythic's own included) stop reading as locked.
+                                // ON by default; the live counters sit in the SKINS
+                                // tab next to Unlock Blueprints.
+                                custom::Checkbox("Mythic Attachments", &Config.ExtraMenu.MythicAttachments);
                                 custom::Checkbox("No Slide Fatigue", &Config.NewFeaturesMenu.NoSlideFatigue);
                                 custom::Separator();
                                 custom::Separator();
@@ -1928,7 +1998,9 @@ if (runtimeState.activeTab == 4) {
     // Attachments counted as unlocked for the weapon wearing an applied skin -
     // the mythic's own set included - so the loadout stops drawing them locked.
     // Client-side answers only; the server still knows the real inventory.
-    custom::Checkbox("Mythic Attachments", &Config.ExtraMenu.MythicAttachments);
+    // The "Mythic Attachments" switch itself lives in the HOME tab, directly
+    // above No Slide Fatigue; its live counters stay here next to Unlock
+    // Blueprints, which is the tab that owns the weapon skins.
     // Live instrument: how often the loadout / skin UI asked each of the four
     // unlock questions and how often this feature answered YES. That UI asks them
     // by itself, so non-zero counters are the on-device proof that the hooks are
@@ -2069,7 +2141,11 @@ if (runtimeState.activeTab == 4) {
                                 } else if (dbgState == 2) {
                                     ImGui::TextColored(ImVec4(0, 1, 0, 1), ">> FIRING <<");
                                 } else if (dbgState == 1) {
-                                    ImGui::TextColored(ImVec4(1, 1, 0, 1), "HOLDING: aimed in");
+                                    if (td.paceWaiting)
+                                        ImGui::TextColored(ImVec4(1, 1, 0, 1),
+                                            "WAITING: aimed in, gun still cycling");
+                                    else
+                                        ImGui::TextColored(ImVec4(1, 1, 0, 1), "HOLDING: aimed in");
                                 } else {
                                     ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "BLOCKED: %s",
                                                        NewFeatures::A_FireBlockText(lastBlock));
@@ -2093,15 +2169,39 @@ if (runtimeState.activeTab == 4) {
                                     ImGui::TextColored(dim, "Scan=%d Enemy=%d Cand=%d Ray=%d Tgt=%d Fire=%d",
                                         td.scans, td.enemyCount, td.candidates,
                                         td.losChecked, td.targets, td.fires);
-                                    // Ads= is the "ADS only" gate's own input: the held
-                                    // weapon's m_IsAiming flag and its 0..1 aiming
-                                    // percentage. Both are field reads - Pawn.IsAiming()
-                                    // is not called any more, which is what crashed the
-                                    // option.
-                                    ImGui::TextColored(dim, "R=%.0f Closest=%.0fpx LOSblk=%d Friend=%d Ads=%d/%.2f",
+                                    ImGui::TextColored(dim, "R=%.0f Closest=%.0fpx LOSblk=%d Friend=%d",
                                         td.radiusPx,
                                         td.closestPx < 0.0f ? -1.0f : sqrtf(td.closestPx),
-                                        td.losBlocked, td.friendsInLine, td.adsFlag, td.adsPct);
+                                        td.losBlocked, td.friendsInLine);
+                                    // "ADS only" is decided by the game's OWN getters -
+                                    // Pawn.IsAiming 0x519BB10 and the held weapon's fire
+                                    // component get_IsAiming 0xC9AF4E0 - each called only
+                                    // on an object that passed the m_CachedPtr liveness
+                                    // check. The RawField line under them is the two
+                                    // Weapon field offsets, which are NOT verified and are
+                                    // shown for the record only. NO SIGNAL means the mode
+                                    // is not blocking at all (fail-open), which is why
+                                    // that line turns red instead of silently doing
+                                    // nothing.
+                                    if (Config.NewFeaturesMenu.TriggerbotMode == 1) {
+                                        if (td.adsUnknown)
+                                            ImGui::TextColored(ImVec4(1, 0.5f, 0, 1),
+                                                "ADS: NO SIGNAL - mode not enforced (fail-open)");
+                                        else
+                                            ImGui::TextColored(dim, "ADS: pawn=%s fc=%s => %s",
+                                                td.adsPawnOk ? (td.adsPawnAim ? "scoped" : "no") : "n/a",
+                                                td.adsFcOk   ? (td.adsFcAim   ? "scoped" : "no") : "n/a",
+                                                (td.adsPawnAim || td.adsFcAim) ? "SCOPED" : "hipfire");
+                                    }
+                                    ImGui::TextColored(dim, "RawField=%d/%.2f (dump-verified, display only)",
+                                        td.adsFlag, td.adsPct);
+                                    // Re-press pacing: Pace is the wait a repeat press
+                                    // obeys (the weapon's own cadence), skipped counts the
+                                    // presses held back, waiting is this scan. The first
+                                    // shot on a target is never paced.
+                                    ImGui::TextColored(dim, "Pace=%.3fs skipped=%d waiting=%d reassert=%d",
+                                        td.paceSeconds, td.repressSkipped,
+                                        td.paceWaiting ? 1 : 0, td.reasserts);
                                     // Which path accepted (or would accept) the shot, and
                                     // what the visibility ray actually hit. "Rays=id/blk"
                                     // is the anti-wall gate: id = the nearest thing on the
