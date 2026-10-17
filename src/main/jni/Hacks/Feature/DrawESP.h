@@ -108,6 +108,28 @@ static inline void ApplySpeedhack() {
     lastAppliedScale = targetScale;
 }
 
+// ---------------------------------------------------------------------------
+// Tools::IsPtrValid() only answers "is this memory mapped and readable". A
+// UnityEngine.Object the game has already Destroyed keeps its MANAGED wrapper
+// sitting in readable heap - so every pointer guard passes - while the native
+// object behind it is gone: Object.m_CachedPtr (dump.cs 169503) is cleared the
+// moment the native side dies. The enemy pawn list keeps such an entry for a
+// few frames (death, respawn, match end), which is the window the report
+// describes: "~10 s after joining a match that has bots in it". Asking a
+// destroyed Pawn / Transform / Camera for anything then walks a null native
+// pointer and takes the client down.
+//
+// Same liveness rule the triggerbot uses (NewFeatures::A_FireObjectAlive); it
+// lives here too because DrawESP.h is parsed before NewFeatures.h.
+// Pawn, Transform and Camera all derive from UnityEngine.Object, so one offset
+// covers them.
+// ---------------------------------------------------------------------------
+static inline bool EspObjectAlive(const void *obj) {
+    if (!Tools::IsPtrValid((void *)obj))
+        return false;
+    return *(const void **)((const uintptr_t)obj + 0x10) != nullptr;
+}
+
 uintptr_t GetClosestTarget() {
     uintptr_t result = 0;
     float MaxDist = std::numeric_limits<float>::infinity();
@@ -119,20 +141,21 @@ uintptr_t GetClosestTarget() {
         if (LocalPawn) {
             Vector3 MyPos{0, 0, 0};
             auto local_m_Mesh = *(Transform **) (LocalPawn + Class_Pawn_m_Mesh);
-            if (local_m_Mesh) {
+            if (EspObjectAlive((void *) local_m_Mesh)) {
                 MyPos = local_m_Mesh->get_position();
             }
             auto EnemyPawns = *(List<uintptr_t> **) (get_MatchGame + Class_BaseGame_EnemyPawns);
-            if (EnemyPawns) {
+            if (Tools::IsPtrValid((void *) EnemyPawns)) {
                 auto Items = EnemyPawns->getItems();
-                if (Items) {
-                    for (int i = 0; i < EnemyPawns->getSize(); i++) {
+                const int pawnCount = EnemyPawns->getSize();
+                if (Tools::IsPtrValid((void *) Items) && pawnCount > 0 && pawnCount <= 1024) {
+                    for (int i = 0; i < pawnCount; i++) {
                         auto Pawn = Items[i];
-                        if (Pawn) {
+                        if (EspObjectAlive((void *) Pawn)) {
                             if (!*(bool *) (Pawn + Class_Pawn_m_IsAlive))
                                 continue;
                             auto m_Mesh = *(Transform **) (Pawn + Class_Pawn_m_Mesh);
-                            if (!m_Mesh)
+                            if (!EspObjectAlive((void *) m_Mesh))
                                 continue;
                             auto RootPos = m_Mesh->get_position();
                             float Distance = Vector3::Distance(MyPos, RootPos);
@@ -147,6 +170,41 @@ uintptr_t GetClosestTarget() {
         }
     }
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// The two per-pawn field reads the ESP loop used to do bare, every frame, for
+// every pawn. Both go null in exactly the window the report describes ("~10 s
+// after joining a match that has bots in it"): a pawn that just died or is
+// respawning keeps its managed wrapper readable - so Tools::IsPtrValid() on the
+// pawn still passes - while the game has already cleared m_AttackableInfo and
+// the name string hanging off its PlayerInfo. Reading `m_AttackableInfo +
+// m_Health` then dereferenced null, which is a SIGSEGV inside the render loop
+// with no user action.
+// ---------------------------------------------------------------------------
+static inline bool EspPawnHealth(uintptr_t pawn, int &curHp, int &maxHp) {
+    if (!Tools::IsPtrValid((void *)pawn))
+        return false;
+    auto attackableInfo = *(uintptr_t *)(pawn + Class_AttackableTarget_m_AttackableInfo);
+    if (!Tools::IsPtrValid((void *)attackableInfo))
+        return false;
+    curHp = (int)*(float *)(attackableInfo + Class_AttackableTarget_m_Health);
+    maxHp = (int)*(float *)(attackableInfo + Class_AttackableTarget_m_MaxHealth);
+    return true;
+}
+
+// The name string needs the same treatment: Pawn.get_PlayerName() is a native
+// call that answers null for a pawn whose PlayerInfo is gone (bots, respawns),
+// and the old call site ran String::CString() on that null.
+static inline std::string EspPawnName(Pawn *pawn) {
+    if (!Tools::IsPtrValid((void *)pawn))
+        return std::string();
+    if (pawn->m_IsBot())
+        return std::string("BOT");
+    String *playerName = pawn->get_PlayerName();
+    if (!Tools::IsPtrValid((void *)playerName))
+        return std::string();
+    return std::string(playerName->CString());
 }
 
 bool isInsideFOV(int x, int y) {
@@ -169,23 +227,26 @@ uintptr_t GetInsideFOVTarget() {
         if (LocalPawn) {
             Vector3 MyPos{0, 0, 0};
             auto local_m_Mesh = *(Transform **) (LocalPawn + Class_Pawn_m_Mesh);
-            if (local_m_Mesh) {
+            if (EspObjectAlive((void *) local_m_Mesh)) {
                 MyPos = local_m_Mesh->get_position();
             }
             auto EnemyPawns = *(List<uintptr_t> **) (get_MatchGame + Class_BaseGame_EnemyPawns);
-            if (EnemyPawns) {
+            Camera *fovCam = Camera::get_main();
+            if (!EspObjectAlive((void *) fovCam)) return 0;
+            if (Tools::IsPtrValid((void *) EnemyPawns)) {
                 auto Items = EnemyPawns->getItems();
-                if (Items) {
-                    for (int i = 0; i < EnemyPawns->getSize(); i++) {
+                const int pawnCount = EnemyPawns->getSize();
+                if (Tools::IsPtrValid((void *) Items) && pawnCount > 0 && pawnCount <= 1024) {
+                    for (int i = 0; i < pawnCount; i++) {
                         auto Pawn = Items[i];
-                        if (Pawn) {
+                        if (EspObjectAlive((void *) Pawn)) {
                             auto isAlive = *(bool*) ((uintptr_t)Pawn + Class_Pawn_m_IsAlive);
                             if (!isAlive)
                                 continue;
                             auto m_HeadBone = *(Transform **) (Pawn + Class_Pawn_m_HeadBone);
-                            if (!m_HeadBone)
+                            if (!EspObjectAlive((void *) m_HeadBone))
                                 continue;
-                            auto HeadSc = Camera::get_main()->WorldToScreenPoint(m_HeadBone->get_position());
+                            auto HeadSc = fovCam->WorldToScreenPoint(m_HeadBone->get_position());
                             Vector2 v2Middle = Vector2((float) (get_width() / 2), (float) (get_height() / 2));
                             Vector2 v2Loc = Vector2(HeadSc.x, HeadSc.y);
                             if (isInsideFOV((int) HeadSc.x, (int) HeadSc.y)) {
@@ -214,7 +275,9 @@ void DrawAimLine(ImDrawList* draw, int sWidth, int sHeight) {
     if (Target) {
         Vector3 targetPos;
         auto m_HeadBone = *(Transform**)(Target + Class_Pawn_m_HeadBone);
-        if (!m_HeadBone) return;
+        if (!EspObjectAlive((void *) m_HeadBone)) return;
+        Camera *aimCam = Camera::get_main();
+        if (!EspObjectAlive((void *) aimCam)) return;
         if (Config.Aim.Target == EAimTarget::Heads) {
             targetPos = m_HeadBone->get_position();
         } else if (Config.Aim.Target == EAimTarget::Chests) {
@@ -224,7 +287,7 @@ void DrawAimLine(ImDrawList* draw, int sWidth, int sHeight) {
             targetPos = m_HeadBone->get_position();
             targetPos.y -= 0.4f;
         }
-        auto HeadSc = Camera::get_main()->WorldToScreenPoint(targetPos);
+        auto HeadSc = aimCam->WorldToScreenPoint(targetPos);
         if (HeadSc.z > 0) {
             ImVec2 center(sWidth / 2, sHeight / 2);
             draw->AddLine(center, ImVec2(HeadSc.x, sHeight - HeadSc.y), ToColor(Config.sColorsESPPLAYER.LinePLAYER), Config.sESPMenuLineScale.lineSize);
@@ -300,7 +363,7 @@ ImColor outlinecolor = IM_COL32(10, 10, 10, 255);
 void HandleEnemyInfo(ImDrawList *draw) {
     Vector3 pLocalPawn_rootPos = Vector3::zero();
     Pawn *get_LocalPawn = GamePlay::get_LocalPawn();
-    if (get_LocalPawn != nullptr) {
+    if (EspObjectAlive(get_LocalPawn)) {
         pLocalPawn_rootPos = get_LocalPawn->get_LastPawnPos();
     }
     
@@ -308,13 +371,15 @@ void HandleEnemyInfo(ImDrawList *draw) {
     int enenyEnemies = 0;
     
     BaseGame *get_MatchGame = GamePlay::get_MatchGame();
-    if (get_MatchGame != nullptr) {
+    if (Tools::IsPtrValid((void *) get_MatchGame)) {
         List<Pawn *> *EnemyPawns = get_MatchGame->EnemyPawns();
-        if (EnemyPawns != nullptr) {
+        if (Tools::IsPtrValid((void *) EnemyPawns)) {
             Pawn **pawns = (Pawn **) EnemyPawns->getItems();
-            for (int i = 0; i < EnemyPawns->getSize(); i++) {
+            const int pawnCount = EnemyPawns->getSize();
+            if (Tools::IsPtrValid((void *) pawns) && pawnCount > 0 && pawnCount <= 1024) {
+            for (int i = 0; i < pawnCount; i++) {
                 Pawn *pawn = pawns[i];
-                if (pawn != nullptr) {
+                if (EspObjectAlive(pawn)) {
                     Vector3 pEnemyPawn_headPos = pawn->get_HeadPosition();
                     Vector3 pEnemyPawn_rootPos = pawn->get_LastPawnPos();
                     
@@ -377,6 +442,7 @@ void HandleEnemyInfo(ImDrawList *draw) {
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -536,7 +602,7 @@ static inline void TeleportToEnemy() {
     if (!Tools::IsPtrValid(get_MatchGame)) return;
     
     Pawn *get_LocalPawn = GamePlay::get_LocalPawn();
-    if (!Tools::IsPtrValid(get_LocalPawn)) return;
+    if (!EspObjectAlive(get_LocalPawn)) return;
     
     Vector3 localPos = get_LocalPawn->get_LastPawnPos();
     
@@ -549,7 +615,7 @@ static inline void TeleportToEnemy() {
     Pawn **pawns = (Pawn **)EnemyPawns->getItems();
     for (int i = 0; i < EnemyPawns->getSize(); i++) {
         Pawn *pawn = pawns[i];
-        if (!Tools::IsPtrValid(pawn)) continue;
+        if (!EspObjectAlive(pawn)) continue;
         
         bool isAlive = *(bool *)((uintptr_t)pawn + Class_Pawn_m_IsAlive);
         if (!isAlive) continue;
@@ -590,7 +656,7 @@ static inline void DrawVehicleESP(ImDrawList *draw, int sWidth, int sHeight) {
     
     Pawn *get_LocalPawn = GamePlay::get_LocalPawn();
     Vector3 pLocalPawn_rootPos = Vector3::zero();
-    if (Tools::IsPtrValid(get_LocalPawn)) {
+    if (EspObjectAlive(get_LocalPawn)) {
         pLocalPawn_rootPos = get_LocalPawn->get_LastPawnPos();
     }
     
@@ -705,7 +771,7 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
 
     Vector3 pLocalPawn_rootPos = Vector3::zero();
     Pawn *get_LocalPawn = GamePlay::get_LocalPawn();
-    if (Tools::IsPtrValid(get_LocalPawn)) {
+    if (EspObjectAlive(get_LocalPawn)) {
         pLocalPawn_rootPos = get_LocalPawn->get_LastPawnPos();
     }
 
@@ -730,18 +796,19 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
     Pawn **pawns = (Pawn **)EnemyPawns->getItems();
     for (int i = 0; i < EnemyPawns->getSize(); i++) {
         Pawn *pawn = pawns[i];
-        if (!Tools::IsPtrValid(pawn)) continue;
+        if (!EspObjectAlive(pawn)) continue;
 
         auto m_PlayerInfo = *(uintptr_t *)(pawn + Class_Pawn_m_PlayerInfo);
         if (!Tools::IsPtrValid((void *)m_PlayerInfo)) continue;
 
-        auto m_AttackableInfo = *(uintptr_t *)(pawn + Class_AttackableTarget_m_AttackableInfo);
-        int CurHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_Health);
-        int MaxHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_MaxHealth);
+        // No attackable info (dead / mid-respawn pawn) is not a reason to drop
+        // the pawn - just draw it without health numbers.
+        int CurHP = 0, MaxHP = 0;
+        EspPawnHealth((uintptr_t)pawn, CurHP, MaxHP);
 
         auto m_HeadBone = *(Transform **)(pawn + Class_Pawn_m_HeadBone);
         auto m_Mesh = *(Transform **)(pawn + Class_Pawn_m_Mesh);
-        if (!Tools::IsPtrValid(m_HeadBone) || !m_Mesh || !*(bool *)(pawn + Class_Pawn_m_IsAlive)) continue;
+        if (!EspObjectAlive(m_HeadBone) || !EspObjectAlive(m_Mesh) || !*(bool *)(pawn + Class_Pawn_m_IsAlive)) continue;
 
         bool isBot = *(bool *)((uintptr_t)pawn + Class_Pawn_m_IsBot);
         
@@ -912,11 +979,13 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
                     draw->AddRectFilled(ImVec2(infoContainerX, infoCurrentY), ImVec2(infoContainerX + infoContainerWidth, infoCurrentY + infoTotalHeight), IM_COL32(0, 0, 0, 120));
                     
                     if (Config.ESPMenu.Name) {
-                        std::string displayText = pawn->m_IsBot() ? "BOT" : pawn->get_PlayerName()->CString();
-                        ImVec2 infoTextSize = ImGui::CalcTextSize(displayText.c_str());
-                        infoTextSize.x *= (fontSize / ImGui::GetFontSize());
-                        float infoTextX = infoContainerX + (infoContainerWidth - infoTextSize.x) / 2;
-                        draw->AddText(nullptr, fontSize, ImVec2(infoTextX, infoCurrentY + 3.0f * scaleFactor), IM_COL32(255, 255, 255, 255), displayText.c_str());
+                        const std::string displayText = EspPawnName(pawn);
+                        if (!displayText.empty()) {
+                            ImVec2 infoTextSize = ImGui::CalcTextSize(displayText.c_str());
+                            infoTextSize.x *= (fontSize / ImGui::GetFontSize());
+                            float infoTextX = infoContainerX + (infoContainerWidth - infoTextSize.x) / 2;
+                            draw->AddText(nullptr, fontSize, ImVec2(infoTextX, infoCurrentY + 3.0f * scaleFactor), IM_COL32(255, 255, 255, 255), displayText.c_str());
+                        }
                         infoCurrentY += 24.0f * scaleFactor;
                     }
                     
