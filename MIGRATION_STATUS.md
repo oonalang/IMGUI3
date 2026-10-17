@@ -102,6 +102,8 @@ commit messages.
   the menu is drawn from a `libgspace1.so` EGL hook with no focusable
   `View`/`Window` of its own, so `showSoftInput` has nothing to attach to.
 - Covered by `ImGui/tests/text_input_check.cpp` (13 checks, all pass on host).
+- The menu now starts signed in (`isLogin = true` in `Main.cpp`), so the licence
+  window and the loading gate no longer stand between the user and the pages.
 
 ## Phase F - Comment cleanup
 
