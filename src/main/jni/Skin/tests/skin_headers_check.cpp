@@ -43,7 +43,6 @@ static Skin_ConfigStub Config;
 
 // Externs SkinTab.h expects from Main.cpp.
 float menu[4];
-bool showKeyboard = false;
 ImFont* F50 = nullptr;
 ImFont* JAAT = nullptr;
 namespace font { ImFont* inter_semibold = nullptr; }

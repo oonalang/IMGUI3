@@ -4333,12 +4333,11 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     if (is_multiline) // Open group before calling GetID() because groups tracks id created within their scope (including the scrollbar)
         BeginGroup();
     const ImGuiID id = window->GetID(label);
-    const float w = GetContentRegionMax().x - GetStyle().WindowPadding.x;
     const ImVec2 label_size = CalcTextSize(label, NULL, true);
-    const ImVec2 frame_size = CalcItemSize(size_arg, w, (is_multiline ? g.FontSize * 8.0f : 32));
-    const ImVec2 total_size = ImVec2(frame_size.x + (label_size.x > 0.0f ? label_size.x : 0.0f), 32);
+    const ImVec2 frame_size = CalcItemSize(size_arg, CalcItemWidth(), (is_multiline ? g.FontSize * 8.0f : label_size.y + style.FramePadding.y * 2.0f));
+    const ImVec2 total_size = ImVec2(frame_size.x + (label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f), frame_size.y);
 
-    const ImRect frame_bb(window->DC.CursorPos + ImVec2(w / 2, -1), window->DC.CursorPos + ImVec2(w, 32));
+    const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + frame_size);
     const ImRect total_bb(frame_bb.Min, frame_bb.Min + total_size);
 
     ImGuiWindow* draw_window = window;
@@ -5000,13 +4999,9 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     it_anim->second.hint_alpha = ImLerp(it_anim->second.hint_alpha, hovered ? 1.f : 0.f, g.IO.DeltaTime * 6.f);
     it_anim->second.text = ImLerp(it_anim->second.text, IsItemActive() ? c::text::text_active : hovered ? c::text::text_hov : c::text::text, g.IO.DeltaTime * 6.f);
 
-    if (!is_multiline)
-    {
-        GetWindowDrawList()->AddRectFilled(frame_bb.Min, frame_bb.Max, GetColorU32(c::elements::background), c::elements::rounding);
-    }
-
-    const ImVec4 clip_rect(frame_bb.Min.x, frame_bb.Min.y, frame_bb.Min.x + inner_size.x - (w / 2), frame_bb.Min.y + inner_size.y);
-    ImVec2 draw_pos = is_multiline ? draw_window->DC.CursorPos : frame_bb.Min + ImVec2((32 - CalcTextSize(hint).y) / 2, (32 - CalcTextSize(hint).y) / 2 + 1);
+    const ImVec4 clip_rect(frame_bb.Min.x, frame_bb.Min.y, frame_bb.Min.x + inner_size.x, frame_bb.Min.y + inner_size.y);
+    ImVec2 draw_pos = is_multiline ? draw_window->DC.CursorPos
+                                   : frame_bb.Min + ImVec2(style.FramePadding.x, (frame_size.y - g.FontSize) * 0.5f);
     ImVec2 text_size(0.0f, 0.0f);
 
     const int buf_display_max_length = 2 * 1024 * 1024;
@@ -5224,7 +5219,9 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         }
     }
 
-    GetWindowDrawList()->AddText(ImVec2(frame_bb.Max.x - w, frame_bb.Min.y + (32 - CalcTextSize(label).y) / 2), GetColorU32(it_anim->second.text), label);
+    const char* label_end = FindRenderedTextEnd(label);
+    if (label != label_end)
+        GetWindowDrawList()->AddText(ImVec2(frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + (frame_size.y - label_size.y) * 0.5f), GetColorU32(it_anim->second.text), label, label_end);
 
     if (value_changed && !(flags & ImGuiInputTextFlags_NoMarkEdited)) MarkItemEdited(id);
 

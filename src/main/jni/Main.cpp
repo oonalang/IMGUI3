@@ -904,7 +904,6 @@ float AVIWA = 119.167f;
 bool wallh;
 bool active = false;
 float AimSmooth = 1.0f;
-bool showKeyboard = false;
 static bool g_RuntimeClearDisplayInit = false;
 
 struct ClearDisplayDefaultInit {
@@ -1473,8 +1472,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             ImGui::SetNextWindowSize({WW, WH}, ImGuiCond_Always);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 20.0f);
-            ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(20, 10, 35, 240));
-            ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(160, 80, 255, 180));
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(22, 22, 22, 244));
+            ImGui::PushStyleColor(ImGuiCol_Border, main_runtime_theme::GetAccentU32(0.75f));
 
             if (ImGui::Begin("##premium_login", nullptr,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
@@ -1486,19 +1485,19 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 ImFont* titleFont = F50 ? F50 : ImGui::GetFont();
                 ImFont* bodyFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
 
-                dl->AddRectFilled(wp, {wp.x + WW, wp.y + WH}, IM_COL32(20, 10, 35, 240), 20.0f);
-                dl->AddRect(wp, {wp.x + WW, wp.y + WH}, IM_COL32(160, 80, 255, 100), 20.0f, 0, 1.5f);
-                dl->AddRect({wp.x + 6, wp.y + 6}, {wp.x + WW - 6, wp.y + WH - 6}, IM_COL32(160, 80, 255, 30), 16.0f, 0, 1.0f);
+                dl->AddRectFilled(wp, {wp.x + WW, wp.y + WH}, IM_COL32(22, 22, 22, 244), 20.0f);
+                dl->AddRect(wp, {wp.x + WW, wp.y + WH}, main_runtime_theme::GetAccentU32(0.45f), 20.0f, 0, 1.5f);
+                dl->AddRect({wp.x + 6, wp.y + 6}, {wp.x + WW - 6, wp.y + WH - 6}, main_runtime_theme::GetAccentU32(0.14f), 16.0f, 0, 1.0f);
 
                 const char* brand = "ETHNIR NOIR";
                 ImVec2 brandSize = titleFont->CalcTextSizeA(32.0f, FLT_MAX, 0.0f, brand);
-                dl->AddText(titleFont, 32.0f, {wp.x + (WW - brandSize.x) * 0.5f, wp.y + 40.0f}, IM_COL32(160, 80, 255, 255), brand);
+                dl->AddText(titleFont, 32.0f, {wp.x + (WW - brandSize.x) * 0.5f, wp.y + 40.0f}, main_runtime_theme::GetAccentU32(1.0f), brand);
 
                 const char* sub = "AUTHENTICATION";
                 ImVec2 subSize = bodyFont->CalcTextSizeA(12.0f, FLT_MAX, 0.0f, sub);
                 dl->AddText(bodyFont, 12.0f, {wp.x + (WW - subSize.x) * 0.5f, wp.y + 88.0f}, IM_COL32(180, 180, 200, 200), sub);
 
-                dl->AddLine({wp.x + 60, wp.y + 110}, {wp.x + WW - 60, wp.y + 110}, IM_COL32(160, 80, 255, 60), 1.0f);
+                dl->AddLine({wp.x + 60, wp.y + 110}, {wp.x + WW - 60, wp.y + 110}, main_runtime_theme::GetAccentU32(0.28f), 1.0f);
 
                 const char* prompt = "Enter your license key to continue";
                 ImVec2 promptSize = bodyFont->CalcTextSizeA(10.5f, FLT_MAX, 0.0f, prompt);
@@ -1509,32 +1508,13 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 const float inputY = wp.y + 156.0f;
                 const float inputH = 44.0f;
 
-                dl->AddRectFilled({inputX, inputY}, {inputX + inputW, inputY + inputH}, IM_COL32(30, 15, 50, 220), 10.0f);
-                static bool keyFocused = false;
-                ImU32 bc = keyFocused ? IM_COL32(160, 80, 255, 255) : IM_COL32(160, 80, 255, 80);
-                dl->AddRect({inputX, inputY}, {inputX + inputW, inputY + inputH}, bc, 10.0f, 0, keyFocused ? 2.0f : 1.0f);
-
-                ImGui::SetCursorScreenPos({inputX + 12.0f, inputY + 10.0f});
-                ImGui::PushItemWidth(inputW);
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 220, 240, 255));
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {0, 0});
-                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0));
-                ImGui::PushStyleColor(ImGuiCol_FrameBgActive, IM_COL32(0, 0, 0, 0));
-                ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 0));
-                ImGui::InputText("##license_key", s, sizeof(s), ImGuiInputTextFlags_CharsNoBlank);
-                keyFocused = ImGui::IsItemActive() || ImGui::IsItemHovered();
-                ImGui::PopStyleColor(4);
-                ImGui::PopStyleVar(2);
-                ImGui::PopItemWidth();
+                ImGui::SetCursorScreenPos({inputX, inputY});
+                custom::InputTextWithHint("##license_key", "License key", s, sizeof(s),
+                                          ImGuiInputTextFlags_CharsNoBlank, {inputW, inputH});
 
                 float btnY = inputY + inputH + 16.0f;
                 ImGui::SetCursorScreenPos({inputX, btnY});
-                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(160, 80, 255, 220));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(190, 110, 255, 255));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(120, 50, 200, 255));
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(15, 12, 25, 255));
-                if (ImGui::Button("AUTHENTICATE", {inputW, 44.0f})) {
+                if (custom::Button("AUTHENTICATE", {inputW, 44.0f})) {
                     err = Login(s);
                     if (err == "OK") {
                         strncpy(logintext, s, sizeof(logintext) - 1);
@@ -1546,20 +1526,14 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         
                     }
                 }
-                ImGui::PopStyleColor(4);
 
                 float pasteBtnY = btnY + 44.0f + 8.0f;
                 ImGui::SetCursorScreenPos({inputX, pasteBtnY});
-                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(160, 80, 255, 40));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(160, 80, 255, 80));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(160, 80, 255, 120));
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(160, 80, 255, 220));
-                if (ImGui::Button("PASTE FROM CLIPBOARD", {inputW, 36.0f})) {
+                if (custom::Button("PASTE FROM CLIPBOARD", {inputW, 36.0f})) {
                     std::string clip = getClipboard();
                     strncpy(s, clip.c_str(), sizeof(s) - 1);
                     s[sizeof(s) - 1] = '\0';
                 }
-                ImGui::PopStyleColor(4);
 
                 if (!err.empty() && err != "OK") {
                     float errY = pasteBtnY + 36.0f + 8.0f;
@@ -1592,9 +1566,10 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             float openAlpha = 0.2f + 0.8f * openEase;
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, openAlpha);
 
-            // Position and size both come from the display, so the window fits
-            // whatever the render surface is (ImGui/menu_layout.h).
-            const MenuLayout menuLayout = ComputeMenuLayout(ioDisplaySize);
+            ImVec2 layoutDisplay = ioDisplaySize;
+            if (ImGui::GetIO().WantTextInput)
+                layoutDisplay.y = ImMax(240.0f, layoutDisplay.y - lanx_ime::PanelHeight(ioDisplaySize));
+            const MenuLayout menuLayout = ComputeMenuLayout(layoutDisplay);
             const float menuW = menuLayout.menuW;
             const float menuH = menuLayout.menuH;
             ImVec2 menuPos = menuLayout.menuPos;
@@ -1636,10 +1611,10 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         const ImVec2 bodyMin = runtimeWindowPos;
                         const ImVec2 bodyMax(runtimeWindowPos.x + runtimeWindowSize.x,
                                              runtimeWindowPos.y + runtimeWindowSize.y);
-                        runtimeDrawList->AddRectFilled(bodyMin, bodyMax, IM_COL32(7, 10, 20, 236), 16.0f);
+                        runtimeDrawList->AddRectFilled(bodyMin, bodyMax, ImGui::GetColorU32(c::bg::background), c::bg::rounding);
                         runtimeDrawList->AddRect(bodyMin, bodyMax,
-                                                 main_runtime_theme::GetAccentTintU32(0.70f, 0.70f),
-                                                 16.0f, 0, 1.0f);
+                                                 main_runtime_theme::GetAccentTintU32(0.70f, 0.55f),
+                                                 c::bg::rounding, 0, 1.0f);
                     }
 
                     const float outerPad = 14.0f;
@@ -2464,6 +2439,7 @@ if (runtimeState.activeTab == 4) {
             ImGui::PopStyleVar();
         }
 
+        lanx_ime::Render();
         ImGui::PopStyleVar();
     }
 

@@ -21,7 +21,6 @@
 
 extern float menu[4];
 extern char searchQuery[256];
-extern bool showKeyboard;
 extern ImFont* F50;
 extern ImFont* JAAT;
 namespace font {
@@ -30,9 +29,6 @@ namespace font {
 
 const int MIN_SEARCH_LENGTH = 3;
 static int skinSubTab = 0;
-static float cursorBlinkTimer = 0.0f;
-static bool cursorVisible = true;
-static std::string activeInputID = "";
 
 std::string ToLower(std::string str) {
     std::transform(str.begin(), str.end(), str.begin(), ::tolower);
@@ -117,113 +113,6 @@ std::string GetBaseWeaponName(const std::string& fullName) {
     return base;
 }
 
-namespace ImGui {
-bool AstralInput(const char* label, char* buf, size_t buf_size, const ImVec2& size = ImVec2(0, 0)) {
-    ImGuiWindow* window = GetCurrentWindow();
-    if (window->SkipItems)
-        return false;
-
-    ImGuiContext& g = *GImGui;
-    ImGuiIO& io = g.IO;
-    const ImGuiStyle& style = g.Style;
-    const ImGuiID id = window->GetID(label);
-
-    ImVec2 pos = window->DC.CursorPos;
-    ImVec2 inputSize = size;
-    if (inputSize.x <= 0.0f)
-        inputSize.x = GetContentRegionAvail().x;
-    if (inputSize.y <= 0.0f)
-        inputSize.y = 50.0f;
-
-    ImRect bb(pos, ImVec2(pos.x + inputSize.x, pos.y + inputSize.y));
-    ItemSize(bb, style.FramePadding.y);
-    if (!ItemAdd(bb, id))
-        return false;
-
-    bool hovered, held;
-    ButtonBehavior(bb, id, &hovered, &held);
-    bool clicked = hovered && IsMouseClicked(0);
-    bool isActive = (g.ActiveId == id);
-
-    if (clicked) {
-        SetActiveID(id, window);
-        SetFocusID(id, window);
-        FocusWindow(window);
-        activeInputID = label;
-    }
-
-    if (isActive) {
-        cursorBlinkTimer += io.DeltaTime;
-        if (cursorBlinkTimer >= 1.0f) {
-            cursorBlinkTimer = 0.0f;
-            cursorVisible = !cursorVisible;
-        }
-    } else {
-        cursorBlinkTimer = 0.0f;
-        cursorVisible = true;
-    }
-
-    ImU32 bgColor = GetColorU32(isActive ? c::elements::background_hovered : hovered ? c::button::background_hovered : c::widget::background);
-    ImU32 borderColor = GetColorU32(isActive ? c::accent : c::button::outline);
-
-    ImDrawList* draw_list = window->DrawList;
-
-    draw_list->AddRectFilled(bb.Min, bb.Max, bgColor, 4.0f);
-    draw_list->AddRect(bb.Min, bb.Max, borderColor, 4.0f, 0, 1.0f);
-
-    std::string text = buf;
-    ImVec2 textPos = ImVec2(bb.Min.x + 15.0f, bb.Min.y + (inputSize.y - GetFontSize()) * 0.5f);
-
-    PushClipRect(ImVec2(bb.Min.x + 10.0f, bb.Min.y), ImVec2(bb.Max.x - 10.0f, bb.Max.y), true);
-
-    if (text.empty() && !isActive) {
-        ImVec4 hintColor = c::text::text_hov;
-        hintColor.w *= 0.70f;
-        draw_list->AddText(textPos, GetColorU32(hintColor), "Type here...");
-    } else {
-        draw_list->AddText(textPos, GetColorU32(c::text::text_active), text.c_str());
-
-        if (isActive && cursorVisible) {
-            ImVec2 textSize = CalcTextSize(text.c_str());
-            float cursorX = textPos.x + textSize.x + 2.0f;
-            float cursorY1 = textPos.y;
-            float cursorY2 = textPos.y + GetFontSize();
-            draw_list->AddLine(ImVec2(cursorX, cursorY1), ImVec2(cursorX, cursorY2),
-                               GetColorU32(c::text::text_active), 2.0f);
-        }
-    }
-
-    PopClipRect();
-
-    if (isActive) {
-        float animProgress = fmod(cursorBlinkTimer, 1.0f);
-        float lineWidth = bb.GetWidth() * 0.3f;
-        float lineStart = bb.Min.x + (bb.GetWidth() - lineWidth) * 0.5f;
-        float lineEnd = lineStart + lineWidth;
-
-        float alpha = 1.0f - animProgress;
-        if (animProgress > 0.5f) {
-            alpha = (1.0f - animProgress) * 2.0f;
-        } else {
-            alpha = animProgress * 2.0f;
-        }
-
-        ImVec4 lineColorF = c::accent;
-        lineColorF.w = alpha;
-        ImU32 lineColor = GetColorU32(lineColorF);
-        draw_list->AddLine(ImVec2(lineStart, bb.Max.y - 2.0f),
-                           ImVec2(lineEnd, bb.Max.y - 2.0f),
-                           lineColor, 3.0f);
-    }
-
-    return false;
-}
-
-    bool CheckboxFullWidth(const char* label, bool* v)
-    {
-        return custom::Checkbox(label, v);
-    }
-}
 
 static bool DrawTieredSkinCheckbox(const char* label, bool* value, std::function<void()> applySkin = nullptr) {
     if (!value) return false;
@@ -335,13 +224,12 @@ inline void SelectSnowboardSkin(int skinId)
 
 inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = false) {
 
-    ImGui::BeginChild("SkinContent", ImVec2(0, 0));
+    custom::Child("SkinContent", ImVec2(0, 0));
     ImGui::Dummy(ImVec2(0, 8 * c::scale));
     
     if (drawSubTabs) {
         const float tabSpacing = 8.0f * c::scale;
         const float tabHeight = 34.0f * c::scale;
-        // Pinalitan ang / 5.0f ng / 6.0f para magkasya ang 6 na sub-tabs sa isang linya
         const float tabWidth = ImMax(32.0f, (ImGui::GetContentRegionAvail().x - tabSpacing * 6.0f) / 7.0f);
         ImFont* subTabFont = font::inter_semibold ? font::inter_semibold : F50;
         
@@ -365,62 +253,29 @@ inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = fals
     }
 
     static char charSearchQuery[256] = "";
-    static bool skinSearchWasActive = false;
-    static bool charSearchWasActive = false;
-    bool charActive = false;
-    bool charHovered = false;
-    
+
     ImGui::Indent(10.0f);
     float totalAvail = ImGui::GetContentRegionAvail().x - 20.0f;
     float halfWidth = (totalAvail - 10.0f) * 0.5f;
     float searchWidth = (skinSubTab == 0) ? halfWidth : totalAvail;
-    
-    // One search field for the tab; on the Camo sub-tab it is the camo search.
+    const float fieldHeight = 42.0f * c::scale;
+
     ImGui::TextColored(c::text::text_active, skinSubTab == 5 ? "Search Camo:" : "Search Skin:");
     if (skinSubTab == 0) {
         ImGui::SameLine(halfWidth + 20.0f);
         ImGui::TextColored(c::text::text_active, "Search Custom Char:");
     }
-    
-    ImGui::AstralInput("##SearchSkin", searchQuery, IM_ARRAYSIZE(searchQuery), ImVec2(searchWidth, 50));
-    bool skinClicked = ImGui::IsItemClicked();
-    bool skinActive  = ImGui::IsItemActive();
-    bool skinHovered = ImGui::IsItemHovered();
-    if (skinClicked || (!skinSearchWasActive && skinActive)) {
-        activeInputID = "##SearchSkin";
-        showKeyboard = true;
-    }
-    skinSearchWasActive = skinActive;
-    
+
+    custom::InputTextWithHint("##SearchSkin", skinSubTab == 5 ? "Search camo" : "Search skin",
+                              searchQuery, IM_ARRAYSIZE(searchQuery), 0, ImVec2(searchWidth, fieldHeight));
+
     if (skinSubTab == 0) {
         ImGui::SameLine(0.0f, 10.0f);
-        ImGui::AstralInput("##SearchCustomChar", charSearchQuery, IM_ARRAYSIZE(charSearchQuery), ImVec2(halfWidth, 50));
-        bool charClicked = ImGui::IsItemClicked();
-        charActive = ImGui::IsItemActive();
-        charHovered = ImGui::IsItemHovered();
-        if (charClicked || (!charSearchWasActive && charActive)) {
-            activeInputID = "##SearchCustomChar";
-            showKeyboard = true;
-        }
-        charSearchWasActive = charActive;
+        custom::InputTextWithHint("##SearchCustomChar", "Search character",
+                                  charSearchQuery, IM_ARRAYSIZE(charSearchQuery), 0, ImVec2(halfWidth, fieldHeight));
     }
-        
-    // (The "tap outside the keyboard closes it" test used to live here. It ran
-    // off the search box's own IsItemActive(), so while the box was active - i.e.
-    // always, while typing - it never fired, and its 0.60f panel height did not
-    // even match the keyboard's 0.56f. RenderVirtualKeyboard owns it now, on the
-    // panel's real rect.)
 
-    // ---- Rarity filter (applies to every skin sub-tab; tag-based) -----------
-    // Drawn with the menu's own combo widget. The stock ImGui::BeginCombo drew
-    // its frame in the default (dark, transparent-over-black) colours this fork
-    // themes away, so on device the row read as a bare "Filter:" label with an
-    // invisible control next to it. custom::Combo is the same control every other
-    // dropdown in this menu uses (Mode / Hitbox / Box Type) and paints its own
-    // label, field, arrow and popup.
-    // The Camo sub-tab deliberately has no filter dropdown - its list is the
-    // whole camo table, narrowed only by the search field.
-    static int rarityFilter = 0;               // 0 = All
+    static int rarityFilter = 0;
     if (skinSubTab != 5) {
         static const char* rarityNames[] = {"All", "Mythic", "Legendary", "Epic",
                                             "Rare", "Uncommon", "Common"};
@@ -492,7 +347,7 @@ inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = fals
         }
     }
 
-    ImGui::BeginChild("##SkinList", ImVec2(0, ImGui::GetContentRegionAvail().y - 10), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+    custom::Child("##SkinList", ImVec2(0, ImGui::GetContentRegionAvail().y - 10), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
     switch (skinSubTab) {
 case 0:
@@ -1129,13 +984,9 @@ case 3:
         }
         break;
     }
-    if (showKeyboard) {
-        if (activeInputID == "##SearchCustomChar") {
-            RenderVirtualKeyboard("##VirtualKeyboard", charSearchQuery, IM_ARRAYSIZE(charSearchQuery), &showKeyboard);
-        } else {
-            RenderVirtualKeyboard("##VirtualKeyboard", searchQuery, IM_ARRAYSIZE(searchQuery), &showKeyboard);
-        }
-    }
+
+    custom::EndChild();
+    custom::EndChild();
 }
 
 inline void RenderTab4Content() {
