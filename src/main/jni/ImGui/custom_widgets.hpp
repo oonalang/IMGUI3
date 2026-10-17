@@ -88,4 +88,6 @@ namespace custom
 
 }
 
+#include "custom_input_text.h"
+
 #endif // CUSTOM_WIDGETS_HPP

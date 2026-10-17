@@ -75,7 +75,22 @@ LOCAL_ARM_MODE         := arm
 LOCAL_LDLIBS           := -llog -landroid -lEGL -lGLESv3 -lGLESv2 -lGLESv1_CM -lz
 
 LOCAL_C_INCLUDES       += $(LOCAL_PATH)
-FILE_LIST              := $(wildcard $(LOCAL_PATH)/ImGui/*.c*)
+
+# ImGui is listed explicitly: a wildcard here is how custom::InputTextWithHint
+# ended up declared but never compiled into libgspace1.so.
+# Fonts are built by stb_truetype (imgui_draw.cpp); FreeType is not part of the
+# NDK build, so IMGUI_ENABLE_FREETYPE must stay undefined.
+IMGUI_SOURCES          := \
+    ImGui/imgui.cpp \
+    ImGui/imgui_draw.cpp \
+    ImGui/imgui_widgets.cpp \
+    ImGui/imgui_tables.cpp \
+    ImGui/imgui_impl_android.cpp \
+    ImGui/imgui_impl_opengl3.cpp \
+    ImGui/custom_widgets.cpp \
+    ImGui/stb_image.cpp
+
+FILE_LIST              := $(addprefix $(LOCAL_PATH)/,$(IMGUI_SOURCES))
 FILE_LIST              += $(wildcard $(LOCAL_PATH)/IL2CppSDKGenerator/IL2Cpp/*.c*)
 FILE_LIST              += $(wildcard $(LOCAL_PATH)/IL2CppSDKGenerator/KittyMemory/*.c*)
 FILE_LIST              += $(wildcard $(LOCAL_PATH)/System/Texture/*.c*)
