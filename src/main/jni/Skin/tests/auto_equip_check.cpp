@@ -44,6 +44,7 @@
 // the two containers it drives.
 std::vector<void *> weaponConfInstance;
 std::vector<void *> weaponSkinConfigInstance;
+std::mutex g_dataMutex;   // defined by Skin/Thread.h in the app
 
 // ---------------------------------------------------------------------------
 // Host-only link stubs for the real Tools.cpp: it references the inline-hook

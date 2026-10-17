@@ -72,7 +72,14 @@ inline int AutoEquipSkin_ApplyToBase(uint skinID,
 
     if (!rowSeen || baseID == 0 || baseID == skinID)
     {
-        for (void *skin : weaponSkinConfigInstance)
+        // Same rule as the conf table: this table is filled by the skin-config
+        // ctor hooks on the game thread, so it is walked as a locked copy.
+        std::vector<void *> skinRows;
+        {
+            std::lock_guard<std::mutex> lock(g_dataMutex);
+            skinRows = weaponSkinConfigInstance;
+        }
+        for (void *skin : skinRows)
         {
             if (!skin || !Tools::IsPtrValid(skin))
                 continue;
@@ -127,8 +134,20 @@ inline void AutoEquipSkin_Tick(bool enabled)
         return;
 
     const uint id = g_autoEquipSkinPendingID;
+    // A LOCKED COPY, never the live table: the WeaponConfConfig ctor hooks
+    // append to it on the game thread, and joining a match builds hundreds of
+    // confs in a burst - walking the live vector through that burst is a
+    // realloc under an in-flight iteration (the crash reported with only
+    // Unlock Blueprints on: that is the only way to equip a blueprint, which is
+    // the only thing that sets this pending id, so this walk is the one that
+    // runs while the match loads).
+    std::vector<void *> confs;
+    {
+        std::lock_guard<std::mutex> lock(g_dataMutex);
+        confs = weaponConfInstance;
+    }
     uint base = 0;
-    const int written = AutoEquipSkin_ApplyToBase(id, weaponConfInstance, base);
+    const int written = AutoEquipSkin_ApplyToBase(id, confs, base);
 
     if (base != 0)
     {
@@ -142,9 +161,10 @@ inline void AutoEquipSkin_Tick(bool enabled)
     }
 
     // The config tables are created ~1.5 s into a session, so an equip that lands
-    // before them is retried - but only for ~3 s at 60 fps, so a stale pick can
-    // never surface minutes later.
-    if (++g_autoEquipSkinPendingFrames > 180)
+    // before them is retried - but only for ~0.2 s at 60 fps. Three seconds of
+    // per-frame table walks is the window the match-load burst has to land in;
+    // an equip made in the lobby never needs more than a frame or two.
+    if (++g_autoEquipSkinPendingFrames > 12)
     {
         g_autoEquipSkinDiag.unresolved++;
         g_autoEquipSkinPendingID = 0;

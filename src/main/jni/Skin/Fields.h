@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cctype>
+#include <mutex>
 #include <map>
 #include <string>
 #include <array>
@@ -44,6 +45,13 @@ extern std::vector<void *> itemInventoryInstance;
 extern std::vector<void *> weaponExtraInstance;
 extern std::vector<void *> weaponFireEffectInstance;
 extern std::vector<void *> weaponConfInstance;
+// The conf tables are FILLED on the game thread: every WeaponConfConfig ctor
+// (Skin/Thread.h) appends under this mutex. A reader on the render thread that
+// walks `weaponConfInstance` without it is racing a push_back, and the realloc
+// that lands mid-walk is a SIGSEGV - exactly "it crashes when I join a game",
+// because a match builds hundreds of confs at once. Every reader takes a copy
+// under the lock and walks the copy.
+extern std::mutex g_dataMutex;
 extern std::vector<void *> weaponAssetGroupInstance;
 extern std::vector<void *> mythicArmorInstance;
 extern std::vector<void *> mythicSightInstance;

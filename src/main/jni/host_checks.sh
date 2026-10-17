@@ -54,6 +54,16 @@ trap 'rm -rf "$OUT_DIR"' EXIT
     -o "$OUT_DIR/blueprint_equip_check" System/Hooks/tests/blueprint_equip_check.cpp
 "$OUT_DIR/blueprint_equip_check"
 
+# Apply-on-equip under ThreadSanitizer: the render thread walks the conf table
+# while the ctor hooks append to it. This is the "crashes when I join a game"
+# report - pre-fix it prints 7 data races (read of the vector's buffer vs
+# push_back) and exits 66; the fix takes g_dataMutex and copies.
+"$CXX" -std=c++17 -fsanitize=thread -D'__fastcall=' \
+    -I Skin/tests/stubs -I . -I ImGui -I Includes \
+    -o "$OUT_DIR/auto_equip_race_check" Skin/tests/auto_equip_race_check.cpp \
+    IL2CppSDKGenerator/IL2Cpp/Tools.cpp -lpthread
+"$OUT_DIR/auto_equip_race_check"
+
 # Crash breadcrumb (Hacks/Feature/CrashBreadcrumb.h): the formatter and the real
 # append-the-line writer the signal handler calls. No signals are raised here -
 # only the bytes the user will send back are proven.
