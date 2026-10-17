@@ -1720,107 +1720,71 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
                     runtimeDrawList->AddRectFilled(hostMin, hostMax, ImGui::GetColorU32(main_runtime_theme::GetSidebarShellBackgroundColor()), 11.0f);
 
-                    // Sidebar inside the window, folded by the hamburger rail.
-                    // Sizes are pure functions of the host area
-                    // (ImGui/menu_layout.h), so rail, panel and content never
-                    // overlap whatever the surface is.
-                    static bool  g_sidebarOpen = true;
-                    static float g_sidebarAnim = 1.0f;
-                    const float  sidebarTarget = g_sidebarOpen ? 1.0f : 0.0f;
-                    g_sidebarAnim += (sidebarTarget - g_sidebarAnim) *
-                                     ImMin(1.0f, ImGui::GetIO().DeltaTime * 12.0f);
-                    if (g_sidebarAnim > 0.998f)      g_sidebarAnim = 1.0f;
-                    else if (g_sidebarAnim < 0.002f) g_sidebarAnim = 0.0f;
+                    // LANX shell: a horizontal segmented tab strip across the top
+                    // of the panel replaces the left sidebar, so every page gets
+                    // the full width of the window.
+                    const float tabBarH = 40.0f;
+                    const ImVec2 tabBarMin(contentInnerMin.x, contentInnerMin.y);
+                    const ImVec2 tabBarMax(hostMax.x - contentPadding, contentInnerMin.y + tabBarH);
+                    runtimeDrawList->AddRectFilled(tabBarMin, tabBarMax, IM_COL32(9, 11, 19, 210), 10.0f);
+                    runtimeDrawList->AddRect(tabBarMin, tabBarMax,
+                                             main_runtime_theme::GetAccentTintU32(0.20f, 0.30f), 10.0f, 0, 1.0f);
 
-                    const ImVec2 hostSize(ImMax(1.0f, hostMax.x - hostMin.x),
-                                          ImMax(1.0f, hostMax.y - hostMin.y));
-                    const SidebarLayout sidebar = ComputeSidebarLayout(hostSize, g_sidebarAnim);
+                    static const char *tabIcons[] = { ICON_FA_HOME, ICON_FA_EYE, ICON_FA_MICROCHIP,
+                                                      ICON_FA_STAR, ICON_FA_SLIDERS_H, ICON_FA_COG };
+                    static const char *tabNames[] = { "HOME", "ESP", "AIM", "SKINS", "MISC", "SETTINGS" };
+                    static const int   tabIds[]   = { 2, 1, 3, 4, 5, 6 };
+                    ImFont *tabIconFont = custom::shell::GetIconFont();
+                    ImFont *tabTextFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
+                    const int   tabCount = 6;
+                    const float tabGap = 5.0f;
+                    const float tabW = ImMax(1.0f, ((tabBarMax.x - tabBarMin.x) - tabGap * (tabCount + 1)) / (float)tabCount);
 
-                    const float  hostInnerH = ImMax(1.0f, (hostMax.y - contentPadding) - contentInnerMin.y);
-                    const ImVec2 railMin(contentInnerMin.x, contentInnerMin.y);
-                    const ImVec2 sidebarMin(railMin.x + sidebar.railW, contentInnerMin.y);
-                    const ImVec2 sidebarMax(sidebarMin.x + sidebar.panelW, contentInnerMin.y + hostInnerH);
-                    const ImVec2 contentMin(sidebarMin.x + sidebar.panelW + sidebar.gap, contentInnerMin.y);
-                    const ImVec2 contentSize(ImMax(1.0f, (hostMax.x - contentPadding) - contentMin.x),
-                                             hostInnerH);
+                    for (int i = 0; i < tabCount; ++i) {
+                        const ImVec2 pMin(tabBarMin.x + tabGap + (tabW + tabGap) * i, tabBarMin.y + 5.0f);
+                        const ImVec2 pMax(pMin.x + tabW, tabBarMax.y - 5.0f);
+                        char tId[40];
+                        snprintf(tId, sizeof(tId), "##lanx_tab_%d", tabIds[i]);
+                        ImGui::SetCursorScreenPos(pMin);
+                        ImGui::InvisibleButton(tId, ImVec2(tabW, pMax.y - pMin.y));
+                        const bool hov = ImGui::IsItemHovered();
+                        const bool act = (runtimeState.page == tabIds[i]);
 
-                    // The rail never goes away, so a folded sidebar can always
-                    // be brought back.
-                    if (custom::shell::DrawSidebarButton("##menu_sidebar_toggle", ICON_FA_BARS,
-                                                         g_sidebarOpen, railMin,
-                                                         ImVec2(sidebar.railW, sidebar.railW)))
-                        g_sidebarOpen = !g_sidebarOpen;
-                    if (sidebar.panelW > 1.0f) {
-                        runtimeDrawList->AddRectFilled(sidebarMin, sidebarMax,
-                            ImGui::GetColorU32(main_runtime_theme::GetActiveTabBackgroundColor()), 9.0f);
-                        runtimeDrawList->AddRect(sidebarMin, sidebarMax,
-                            main_runtime_theme::GetAccentTintU32(0.22f, 0.35f), 9.0f, 0, 1.0f);
-
-                        // Six pages, labelled with what they really draw: the
-                        // tab the wheel called HOME is the switch page (2), and
-                        // the one it called EXTRA is the changelog (5). Same
-                        // order the tab strip on main used, plus the HOME entry
-                        // the user asks for by name.
-                        static const char *sbIcons[] = { ICON_FA_HOME, ICON_FA_EYE, ICON_FA_MICROCHIP,
-                                                         ICON_FA_STAR, ICON_FA_SLIDERS_H, ICON_FA_COG };
-                        static const char *sbNames[] = { "HOME", "ESP", "AIM", "SKINS", "MISC", "SETTINGS" };
-                        static const int   sbIds[]   = { 2, 1, 3, 4, 5, 6 };
-
-                        ImFont *sbIconFont = custom::shell::GetIconFont();
-                        ImFont *sbTextFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
-
-                        // Clipped to the panel: while the fold animates the rows
-                        // slide away, and they must not paint over the content.
-                        ImGui::PushClipRect(sidebarMin, sidebarMax, true);
-                        float rowY = sidebarMin.y + sidebar.topPad;
-                        for (int i = 0; i < sidebar.rows; ++i) {
-                            const ImVec2 rMin(sidebarMin.x + sidebar.sidePad, rowY);
-                            const ImVec2 rSize(ImMax(1.0f, sidebar.panelW - sidebar.sidePad * 2.0f), sidebar.rowH);
-                            const ImVec2 rMax(rMin.x + rSize.x, rMin.y + rSize.y);
-
-                            ImGui::SetCursorScreenPos(rMin);
-                            char rId[48];
-                            snprintf(rId, sizeof(rId), "##menu_sidebar_%d", sbIds[i]);
-                            ImGui::InvisibleButton(rId, rSize);
-                            const bool hov = ImGui::IsItemHovered();
-                            const bool act = (runtimeState.page == sbIds[i]);
-
-                            if (act || hov) {
-                                runtimeDrawList->AddRectFilled(rMin, rMax,
-                                    act ? ImGui::GetColorU32(main_runtime_theme::GetActiveTabBackgroundColor())
-                                        : IM_COL32(18, 20, 29, 150), 8.0f);
-                            }
-                            if (act) {
-                                runtimeDrawList->AddRectFilled(rMin, ImVec2(rMin.x + 3.0f, rMax.y),
-                                    main_runtime_theme::GetAccentU32(), 2.0f);
-                            }
-
-                            if (sbIconFont) {
-                                runtimeDrawList->AddText(sbIconFont, 16.0f,
-                                    ImVec2(rMin.x + 10.0f, rMin.y + (rSize.y - 16.0f) * 0.5f),
-                                    act ? main_runtime_theme::GetAccentTintU32(0.98f, 1.0f)
-                                        : IM_COL32(154, 160, 182, hov ? 245 : 220),
-                                    sbIcons[i]);
-                            }
-
-                            if (rMax.x - 6.0f > rMin.x + 34.0f) {
-                                runtimeDrawList->AddText(sbTextFont, 12.5f,
-                                    ImVec2(rMin.x + 34.0f, rMin.y + (rSize.y - 12.5f) * 0.5f),
-                                    act ? IM_COL32(245, 245, 250, 255)
-                                        : IM_COL32(154, 160, 182, hov ? 245 : 205),
-                                    sbNames[i]);
-                            }
-
-                            if (ImGui::IsItemClicked()) {
-                                runtimeState.page = sbIds[i];
-                                runtimeState.activeTab = sbIds[i];
-                                g_LogoPreviewMode = false;
-                            }
-                            rowY += sidebar.rowH + sidebar.rowGap;
+                        if (act || hov) {
+                            runtimeDrawList->AddRectFilled(pMin, pMax,
+                                act ? main_runtime_theme::GetAccentTintU32(0.22f, 0.30f)
+                                    : IM_COL32(22, 25, 36, 200), 8.0f);
                         }
-                        ImGui::PopClipRect();
+                        if (act) {
+                            runtimeDrawList->AddRectFilled(ImVec2(pMin.x + 6.0f, pMax.y - 2.0f),
+                                                           ImVec2(pMax.x - 6.0f, pMax.y),
+                                                           main_runtime_theme::GetAccentU32(), 1.0f);
+                        }
+
+                        const ImU32 ink = act ? IM_COL32(245, 245, 250, 255)
+                                              : IM_COL32(150, 157, 178, hov ? 245 : 205);
+                        if (tabIconFont) {
+                            const ImVec2 is = custom::shell::MeasureText(tabIconFont, 13.0f, tabIcons[i]);
+                            runtimeDrawList->AddText(tabIconFont, 13.0f,
+                                ImVec2(ImFloor(pMin.x + 9.0f), ImFloor((pMin.y + pMax.y - is.y) * 0.5f)),
+                                act ? main_runtime_theme::GetAccentTintU32(0.98f, 1.0f) : ink, tabIcons[i]);
+                        }
+                        if (tabTextFont && pMax.x - pMin.x > 46.0f) {
+                            const ImVec2 ts = custom::shell::MeasureText(tabTextFont, 11.5f, tabNames[i]);
+                            runtimeDrawList->AddText(tabTextFont, 11.5f,
+                                ImVec2(ImFloor(pMin.x + 26.0f), ImFloor((pMin.y + pMax.y - ts.y) * 0.5f)), ink, tabNames[i]);
+                        }
+
+                        if (ImGui::IsItemClicked()) {
+                            runtimeState.page = tabIds[i];
+                            runtimeState.activeTab = tabIds[i];
+                            g_LogoPreviewMode = false;
+                        }
                     }
 
+                    const ImVec2 contentMin(tabBarMin.x, tabBarMax.y + 8.0f);
+                    const ImVec2 contentSize(ImMax(1.0f, (hostMax.x - contentPadding) - contentMin.x),
+                                             ImMax(1.0f, (hostMax.y - contentPadding) - contentMin.y));
                     ImGui::SetCursorScreenPos(contentMin);
                     ImGui::BeginChild("##RuntimeContentHost", contentSize, false, ImGuiWindowFlags_NoBackground);
                     {

@@ -491,8 +491,8 @@ namespace custom
         if (size.x <= 0.0f) size.x = ImMax(content_avail.x + size.x, 4.0f * c::scale);
         if (size.y <= 0.0f) size.y = ImMax(content_avail.y + size.y, 4.0f * c::scale);
 
-        const float rounding = 7.0f * c::scale;
-        const float cap_height = cap ? 34.0f * c::scale : 0.0f;
+        const float rounding = 9.0f * c::scale;
+        const float cap_height = cap ? 36.0f * c::scale : 0.0f;
         const ImVec2 panel_min = parent_window->DC.CursorPos;
         const ImVec2 panel_max = panel_min + size;
         SetNextWindowPos(panel_min + ImVec2(0.0f, cap_height));
@@ -500,10 +500,16 @@ namespace custom
 
         ImDrawList* draw = GetWindowDrawList();
         draw->AddRectFilled(panel_min, panel_max, GetColorU32(c::child::background), rounding);
+        draw->AddRect(panel_min, panel_max, GetColorU32(WithAlpha(c::accent, 0.12f)), rounding, 0, 1.0f);
 
         if (cap) {
             const ImVec2 cap_max(panel_max.x, panel_min.y + cap_height);
-            draw->AddRectFilled(panel_min, cap_max, GetColorU32(c::child::cap), rounding, ImDrawFlags_RoundCornersTop);
+            const ImU32 cap_hi = GetColorU32(MixColor(c::child::cap, c::accent, 0.16f));
+            draw->AddRectFilledMultiColor(panel_min, cap_max, cap_hi, cap_hi,
+                                          GetColorU32(c::child::cap), GetColorU32(c::child::cap));
+            draw->AddRectFilled(ImVec2(panel_min.x + 10.0f * c::scale, cap_max.y - 1.5f * c::scale),
+                                ImVec2(panel_max.x - 10.0f * c::scale, cap_max.y),
+                                GetColorU32(WithAlpha(c::accent, 0.55f)), 1.0f);
 
             const char* name_end = name ? FindRenderedTextEnd(name) : nullptr;
             if (name != nullptr && name_end != name) {

@@ -61,4 +61,14 @@ trap 'rm -rf "$OUT_DIR"' EXIT
     -I foxcheats -I foxcheats/includes -I SDK/Xhook -I libzip \
     System/Hooks/tests/feats_include_check.cpp
 
+# Main.cpp itself: the menu is built there, so a broken edit has to fail here
+# and not at ndk-build. PROP_VALUE_MAX is the only Android property header
+# constant the shim does not carry.
+"$CXX" -std=c++17 -fsyntax-only -DIMGUI_DEFINE_MATH_OPERATORS -D'__fastcall=' \
+    -DPROP_VALUE_MAX=92 -include Skin/tests/stubs/host_aarch64_shim.h \
+    -I Skin/tests/stubs -I . -I ImGui -I Includes \
+    -I curl/curl-android-arm64-v8a/include -I curl/openssl-android-arm64-v8a/include \
+    -I foxcheats -I foxcheats/includes -I SDK/Xhook -I libzip \
+    Main.cpp
+
 echo "host checks OK"
