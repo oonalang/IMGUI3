@@ -976,12 +976,22 @@ static void testCrosshairAim()
               "X3 near the dot but NOT under its ray -> NO fire (the over-fire fix)");
     }
     resetWorld();
-    setCrosshair(40.0f, -25.0f, 100.0f);
+    // The dot has to be ON the body for this to fire, and "on" is now the
+    // model's own silhouette at the dot's height (A_FireBodyHalfWidthM), not one
+    // shoulder-width cylinder for the whole body: at (840,425) the dot sits at
+    // the top of his head 40 px off the axis, which the profile refuses at
+    // 31.7 px. Moving the dot onto his chest (820,450 - the enemy's own pixel in
+    // this world) keeps the intent of the check: the decision follows the dot.
+    setCrosshair(20.0f, 0.0f, 100.0f);
     {
         TriggerTarget out{};
         FireBlock b = runScanOnCrosshairSetup(out, /*dotSeesPawn=*/true);
+        CHECK(g_triggerDiag.crosshairCx == 820.0f && g_triggerDiag.crosshairCy == 450.0f,
+              "X3 the moved dot is on his chest pixel (820,450)");
         CHECK(b == FireBlock::Fired && out.path == 0,
-              "X3 the same dot ON him still fires (the decision follows the dot)");
+              "X3 a dot ON his body still fires (the decision follows the dot)");
+        CHECK(g_triggerDiag.projKeepFrac >= 0.0f && g_triggerDiag.projKeepFrac <= 1.0f,
+              "X3 ... and it is measured inside the model's silhouette (keep <= 1)");
     }
 
     // --- X4: a far-away dot stops firing what is under the old centre ------
@@ -1106,7 +1116,7 @@ static void testCrosshairAim()
     // it tightens with distance instead of being a fixed pixel slack.
     resetWorld();
     objTargetUnderDot(3.3f);
-    setCrosshair(40.0f, 0.0f, 80.0f);
+    setCrosshair(20.0f, 0.0f, 80.0f);
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
     g_w2sImpl = w2sTrueProjection;
     g_centreHits = { {0.02f, &g_selfCol}, {5.0f, &g_targetCol} };
@@ -1117,7 +1127,7 @@ static void testCrosshairAim()
         setEnemyList(enemies, 1);
         FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
         CHECK(b == FireBlock::Fired && out.path == 0,
-              "X9b 40 px off a body 3 m away is still ON him -> fires");
+              "X9b 20 px off his neck at 3 m is still ON him -> fires");
     }
     resetWorld();
     objTargetUnderDot(40.0f);
@@ -1750,6 +1760,134 @@ static void testRepressPacing()
     resetWorld();
 }
 
+// ---------------------------------------------------------------------------
+// 6b. THE MODEL BOUND ON THE ZONE PATH
+//
+// "It still shoots even though I am not exactly looking at his body" was half
+// answered in path A (the dot's own ray) and left untouched here, on the path
+// that runs whenever the dot's ray cannot decide - an off-centre dot, a
+// missing projection symbol. That path accepted any enemy whose chest, or the
+// whole feet->head SEGMENT, projected inside the aim zone RADIUS, and a radius
+// is round while a body is not: the zone that matched his shoulders also fired
+// at the air 35 px above his head or beside it.
+//
+// These checks place a REAL projected body (w2sTrueProjection, the inverse of
+// the camera fake) and measure the dot against HIS silhouette, so each case is
+// a screen-space fact rather than a mock:
+//   M1 a dot on his chest fires (the model accepts what the eye sees);
+//   M2 a dot 35 px ABOVE his head is refused (inside the old 40 px slack);
+//   M3 a dot 35 px BESIDE his head at head height is refused (same slack);
+//   M4 a dot on him still fires when the zone is TINY (the model, not the
+//      circle, is the measurement);
+//   M5 a body that cannot be projected at all keeps the old zone rule.
+// ---------------------------------------------------------------------------
+static float testFocalPx()
+{
+    return (900.0f * 0.5f) /
+           tanf(NewFeatures::A_FireTune::kFallbackFov * 0.5f *
+                NewFeatures::A_FireTune::kDegToRad);
+}
+
+static void placeBody(float x, float headY, float feetY, float z)
+{
+    objPos(g_targetHead, x, headY, z);
+    objPos(g_targetMesh, x, feetY, z);
+    objPos(g_targetRoot, x, feetY, z);
+}
+
+// The zone path's world: no honest dot ray (killHonestDotRay moves the dot to
+// (830,450)), a REAL projection, and a clear line of sight - so every verdict
+// below is the model bound's, not the ray's.
+static void armZoneWorld()
+{
+    resetWorld();
+    Pawn *enemies[1] = { (Pawn *)g_targetPawn.b };
+    setEnemyList(enemies, 1);
+    killHonestDotRay();
+    fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
+    g_w2sImpl = w2sTrueProjection;
+    g_centreHits = { {0.02f, &g_selfCol} };
+    g_losHits    = { {0.0f, &g_selfCol}, {3.3f, &g_targetCol} };
+    Config.Crosshair.Size = 80.0f;        // 40 px radius: the old rule's slack
+}
+
+static void testModelBound()
+{
+    const float z    = 3.3f;
+    const float ppm  = testFocalPx() / z;   // px per metre at that distance
+
+    // --- M1: the dot is on his body -> fires ------------------------------
+    armZoneWorld();
+    placeBody(0.0f, 1.7f, 0.0f, z);
+    {
+        TriggerTarget out{};
+        const FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
+        CHECK(b == FireBlock::Fired, "M1 a dot ON the model fires");
+        CHECK(out.path == 1, "M1 ... through the zone path (no honest dot ray)");
+    }
+
+    // --- M2: 35 px above his head -> refused (the old 40 px slack fired) --
+    armZoneWorld();
+    {
+        const float headY = 1.6f - (35.0f / ppm);         // head 35 px BELOW the dot
+        placeBody(0.0f, headY, headY - 1.7f, z);
+        const int before = g_triggerDiag.modelSpanMiss;
+        TriggerTarget out{};
+        const FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
+        CHECK(b == FireBlock::NoEnemyInZone,
+              "M2 a dot 35 px above his head is refused (it was inside the old zone slack)");
+        CHECK(g_triggerDiag.modelSpanMiss > before,
+              "M2 ... and the panel counts it as a model miss");
+        // The old rule's measurement, spelled out: the dot was 35 px from the
+        // head end of the segment, i.e. INSIDE the 40 px zone it used to accept.
+        CHECK(35.0f <= Config.Crosshair.Size * 0.5f,
+              "M2 ... which the old radius rule would have accepted");
+    }
+
+    // --- M3: 35 px beside his head, at head height -> refused -------------
+    armZoneWorld();
+    {
+        const float x = 65.0f / ppm;                      // his axis 35 px right of the dot
+        placeBody(x, 1.6f, 1.6f - 1.7f, z);
+        const int before = g_triggerDiag.modelOffBody;
+        TriggerTarget out{};
+        const FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
+        CHECK(b == FireBlock::NoEnemyInZone,
+              "M3 a dot 35 px beside his head is refused (the head is only ~31 px half wide there)");
+        CHECK(g_triggerDiag.modelOffBody > before,
+              "M3 ... and the panel counts it as off-body");
+    }
+
+    // --- M4: the zone is tiny, the dot is on him -> still fires -----------
+    // The zone used to be the measurement; now the body is. A 20 px dot (10 px
+    // radius) cannot see past his shoulder, so only the model can.
+    armZoneWorld();
+    Config.Crosshair.Size = 20.0f;
+    placeBody(0.0f, 1.7f, 0.0f, z);
+    {
+        TriggerTarget out{};
+        const FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
+        CHECK(b == FireBlock::Fired,
+              "M4 a dot on him fires even when the aim zone is smaller than his body");
+    }
+
+    // --- M5: unprojectable body keeps the old zone rule -------------------
+    // Constant-point projection (what the other suite's fakes answer) makes the
+    // axis 0 px long: unmeasurable, so the drawn dot's zone still decides.
+    armZoneWorld();
+    g_w2sImpl = w2sOnCrosshair;                            // every point -> (820,450)
+    {
+        TriggerTarget out{};
+        const FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
+        CHECK(b == FireBlock::Fired,
+              "M5 a body that cannot be measured keeps the drawn dot's zone");
+    }
+
+    Config.Crosshair.Size = 80.0f;
+    restoreHonestDotRay();
+    g_w2sImpl = nullptr;
+}
+
 int main()
 {
     installFns();
@@ -1759,6 +1897,7 @@ int main()
     testArrayGuards();
     testCentreRay();
     testScan();
+    testModelBound();
     testNoTargetFilter();
     testCrosshairAim();
     testTickHookCost();

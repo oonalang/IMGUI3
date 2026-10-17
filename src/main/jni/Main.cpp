@@ -2021,6 +2021,15 @@ if (runtimeState.activeTab == 4) {
             ma::g_diag.asked[ma::GateList], ma::g_diag.granted[ma::GateList],
             ma::g_diag.asked[ma::GateItem], ma::g_diag.granted[ma::GateItem],
             ma::g_diag.asked[ma::GateCell], ma::g_diag.granted[ma::GateCell]);
+        // The two ANSWERS the gunsmith re-asks per row: is this attachment
+        // disabled on this weapon, and does the lock view still run. Non-zero
+        // asked counts here (with granted on the DATA lines above) are the proof
+        // that the layer-3 hooks are what the screen consults.
+        ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1),
+            "Row answers: disabled %d/%d  lockview %d/%d  precond %d/%d",
+            ma::g_diag.asked[ma::GateDisabled], ma::g_diag.granted[ma::GateDisabled],
+            ma::g_diag.asked[ma::GateLockView], ma::g_diag.granted[ma::GateLockView],
+            ma::g_diag.asked[ma::GatePrecondition], ma::g_diag.granted[ma::GatePrecondition]);
         // Did the hook itself land? A 0 here means the address never took the
         // hook (bad dump / failed install), which is why the counters above stay
         // at 0/0 - it is the first thing to check on a game update.
@@ -2030,6 +2039,11 @@ if (runtimeState.activeTab == 4) {
             ma::g_landed[ma::GateLoadout] ? 1 : 0,    ma::g_landed[ma::GateConfirm] ? 1 : 0,
             ma::g_landed[ma::GateList] ? 1 : 0,       ma::g_landed[ma::GateItem] ? 1 : 0,
             ma::g_landed[ma::GateCell] ? 1 : 0);
+        ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1),
+            "Layer-3/4 hooks landed: disabled %d  lockview %d  precond %d",
+            ma::g_landed[ma::GateDisabled] ? 1 : 0,
+            ma::g_landed[ma::GateLockView] ? 1 : 0,
+            ma::g_landed[ma::GatePrecondition] ? 1 : 0);
     }
 
     RenderSkinCategoryContent(skinSubTab, true);
@@ -2218,8 +2232,12 @@ if (runtimeState.activeTab == 4) {
                                     // (<= 1 means the dot was ON him), and Declined is
                                     // every shot the dot ray named but the dot was BESIDE
                                     // - the beside-the-arm refusal, counted.
-                                    ImGui::TextColored(dim, "Keep=%.2f Declined=%d",
-                                        td.projKeepFrac, td.dotRayDeclined);
+                                    // SpanMiss = the dot was above his head or below
+                                    // his feet, OffBody = it was beside him. Both are
+                                    // shots the model bound refused on EITHER path.
+                                    ImGui::TextColored(dim, "Keep=%.2f Declined=%d SpanMiss=%d OffBody=%d",
+                                        td.projKeepFrac, td.dotRayDeclined,
+                                        td.modelSpanMiss, td.modelOffBody);
                                     ImGui::TextColored(dim, "LOShit=%.2fm LeadBlk=%d SprWarn=%d Sw=%d Int=%.3f",
                                         td.lastLosHitDist,
                                         (int)td.leadPathBlocked, (int)td.spreadWarn,

@@ -974,6 +974,20 @@ inline void InitializeAllHooks() {
     HOOK_LIB("libunity.so", "0xB83F1C0", AttachmentItemSetData, orig_AttachmentItemSetData);
     HOOK_LIB("libunity.so", "0xB83D5E0", AttachmentCellSetData, orig_AttachmentCellSetData);
 
+    //-- Mythic Attachments, LAYER 3: the two answers the gunsmith re-asks on
+    //   every row refresh (dump.cs 1163878 / 1163778). Layer 2 rewrote the row
+    //   the list handed out; these stop the same row coming back disabled and
+    //   stop the lock view repainting the lock.
+    HOOK_LIB("libunity.so", "0xB6371C0", IsAttachDisabledForCurrentWeapon, orig_IsAttachDisabledForCurrentWeapon);
+    HOOK_LIB("libunity.so", "0xB63532C", UpdateEquipLockView, orig_UpdateEquipLockView);
+
+    //-- Mythic Attachments, LAYER 4: the PRECONDITION answer. This is the one
+    //   that still held the Signature Attachment locked after layers 2/3: its
+    //   OwnState was already written to EUnlock and the row was still refused,
+    //   greyed and un-equippable by the gunsmith panel's own check
+    //   (dump.cs 1170281, slot 50 - WeaponIniAttachBaseController).
+    HOOK_LIB("libunity.so", "0xBB636D8", IsPreConditionSatisfied, orig_IsPreConditionSatisfied);
+
     // Which of those seven addresses actually took the hook? The hooker only
     // fills the original pointer on success, and the SKINS tab prints these -
     // a 0 there is the reason that gate's asked/granted counter stays at 0/0.
@@ -984,6 +998,9 @@ inline void InitializeAllHooks() {
     mythic_attachments::NoteLanded(mythic_attachments::GateList,       orig_GetAttachmentList != nullptr);
     mythic_attachments::NoteLanded(mythic_attachments::GateItem,       orig_AttachmentItemSetData != nullptr);
     mythic_attachments::NoteLanded(mythic_attachments::GateCell,       orig_AttachmentCellSetData != nullptr);
+    mythic_attachments::NoteLanded(mythic_attachments::GateDisabled,   orig_IsAttachDisabledForCurrentWeapon != nullptr);
+    mythic_attachments::NoteLanded(mythic_attachments::GateLockView,   orig_UpdateEquipLockView != nullptr);
+    mythic_attachments::NoteLanded(mythic_attachments::GatePrecondition, orig_IsPreConditionSatisfied != nullptr);
 
     //-- Block Report Evidence (see ReportBlock.h). Default ON; the SETTINGS
     //   row is the only switch, and with it off every one of these calls the

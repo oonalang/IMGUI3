@@ -804,6 +804,16 @@ namespace NewFeatures
         // still be on the enemy (shoulders + gear). Deliberately NOT the half
         // HEIGHT - a body is tall, not round (see the path A bound below).
         static constexpr float kBodyHalfWidthM  = 0.32f;
+        // Path A's model bound, applied per HEIGHT of the body instead of once
+        // for the whole silhouette (see A_FireBodyHalfWidthM below): how much
+        // of the body's height span the dot may miss by (a hand, a backpack)
+        // and how many pixels of slack the projected profile gets.
+        static constexpr float kModelSpanMargin  = 0.04f;
+        static constexpr float kModelTolerancePx = 1.0f;
+        // m -> px floor on the profile: at 150 m an enemy's shoulders are only
+        // a couple of pixels wide, and a bound that shrinks below the dot's own
+        // size would refuse every distant shot instead of keeping it honest.
+        static constexpr float kModelMinPx       = 2.5f;
         static constexpr float kFriendlyRadius  = 0.35f;   // m - teammate capsule half width
         static constexpr float kSelfExclusion    = 0.15f;   // m - a blocker this close to the
                                                            // camera only proves the camera is
@@ -1038,6 +1048,126 @@ namespace NewFeatures
         }
         ap.valid = true;
         return ap;
+    }
+
+    // ---- The model's own silhouette ---------------------------------------
+    // Half width (metres) of a standing soldier at `t`, where t is the fraction
+    // of the feet->head axis: 0 = feet, 1 = head. These are the model's own
+    // proportions - a human is NOT a 0.32 m cylinder all the way up:
+    //
+    //     t      part                 half width
+    //     0.00   ankles / boots        0.09 m
+    //     0.12   shins                0.10 m
+    //     0.28   knees                0.12 m
+    //     0.45   thighs               0.15 m
+    //     0.55   hips                 0.20 m
+    //     0.66   waist                0.19 m
+    //     0.78   chest                0.24 m
+    //     0.86   shoulders (+gear)    0.27 m
+    //     0.93   neck                 0.15 m
+    //     1.00   head                 0.13 m
+    //
+    // The single kBodyHalfWidthM (=0.32 m) this replaces was the SHOULDER width
+    // applied to every point of the body, so a dot beside his head, his waist or
+    // his shins sat "within the width" and the trigger fired at nothing - the
+    // "it still shoots even though I am not on his body" report. Widest at the
+    // shoulders, much narrower everywhere else, is what the silhouette actually
+    // is.
+    inline float A_FireBodyHalfWidthM(float t)
+    {
+        struct Row { float t; float halfWidth; };
+        static const Row kRows[] = {
+            { 0.00f, 0.09f }, { 0.12f, 0.10f }, { 0.28f, 0.12f },
+            { 0.45f, 0.15f }, { 0.55f, 0.20f }, { 0.66f, 0.19f },
+            { 0.78f, 0.24f }, { 0.86f, 0.27f }, { 0.93f, 0.15f },
+            { 1.00f, 0.13f },
+        };
+        constexpr int kCount = (int)(sizeof(kRows) / sizeof(kRows[0]));
+        if (!(t > 0.0f)) return kRows[0].halfWidth;
+        if (t >= 1.0f)  return kRows[kCount - 1].halfWidth;
+        for (int i = 1; i < kCount; i++) {
+            if (t <= kRows[i].t) {
+                const float span = kRows[i].t - kRows[i - 1].t;
+                const float f    = span > 0.0f ? (t - kRows[i - 1].t) / span : 0.0f;
+                return kRows[i - 1].halfWidth + f * (kRows[i].halfWidth - kRows[i - 1].halfWidth);
+            }
+        }
+        return kRows[kCount - 1].halfWidth;
+    }
+
+    // ---- "is the dot ON the model?" ---------------------------------------
+    // ONE answer, used by BOTH scan paths (the dot ray's path A and the zone
+    // scan), because "the dot is on his body" has to mean the same thing in
+    // both or the trigger still fires beside him through whichever one runs.
+    //
+    // Inputs are the enemy's head/feet in WORLD and on SCREEN (already
+    // projected), plus the dot. Everything else is derived from those - no
+    // screen size, no field of view, no bone offset:
+    //   * px per metre comes from the SAME axis (its projected length over its
+    //     world length), so the bound is physical at any distance;
+    //   * the dot's height fraction t decides WHERE on him it is, and the model
+    //     profile is read at exactly that height;
+    //   * a dot past his head or past his feet is OUTSIDE, never folded onto the
+    //     nearest end of the axis (that fold is what let a dot above his head
+    //     count as "on his shoulders").
+    enum AF_BodyFit
+    {
+        AF_BodyUnmeasurable = 0,   // his body did not project: caller decides
+        AF_BodyInside       = 1,   // the dot is on the silhouette at that height
+        AF_BodyOutside      = 2    // beside him / above his head / below his feet
+    };
+
+    struct AF_BodyProbe
+    {
+        int   fit;        // AF_BodyFit
+        float t;          // the dot's height fraction on him (0 feet .. 1 head)
+        float limitPx;    // the silhouette's half width in px AT that height
+        float latPx;      // the dot's lateral px from his axis at that height
+        float axisPx;     // his projected feet->head length in px
+    };
+
+    inline AF_BodyProbe A_FireFitToBody(const Vector3 &headW, const Vector3 &feetW,
+                                        const Vector3 &scHead, const Vector3 &scFeet,
+                                        float cx, float cy)
+    {
+        AF_BodyProbe p{};
+        p.fit = AF_BodyUnmeasurable;
+
+        const float axX    = scHead.x - scFeet.x;
+        const float axY    = scHead.y - scFeet.y;
+        const float axisPx = sqrtf(axX * axX + axY * axY);
+        const float axisM  = Vector3::Distance(headW, feetW);
+        if (!(axisPx > 0.5f) || !(axisM > 0.3f))
+            return p;                       // no usable axis: nothing to measure
+
+        const float len2     = axX * axX + axY * axY;
+        const float tRaw     = ((cx - scFeet.x) * axX + (cy - scFeet.y) * axY) / len2;
+        const float tClamped = tRaw < 0.0f ? 0.0f : (tRaw > 1.0f ? 1.0f : tRaw);
+
+        p.t       = tRaw;
+        p.axisPx  = axisPx;
+        p.limitPx = A_FireBodyHalfWidthM(tClamped) * (axisPx / axisM) +
+                    A_FireTune::kModelTolerancePx;
+        if (p.limitPx < A_FireTune::kModelMinPx)
+            p.limitPx = A_FireTune::kModelMinPx;   // never a sub-pixel target
+
+        if (tRaw < -A_FireTune::kModelSpanMargin ||
+            tRaw >  1.0f + A_FireTune::kModelSpanMargin) {
+            // above his head / below his feet: not his body, however close
+            p.fit   = AF_BodyOutside;
+            p.latPx = p.limitPx + 1.0f;
+            return p;
+        }
+
+        // Perpendicular distance to his axis AT HIS OWN HEIGHT, not to the
+        // nearest end of the segment.
+        const float projX = scFeet.x + axX * tClamped;
+        const float projY = scFeet.y + axY * tClamped;
+        const float dxp   = cx - projX;
+        const float dyp   = cy - projY;
+        p.latPx = sqrtf(dxp * dxp + dyp * dyp);
+        p.fit   = (p.latPx <= p.limitPx) ? AF_BodyInside : AF_BodyOutside;
+        return p;
     }
 
     // ---- Weapon readiness -------------------------------------------------
@@ -1469,6 +1599,12 @@ namespace NewFeatures
         bool   dotRayHonest;         // 1 = this scan had a ray through the dot
         bool   dotRayDecided;        // 1 = the shot was decided by the dot ray
         int    dotRayDeclined;       // lifetime: the dot ray named a pawn but the dot is not ON him
+        int    modelSpanMiss;        // lifetime: the dot sat above his head / below his feet
+        int    modelOffBody;         // lifetime: the zone scan refused a dot that was NOT on his silhouette
+        float  modelT;               // last scan: the dot's height fraction on his body (0 feet .. 1 head)
+        float  modelLimitPx;         // last scan: the silhouette half width in px at that height
+        float  modelLatPx;           // last scan: the dot's lateral px from his axis at that height
+        float  modelAxisPx;          // last scan: his projected feet->head length in px
         float  projKeepFrac;         // last accepted shot: dot->hit px / accepted body px (< 1 = on body)
         int    raysIdentified;  // last scan: rays whose nearest hit WAS the target
         int    raysBlocked;     // last scan: rays stopped by something else
@@ -2418,21 +2554,43 @@ namespace NewFeatures
                     }
                 }
 
-                // The pixel limit the dot is held to, and the px^2 it is compared
-                // against. A negative limit means his body could not be measured.
+                // The pixel bound the dot is held to, and the px^2 it is
+                // compared against: A_FireFitToBody - the model's own
+                // silhouette, read at the dot's height. A negative limit means
+                // his body could not be measured at all.
+                //
+                // What this replaced, and why it must not come back:
+                //   * ONE width (kBodyHalfWidthM, the 0.32 m shoulder width)
+                //     applied from boots to head, so a dot beside his head or
+                //     his shins sat "within the width" and fired at nothing;
+                //   * distance measured to the feet->head SEGMENT, so a dot
+                //     above his head or below his feet was clamped onto the
+                //     endpoint and still counted.
+                // Now the dot's height fraction picks the profile's own half
+                // width (0.09 m boots, 0.27 m shoulders, 0.13 m head) and any
+                // dot outside his height span is refused outright.
                 float limitPx = -1.0f;
                 float testSq  = bestSq;
                 if (ap.valid && ap.headOk && ap.feetOk && focalPx > 0.0f) {
                     Vector3 scHead = Vector3::zero(), scFeet = Vector3::zero();
                     if (w2s(ap.head, scHead) && w2s(ap.feet, scFeet) &&
                         scHead.z > 0.0f && scFeet.z > 0.0f) {
-                        const float axisPx = sqrtf((scHead.x - scFeet.x) * (scHead.x - scFeet.x) +
-                                                   (scHead.y - scFeet.y) * (scHead.y - scFeet.y));
-                        const float axisM  = Vector3::Distance(ap.head, ap.feet);
-                        if (axisPx > 0.5f && axisM > 0.3f) {
-                            limitPx = A_FireTune::kBodyHalfWidthM * (axisPx / axisM) + 2.0f;
-                            testSq  = A_FirePointSegDistSq(cx, cy, scHead.x, scHead.y,
-                                                           scFeet.x, scFeet.y);
+                        const AF_BodyProbe probe =
+                            A_FireFitToBody(ap.head, ap.feet, scHead, scFeet, cx, cy);
+                        if (probe.fit != AF_BodyUnmeasurable) {
+                            limitPx        = probe.limitPx;
+                            d.modelT       = probe.t;
+                            d.modelLimitPx = probe.limitPx;
+                            d.modelAxisPx  = probe.axisPx;
+                            if (probe.fit == AF_BodyOutside) {
+                                // above his head / below his feet, or beside him
+                                if (probe.t < 0.0f || probe.t > 1.0f) d.modelSpanMiss++;
+                                else                                     d.modelOffBody++;
+                                testSq = limitPx * limitPx + 1.0f;
+                            } else {
+                                testSq       = probe.latPx * probe.latPx;
+                                d.modelLatPx = probe.latPx;
+                            }
                         }
                     }
                 }
@@ -2521,29 +2679,59 @@ namespace NewFeatures
             // replaces the whole hitbox-priority walk: no bone field offset, no
             // user pick, and a body that fills the screen at 2 m is handled exactly
             // like one a few px tall at 150 m.
-            float d2 = -1.0f;
-            Vector3 scChest = Vector3::zero();
-            if (w2s(ap.pos, scChest) && scChest.z > 0.0f) {
-                const float dx = scChest.x - cx;
-                const float dy = scChest.y - cy;
-                d2 = dx * dx + dy * dy;
-            }
-            // The chest already answers it (and is the case that fires): do not
-            // pay two more WorldToScreenPoint calls for the body span.
-            if (d2 >= 0.0f && d2 > radiusSq && ap.headOk && ap.feetOk) {
+            // ---- THE MODEL DECIDES, the radius only covers the rest ---------
+            // This path runs when the dot's own ray cannot decide (an
+            // off-centre dot, no projection symbol), and it used to accept any
+            // enemy whose chest - or whose whole feet->head SEGMENT - projected
+            // within the aim zone radius. A radius is round: at the head and at
+            // the boots the body is a fraction of the shoulder width, so a zone
+            // that matched his shoulders also fired at the air beside his head.
+            // That is the "it shoots even though I am not on his body" report.
+            //
+            // Now his OWN silhouette answers first (A_FireFitToBody, the same
+            // measurement path A uses): a dot beside him, above his head or
+            // below his feet is refused no matter how big the zone is - and a dot
+            // ON him fires even when the zone is smaller than his body, because
+            // the body is the model, not the circle. Only when his body cannot be
+            // projected at all (prone, seen end-on, no feet bone) does the drawn
+            // dot's zone decide, as before.
+            AF_BodyProbe probe{};
+            probe.fit = AF_BodyUnmeasurable;
+            if (ap.headOk && ap.feetOk) {
                 Vector3 scHead = Vector3::zero();
                 Vector3 scFeet = Vector3::zero();
                 if (w2s(ap.head, scHead) && w2s(ap.feet, scFeet) &&
-                    scHead.z > 0.0f && scFeet.z > 0.0f) {
-                    const float body = A_FirePointSegDistSq(cx, cy,
-                                                            scHead.x, scHead.y,
-                                                            scFeet.x, scFeet.y);
-                    if (d2 < 0.0f || body < d2) d2 = body;
+                    scHead.z > 0.0f && scFeet.z > 0.0f)
+                    probe = A_FireFitToBody(ap.head, ap.feet, scHead, scFeet, cx, cy);
+            }
+
+            float chestSq = -1.0f;                                // for the diagnostics only
+            {
+                Vector3 scChest = Vector3::zero();
+                if (w2s(ap.pos, scChest) && scChest.z > 0.0f) {
+                    const float dx = scChest.x - cx;
+                    const float dy = scChest.y - cy;
+                    chestSq = dx * dx + dy * dy;
                 }
             }
-            if (d2 < 0.0f) continue;                              // his body is not on screen
+            if (probe.fit == AF_BodyOutside) {
+                if (probe.t < 0.0f || probe.t > 1.0f) d.modelSpanMiss++;
+                else                                  d.modelOffBody++;
+                if (chestSq >= 0.0f &&
+                    (d.closestPx < 0.0f || chestSq < d.closestPx * d.closestPx))
+                    d.closestPx = sqrtf(chestSq);
+                continue;                                         // the dot is NOT on him
+            }
+
+            float d2 = -1.0f;
+            if (probe.fit == AF_BodyInside) {
+                d2 = probe.latPx * probe.latPx;                   // on him: rank by how centred
+            } else {
+                if (chestSq < 0.0f) continue;                     // his body is not on screen
+                if (chestSq > radiusSq) continue;                 // nothing measurable near the dot
+                d2 = chestSq;
+            }
             if (d.closestPx < 0.0f || d2 < d.closestPx) d.closestPx = d2;   // "how close did anything get"
-            if (d2 > radiusSq) continue;                          // not under the crosshair
             const float pxOffset = sqrtf(d2);
             if (n >= MAX_CANDIDATES) continue;
 

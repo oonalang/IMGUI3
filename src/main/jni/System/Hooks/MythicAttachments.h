@@ -59,6 +59,21 @@
 //  callers). The three below are multi-kilobyte functions ON the render path of
 //  the very screen that draws the lock, so they cannot be skipped that way.
 //
+//  LAYER 3 answers the two per-row questions the gunsmith re-asks (disabled on
+//  this weapon, and the lock view). LAYER 4 is the PRECONDITION - the one that
+//  still held the Signature Attachment locked on device:
+//
+//   8. LoadoutWeaponsAttachmentController.IsAttachDisabledForCurrentWeapon
+//        RVA 0xB6371C0 (dump.cs 1163786) - "cannot be used on this weapon".
+//   9. LoadoutWeaponsAttachmentController.UpdateEquipLockView
+//        RVA 0xB63532C (dump.cs 1163768) - repaints the lock after every click.
+//  10. WeaponIniAttachBaseController.IsPreConditionSatisfied
+//        RVA 0xBB636D8 (dump.cs 1170281) - slot 50 of the gunsmith panel: the
+//        Signature Attachment's own gate, plus AttachmentGroupNew.
+//        m_IsPreConditionSatisfied @0x19 (dump.cs 2073145) forced in the same
+//        writes that force OwnState, because that is the field the row view
+//        reads to show its ObjPreNoSatisfied (lock) object.
+//
 //  All four answer the honest value while the toggle is off, and the original
 //  game function is always the fallback (never a hard-coded false), so turning
 //  the option off restores stock behaviour exactly.
@@ -101,6 +116,35 @@ namespace mythic_attachments
         constexpr uintptr_t AttachmentList_GetAttachmentList         = 0xB6323C0;
         constexpr uintptr_t AttachmentItem_SetData                   = 0xB83F1C0;
         constexpr uintptr_t AttachmentCell_SetData                   = 0xB83D5E0;
+
+        // Layer 3 - the two ANSWERS the gunsmith still consults per row, and the
+        // reason the lock survived layer 2 on device:
+        //   LoadoutWeaponsAttachmentController.IsAttachDisabledForCurrentWeapon
+        //     (uint attachId) -> bool      dump.cs 1163786   RVA 0xB6371C0
+        //     "this attachment cannot be used on this weapon" - a locked row is
+        //     also DISABLED, and a disabled row cannot be equipped even when its
+        //     OwnState says unlocked.
+        //   LoadoutWeaponsAttachmentController.UpdateEquipLockView
+        //     (AttachmentGroupNew) -> void  dump.cs 1163768   RVA 0xB63532C
+        //     the view that DRAWS the lock, run on every refresh of the row.
+        constexpr uintptr_t Loadout_IsAttachDisabled                  = 0xB6371C0;
+        constexpr uintptr_t Loadout_UpdateEquipLockView               = 0xB63532C;
+
+        // Layer 4 - the PRECONDITION, which is the *Signature Attachment* in the
+        // user's screenshot: a mythic-only row whose "can this be used here"
+        // answer is separate from its OwnState. That row keeps its grey card and
+        // its lock while OwnState already says unlocked, and the EQUIP button
+        // stays disabled.
+        //   WeaponIniAttachBaseController.IsPreConditionSatisfied
+        //     (ref string conflictDesc, bool bTip) -> bool
+        //     dump.cs 1170281   RVA 0xBB636D8   Slot 50
+        //     the gunsmith panel's own check, run when the row is selected and
+        //     when the equip button is refreshed (UpdateBtnState).
+        //   AttachmentGroupNew.m_IsPreConditionSatisfied
+        //     bool @0x19, dump.cs 2073145 - the field the ROW view reads to show
+        //     its ObjPreNoSatisfied (lock) object. Forced in the same writes that
+        //     force OwnState, because a field write cannot be inlined away.
+        constexpr uintptr_t WeaponIni_PreConditionSatisfied           = 0xBB636D8;
     }
 
     // The attachment half: the new toggle, plus the flag this repo shipped
@@ -128,6 +172,9 @@ namespace mythic_attachments
         GateList,             // LoadoutWeaponsAttachmentController.GetAttachmentList
         GateItem,             // LoadoutWeaponsAttachmentItemController.SetData
         GateCell,             // LoadoutWeaponsAttachmentCell.SetData
+        GateDisabled,         // LoadoutWeaponsAttachmentController.IsAttachDisabledForCurrentWeapon
+        GateLockView,         // LoadoutWeaponsAttachmentController.UpdateEquipLockView
+        GatePrecondition,     // WeaponIniAttachBaseController.IsPreConditionSatisfied
         GateCount
     };
 
@@ -169,6 +216,7 @@ namespace mythic_attachments
     // ABSOLUTE offset from the object pointer - the same convention the Skin tab
     // already uses when it casts a config instance to its field struct.
     constexpr uintptr_t kAttachGroupNew_OwnState = 0x3C;   // int, dump.cs 2073151
+    constexpr uintptr_t kAttachGroupNew_PreCondition = 0x19; // bool, dump.cs 2073145
     constexpr int       kOwnStateELock   = 0;              // EAttachmentOwnState
     constexpr int       kOwnStateEUnlock = 1;
     constexpr int       kCellStateELocked = 3;             // EAttachmentCellState
@@ -201,6 +249,10 @@ namespace mythic_attachments
             if (group == nullptr) continue;
             int *own = (int *)((char *)group + kAttachGroupNew_OwnState);
             if (*own == kOwnStateELock) { *own = kOwnStateEUnlock; forced++; }
+            if (!*(bool *)((char *)group + kAttachGroupNew_PreCondition)) {
+                *(bool *)((char *)group + kAttachGroupNew_PreCondition) = true;
+                forced++;
+            }
         }
         return forced;
     }
@@ -214,6 +266,20 @@ namespace mythic_attachments
         int *own = (int *)((char *)group + kAttachGroupNew_OwnState);
         if (*own != kOwnStateELock) return false;
         *own = kOwnStateEUnlock;
+        return true;
+    }
+
+    // The PRECONDITION of one row (dump.cs 2073145): "this row may be used on
+    // this weapon". A Signature Attachment - the mythic's own slot, the one the
+    // user's screenshot still shows with a padlock - is exactly a row whose
+    // OwnState can be unlocked while this stays false, which is why layer 2/3
+    // alone left it locked. Returns true only when it actually flipped.
+    inline bool UnlockPreConditionGroup(void *group)
+    {
+        if (group == nullptr) return false;
+        bool *ok = (bool *)((char *)group + kAttachGroupNew_PreCondition);
+        if (*ok) return false;
+        *ok = true;
         return true;
     }
 }
@@ -314,9 +380,10 @@ inline void (*orig_AttachmentItemSetData)(void *instance, void *group, void *pan
 inline void AttachmentItemSetData(void *instance, void *group, void *panel)
 {
     mythic_attachments::NoteAsk(mythic_attachments::GateItem);
-    if (mythic_attachments::AttachmentsUnlocked() &&
-        mythic_attachments::UnlockOwnStateGroup(group)) {
-        mythic_attachments::NoteGrant(mythic_attachments::GateItem);
+    if (mythic_attachments::AttachmentsUnlocked()) {
+        const bool own = mythic_attachments::UnlockOwnStateGroup(group);
+        const bool pre = mythic_attachments::UnlockPreConditionGroup(group);
+        if (own || pre) mythic_attachments::NoteGrant(mythic_attachments::GateItem);
     }
     if (orig_AttachmentItemSetData != nullptr)
         orig_AttachmentItemSetData(instance, group, panel);
@@ -354,4 +421,66 @@ inline void AttachmentCellSetData(void *instance, uint32_t weaponID,
         orig_AttachmentCellSetData(instance, weaponID, attachmentType, attachItem, callback,
                                    cellState, conflictAttachmentStr, posName,
                                    isTransmogrification, enableReddot, isGuarActiveTipVisible);
+}
+
+// ---- 8. "is this attachment disabled on this weapon?" ---------------------
+// dump.cs 1163878: private bool IsAttachDisabledForCurrentWeapon(uint attachId).
+// A disabled row is not clickable even when it is unlocked, so this answer has
+// to match the OwnState writes above or the row shows unlocked and does nothing.
+inline bool (*orig_IsAttachDisabledForCurrentWeapon)(void *instance, uint32_t attachId) = nullptr;
+inline bool IsAttachDisabledForCurrentWeapon(void *instance, uint32_t attachId)
+{
+    mythic_attachments::NoteAsk(mythic_attachments::GateDisabled);
+    if (instance != nullptr && mythic_attachments::AttachmentsUnlocked()) {
+        mythic_attachments::NoteGrant(mythic_attachments::GateDisabled);
+        return false;                       // never disabled while the option is on
+    }
+    return orig_IsAttachDisabledForCurrentWeapon != nullptr
+         ? orig_IsAttachDisabledForCurrentWeapon(instance, attachId)
+         : false;
+}
+
+// ---- 9. the view that draws the lock -------------------------------------
+// dump.cs 1163778: private void UpdateEquipLockView(AttachmentGroupNew
+// attachmentGroup). The row is refreshed here outside the list build (after a
+// click, after the server answers, after a data-store update), which is why a
+// lock can come back on a row that layer 2 had already rewritten: the view is
+// handed the group again. OwnState is forced to EUnlock BEFORE the original
+// runs, so the view it paints is the unlocked one.
+inline void (*orig_UpdateEquipLockView)(void *instance, void *group) = nullptr;
+inline void UpdateEquipLockView(void *instance, void *group)
+{
+    mythic_attachments::NoteAsk(mythic_attachments::GateLockView);
+    if (mythic_attachments::AttachmentsUnlocked()) {
+        const bool own = mythic_attachments::UnlockOwnStateGroup(group);
+        const bool pre = mythic_attachments::UnlockPreConditionGroup(group);
+        if (own || pre) mythic_attachments::NoteGrant(mythic_attachments::GateLockView);
+    }
+    if (orig_UpdateEquipLockView != nullptr)
+        orig_UpdateEquipLockView(instance, group);
+}
+
+// ---- 10. the gunsmith's own precondition answer ---------------------------
+// dump.cs 1170281: protected virtual bool IsPreConditionSatisfied(ref string
+// conflictDesc, bool bTip), slot 50 of WeaponIniAttachBaseController (the
+// gunsmith panel: it owns SetEquipAttachDotsView, UpdateBtnState and
+// OnBtnEquipClick). The override at dump.cs 1171475 belongs to the weapon
+// COMPARE screen, which asks the same question of its own rows.
+//
+// This is the answer behind the Signature Attachment's padlock that layers 2/3
+// could not move: its OwnState is already EUnlock (the row is in the list) but
+// the panel still refuses it, greys the card and leaves EQUIP disabled. The
+// `ref string` conflict description is only ever filled in on the failure path,
+// so answering true deliberately leaves it untouched - nothing reads it then.
+inline bool (*orig_IsPreConditionSatisfied)(void *instance, void *conflictDesc, bool bTip) = nullptr;
+inline bool IsPreConditionSatisfied(void *instance, void *conflictDesc, bool bTip)
+{
+    mythic_attachments::NoteAsk(mythic_attachments::GatePrecondition);
+    if (instance != nullptr && mythic_attachments::AttachmentsUnlocked()) {
+        mythic_attachments::NoteGrant(mythic_attachments::GatePrecondition);
+        return true;
+    }
+    return orig_IsPreConditionSatisfied != nullptr
+         ? orig_IsPreConditionSatisfied(instance, conflictDesc, bTip)
+         : false;
 }

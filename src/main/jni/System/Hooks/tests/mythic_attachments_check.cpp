@@ -177,6 +177,7 @@ static void free_list(char *list)
     free(list);
 }
 static int own_state(char *group) { return *(int *)(group + kAttachGroupNew_OwnState); }
+static bool precond(char *group) { return *(bool *)(group + kAttachGroupNew_PreCondition); }
 
 // -- fake originals -------------------------------------------------------
 static void  *g_fakeList = nullptr;
@@ -213,11 +214,39 @@ static void   fake_origCellSetData(void *, uint32_t weaponID, int32_t attachment
     g_cellConflict = conflict; g_cellPosName = posName;
     g_cellTransmog = transmog; g_cellReddot = reddot; g_cellGuar = guar;
 }
+static int    g_disabledCalls = 0;
+static uint32_t g_disabledAttachId = 0;
+static bool   fake_origIsAttachDisabled(void *, uint32_t attachId)
+{
+    g_disabledCalls++;
+    g_disabledAttachId = attachId;
+    return true;                        // "disabled on this weapon"
+}
+static int    g_lockViewCalls = 0;
+static void  *g_lockViewGroup = nullptr;
+static void   fake_origUpdateEquipLockView(void *, void *group)
+{
+    g_lockViewCalls++;
+    g_lockViewGroup = group;
+}
+static int    g_precondCalls = 0;
+static void  *g_precondInstance = nullptr, *g_precondConflict = nullptr;
+static bool   g_precondTip = false;
+static bool   fake_origPreCondition(void *instance, void *conflictDesc, bool bTip)
+{
+    g_precondCalls++;
+    g_precondInstance = instance; g_precondConflict = conflictDesc;
+    g_precondTip = bTip;
+    return false;                        // "precondition not satisfied"
+}
 static void installLayer2Fakes()
 {
     orig_GetAttachmentList     = fake_origGetAttachmentList;
     orig_AttachmentItemSetData = fake_origItemSetData;
     orig_AttachmentCellSetData = fake_origCellSetData;
+    orig_IsAttachDisabledForCurrentWeapon = fake_origIsAttachDisabled;
+    orig_UpdateEquipLockView              = fake_origUpdateEquipLockView;
+    orig_IsPreConditionSatisfied          = fake_origPreCondition;
 }
 
 int main()
@@ -357,6 +386,9 @@ int main()
               "M7 ON: every ELock row is rewritten to EUnlock in place");
         CHECK(own_state(groups[1]) == 3 && own_state(groups[2]) == 2 && own_state(groups[3]) == kOwnStateEUnlock,
               "M7 ON: equipped / default / already-unlocked rows keep the state the game gave them");
+        CHECK(precond(groups[0]) && precond(groups[1]) && precond(groups[2]) &&
+              precond(groups[3]) && precond(groups[4]),
+              "M7 ON: every row's PRECONDITION is satisfied (the Signature Attachment's own lock)");
         CHECK(g_listCalls == 1 && g_listType == 7,
               "M7 ON: the real builder was called exactly once, with the attachment type intact");
         CHECK(g_diag.asked[GateList] == 1 && g_diag.granted[GateList] == 1,
@@ -378,6 +410,8 @@ int main()
         GetAttachmentList(&g_instance, 3);
         CHECK(own_state(groups[0]) == kOwnStateELock && own_state(groups[1]) == kOwnStateELock,
               "M8 OFF: nothing is rewritten - the game's own ownership stands");
+        CHECK(!precond(groups[0]) && !precond(groups[1]),
+              "M8 OFF: the precondition is left unsatisfied too (stock lock and grey card)");
         CHECK(g_listCalls == 1 && g_listType == 3,
               "M8 OFF: ... and the real builder still ran once with its argument");
         CHECK(g_diag.asked[GateList] == 1 && g_diag.granted[GateList] == 0,
@@ -406,11 +440,13 @@ int main()
         CHECK(g_diag.asked[GateItem] == 1 && g_diag.granted[GateItem] == 1,
               "M9 ON: item gate counts one ask and one grant");
 
+        CHECK(precond(locked),
+              "M9 ON: the row's precondition is satisfied before the view reads it");
         AttachmentItemSetData(&g_instance, equipped, &panel);
         CHECK(own_state(equipped) == 3,
-              "M9 ON: an equipped row is left alone (only ELock is rewritten)");
-        CHECK(g_diag.granted[GateItem] == 1,
-              "M9 ON: ... so nothing is double counted as granted");
+              "M9 ON: an equipped row keeps its EEquip state (only ELock is rewritten)");
+        CHECK(precond(equipped) && g_diag.granted[GateItem] == 2,
+              "M9 ON: ... while its precondition is still written and counted");
 
         setFlags(false, false);
         memset(&g_diag, 0, sizeof(g_diag));
@@ -509,19 +545,106 @@ int main()
         AttachmentCellSetData(&g_instance, 1u, 1, &attach, &cb, kCellStateELocked,
                               nullptr, nullptr, false, false, false);
         CHECK(g_cellCalls == 0, "M14 ... and the cell hook calls nothing");
+        Config.ExtraMenu.MythicAttachments = false;
+        Config.ExtraMenu.Attachment        = false;
+        CHECK(!IsPreConditionSatisfied(&g_instance, nullptr, false),
+              "M14 with no original the precondition gate answers false, it does not crash");
+        Config.ExtraMenu.MythicAttachments = true;
+        CHECK(IsPreConditionSatisfied(&g_instance, nullptr, false),
+              "M14 ... and ON still answers without the original");
         free(group);
     }
     installLayer2Fakes();
 
+    // ---- M16: the layer-3 answers (the lock that came back on device) ------
+    installLayer2Fakes();
+    setFlags(true, false);
+    memset(&g_diag, 0, sizeof(g_diag));
+    {
+        g_disabledCalls = 0;
+        CHECK(IsAttachDisabledForCurrentWeapon(&g_instance, 0x77) == false,
+              "M16 ON: an attachment is never 'disabled for this weapon'");
+        CHECK(g_disabledCalls == 0,
+              "M16 ON: ... answered here, the game's own function not called");
+        CHECK(g_diag.asked[GateDisabled] == 1 && g_diag.granted[GateDisabled] == 1,
+              "M16 ON: the disabled gate counts one ask and one grant");
+
+        char *group = make_group(kOwnStateELock);
+        g_lockViewCalls = 0;
+        UpdateEquipLockView(&g_instance, group);
+        CHECK(own_state(group) == kOwnStateEUnlock,
+              "M16 ON: the lock view is handed an UNLOCKED row");
+        CHECK(g_lockViewCalls == 1 && g_lockViewGroup == group,
+              "M16 ON: ... and the view still runs, with the caller's own row");
+        CHECK(g_diag.asked[GateLockView] == 1 && g_diag.granted[GateLockView] == 1,
+              "M16 ON: the lock-view gate counts one ask and one grant");
+
+        CHECK(precond(group),
+              "M16 ON: the lock view is also handed a SATISFIED precondition");
+        *(int *)(group + kAttachGroupNew_OwnState) = 3;     // EEquip
+        g_lockViewCalls = 0;
+        UpdateEquipLockView(&g_instance, group);
+        CHECK(own_state(group) == 3,
+              "M16 ON: an EQUIPPED row keeps its state - only ELock is rewritten");
+        CHECK(g_diag.granted[GateLockView] == 1,
+              "M16 ON: a row whose lock and precondition are already set is not counted again");
+        free(group);
+
+        setFlags(false, false);
+        memset(&g_diag, 0, sizeof(g_diag));
+        g_disabledCalls = 0;
+        CHECK(IsAttachDisabledForCurrentWeapon(&g_instance, 0x77) == true,
+              "M17 OFF: the game's own 'disabled' answer is returned");
+        CHECK(g_disabledCalls == 1 && g_disabledAttachId == 0x77,
+              "M17 OFF: ... called once, with the caller's own attachment id");
+        char *group2 = make_group(kOwnStateELock);
+        g_lockViewCalls = 0;
+        UpdateEquipLockView(&g_instance, group2);
+        CHECK(own_state(group2) == kOwnStateELock && !precond(group2) && g_lockViewCalls == 1,
+              "M17 OFF: the row reaches the view unchanged and the view still runs");
+        CHECK(g_diag.granted[GateDisabled] == 0 && g_diag.granted[GateLockView] == 0,
+              "M17 OFF: asked, never granted");
+        free(group2);
+        setFlags(true, false);
+    }
+
+    // ---- M18: the PRECONDITION gate (the Signature Attachment's lock) -------
+    installLayer2Fakes();
+    setFlags(true, false);
+    memset(&g_diag, 0, sizeof(g_diag));
+    {
+        int conflictDesc = 0;
+        g_precondCalls = 0;
+        CHECK(IsPreConditionSatisfied(&g_instance, &conflictDesc, true),
+              "M18 ON: the gunsmith's precondition answer is YES (signature attachment usable)");
+        CHECK(g_precondCalls == 0,
+              "M18 ON: ... answered here, the game's own check is not called");
+        CHECK(g_diag.asked[GatePrecondition] == 1 && g_diag.granted[GatePrecondition] == 1,
+              "M18 ON: the precondition gate counts one ask and one grant");
+
+        setFlags(false, false);
+        memset(&g_diag, 0, sizeof(g_diag));
+        g_precondCalls = 0;
+        CHECK(!IsPreConditionSatisfied(&g_instance, &conflictDesc, true),
+              "M18 OFF: the game's own precondition verdict is returned");
+        CHECK(g_precondCalls == 1 && g_precondInstance == &g_instance &&
+              g_precondConflict == &conflictDesc && g_precondTip,
+              "M18 OFF: called once, with the receiver, the ref description and the tip flag intact");
+        CHECK(g_diag.asked[GatePrecondition] == 1 && g_diag.granted[GatePrecondition] == 0,
+              "M18 OFF: asked, not granted");
+        setFlags(true, false);
+    }
+
     // ---- M15: the landed flags the SKINS tab prints -------------------------
     memset(g_landed, 0, sizeof(g_landed));
     NoteLanded(GateList, true);
+    NoteLanded(GatePrecondition, true);
     NoteLanded(GateCell, false);
     NoteLanded((Gate)99, true);          // out of range is ignored, not written
     bool otherFlagSet = false;
     for (int gi = 0; gi < GateCount; gi++)
-        if (gi != GateList && g_landed[gi]) otherFlagSet = true;
-    CHECK(g_landed[GateList] && !g_landed[GateCell],
+        if (gi != GateList && gi != GatePrecondition && g_landed[gi]) otherFlagSet = true;
+    CHECK(g_landed[GateList] && g_landed[GatePrecondition] && !g_landed[GateCell],
           "M15 a landed hook is reported, a failed one is not");
     CHECK(!otherFlagSet,
           "M15 an out-of-range gate leaves every other flag clear");
