@@ -16,6 +16,13 @@ trap 'rm -rf "$OUT_DIR"' EXIT
     ImGui/imgui.cpp ImGui/imgui_draw.cpp ImGui/imgui_widgets.cpp ImGui/imgui_tables.cpp
 "$OUT_DIR/text_input_check"
 
+"$CXX" -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -D'__fastcall=' -I. -IImGui -IIncludes \
+    -o "$OUT_DIR/custom_widgets_link_check" \
+    ImGui/tests/custom_widgets_link_check.cpp ImGui/custom_widgets.cpp \
+    ImGui/imgui.cpp ImGui/imgui_draw.cpp ImGui/imgui_tables.cpp ImGui/imgui_widgets.cpp \
+    ImGui/stb_image.cpp
+"$OUT_DIR/custom_widgets_link_check"
+
 "$CXX" -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -I. -IImGui -o "$OUT_DIR/menu_layout_check" \
     ImGui/tests/menu_layout_check.cpp
 "$OUT_DIR/menu_layout_check"

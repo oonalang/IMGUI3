@@ -40,9 +40,10 @@ commit messages.
 - FreeType is not built for the NDK and `IMGUI_ENABLE_FREETYPE` is undefined;
   fonts go through stb_truetype. This is now stated in `Android.mk`.
 - Repeatable check: `src/main/jni/host_checks.sh` builds the ImGui core + custom
-  widgets + `box_shadow.cpp`, runs the textbox/keyboard test and the 64
-  menu-layout checks, then syntax-checks the whole skin include graph. All
-  pass.
+  widgets, runs the 41-symbol `custom_widgets_link_check` (takes the address of
+  every `custom::` entry point, so a missing or drifted widget cannot reach the
+  device link), the textbox/keyboard test, the 64 menu-layout checks, the
+  mythic/blueprint hook tests and the skin + Feats include graphs. All pass.
 
 ## Phase C - Theme, fonts, widgets
 
