@@ -1,5 +1,5 @@
 #include "imgui.h"
-#include "Fonts/poppins_fonts.h"
+#include "Fonts/nl_fonts.h"
 #include "Fonts/fonts.h"
 
 #include <cstdio>
@@ -45,10 +45,12 @@ int main()
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
 
-    ImFont* regular = LoadWeight("Poppins Regular loads", PoppinsRegular, PoppinsRegular_size);
-    ImFont* medium = LoadWeight("Poppins Medium loads", PoppinsMedium, PoppinsMedium_size);
-    ImFont* semibold = LoadWeight("Poppins SemiBold loads", PoppinsSemiBold, PoppinsSemiBold_size);
-    ImFont* bold = LoadWeight("Poppins Bold loads", PoppinsBold, PoppinsBold_size);
+    // The faces Main.cpp actually installs now: SSTMedium for body, SSTBold for
+    // titles (IMGUI5's two UI faces, subset to Latin + Cyrillic).
+    ImFont* regular = LoadWeight("SSTMedium loads", (const unsigned char*)nl_sst_medium, nl_sst_medium_size);
+    ImFont* medium = LoadWeight("SSTMedium loads (15 px slot)", (const unsigned char*)nl_sst_medium, nl_sst_medium_size);
+    ImFont* semibold = LoadWeight("SSTBold loads", (const unsigned char*)nl_sst_bold, nl_sst_bold_size);
+    ImFont* bold = LoadWeight("SSTBold loads (25 px slot)", (const unsigned char*)nl_sst_bold, nl_sst_bold_size);
 
     unsigned char* pixels = nullptr;
     int width = 0, height = 0;

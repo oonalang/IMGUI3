@@ -1321,11 +1321,14 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
         ImFontConfig textCfg; textCfg.PixelSnapH = true; textCfg.FontDataOwnedByAtlas = false;
         textCfg.OversampleH = 2; textCfg.OversampleV = 2;
-        font::regular_m = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsRegular, PoppinsRegular_size, 17.0f * uiScale, &textCfg, textRanges);
-        font::regular_l = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsRegular, PoppinsRegular_size, 20.0f * uiScale, &textCfg, textRanges);
-        font::inter_medium = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsMedium, PoppinsMedium_size, 15.0f * uiScale, &textCfg, textRanges);
-        font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsSemiBold, PoppinsSemiBold_size, 16.0f * uiScale, &textCfg, textRanges);
-        font::bold_font = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsBold, PoppinsBold_size, 25.0f * uiScale, &textCfg, textRanges);
+        // Neverlose/HexSync faces (Fonts/nl_fonts.h, from oonalang/IMGUI5). The
+        // font:: slot names are unchanged on purpose: every tab, ESP label and
+        // widget already draws through them, so the reskin needs no feature edit.
+        font::regular_m = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_medium, nl_sst_medium_size, 17.0f * uiScale, &textCfg, textRanges);
+        font::regular_l = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_medium, nl_sst_medium_size, 20.0f * uiScale, &textCfg, textRanges);
+        font::inter_medium = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_medium, nl_sst_medium_size, 15.0f * uiScale, &textCfg, textRanges);
+        font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_bold, nl_sst_bold_size, 16.0f * uiScale, &textCfg, textRanges);
+        font::bold_font = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_bold, nl_sst_bold_size, 25.0f * uiScale, &textCfg, textRanges);
 
         ImFontConfig iconCfg; iconCfg.PixelSnapH = true; iconCfg.FontDataOwnedByAtlas = false;
         font::icomoon_page = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 18.0f * uiScale, &iconCfg);

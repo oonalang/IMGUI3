@@ -32,4 +32,6 @@
 
 #include "Fonts/Iconcpp.h"
 #include "Fonts/fonts.h"
-#include "Fonts/poppins_fonts.h"
+// Neverlose/HexSync (IMGUI5) UI faces: SSTMedium for body text, SSTBold for
+// titles and bold labels (subset, see the header). Replaces Poppins.
+#include "Fonts/nl_fonts.h"

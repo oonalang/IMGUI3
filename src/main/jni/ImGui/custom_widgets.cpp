@@ -1,5 +1,7 @@
 #include "custom_widgets.hpp"
 #include "imgui_settings.h"
+// Neverlose / HexSync palette + metrics (IMGUI5) used by the widgets below.
+#include "nl_style.h"
 #include "ime_target.h"
 #include "Icon.h"
 extern ImFont* F50;
@@ -1018,6 +1020,7 @@ namespace custom
     {
         ImGuiWindow* window = GetCurrentWindow();
         if (window->SkipItems) return false;
+        if (v == nullptr) return false;
 
         ImGuiContext& g = *GImGui;
         const ImGuiStyle& style = g.Style;
@@ -1025,8 +1028,12 @@ namespace custom
         const char* label_end = FindRenderedTextEnd(label);
         const ImVec2 label_size = CalcTextSize(label, label_end, true);
         const float control_scale = c::scale * c::widget_scale;
-        const float box_size = 16.0f * control_scale;
-        const float height = ImMax(23.0f * control_scale, label_size.y + 6.0f * control_scale);
+
+        // Neverlose / HexSync row (IMGUI5 menu/neverlose_menu.cpp, RowControl +
+        // Toggle): a full-width row with the label on the left and a 29x18
+        // switch on the right, 9 px track radius, 7 px knob travelling 9 -> 20.
+        // The label colour ramps with hover instead of the whole box glowing.
+        const float height = ImMax(30.0f * control_scale, label_size.y + 10.0f * control_scale);
         const ImVec2 pos = window->DC.CursorPos;
         const float w = GetContentRegionMax().x - style.WindowPadding.x;
 
@@ -1035,6 +1042,12 @@ namespace custom
         if (!ItemAdd(total_bb, id)) return false;
 
         bool hovered, held, pressed = ButtonBehavior(total_bb, id, &hovered, &held);
+        (void)held;
+        if (pressed)
+        {
+            *v = !(*v);
+            MarkItemEdited(id);
+        }
 
         static std::map<ImGuiID, check_state> anim;
         auto it_anim = anim.find(id);
@@ -1043,99 +1056,50 @@ namespace custom
             anim.insert({ id, check_state() });
             it_anim = anim.find(id);
             it_anim->second.alpha_mark = *v ? 1.0f : 0.0f;
-            it_anim->second.box_scale = *v ? 1.0f : 0.94f;
         }
 
-        if (pressed)
+        const float on = nl::Motion(id ^ 0x55aa721u, *v ? 1.0f : 0.0f, 19.0f);
+        const float hover = nl::Motion(id ^ 0x118a0u, hovered ? 1.0f : 0.0f, 20.0f);
+        it_anim->second.hover_t = hover;
+        it_anim->second.alpha_mark = on;
+
+        ImDrawList* draw_list = window->DrawList;
+
+        // Row hover: the nav-item fill from their sidebar (no border, no glow
+        // box around the control itself).
+        if (hover > 0.001f)
+            draw_list->AddRectFilled(total_bb.Min, total_bb.Max,
+                GetColorU32(nl::NavHover(), 0.85f * hover), 6.0f * control_scale);
+
+        const ImU32 label_col = GetColorU32(nl::Mix(nl::LabelMuted(), nl::LabelBright(), hover));
+        const float text_y = total_bb.Min.y + ImFloor((height - label_size.y) * 0.5f);
+        draw_list->AddText(ImVec2(total_bb.Min.x + 2.0f * control_scale, text_y),
+                           label_col, label, label_end);
+
+        const float track_w = nl::ToggleWidth() * control_scale;
+        const float track_h = nl::ToggleHeight() * control_scale;
+        const ImVec2 track_min(total_bb.Max.x - track_w - 2.0f * control_scale,
+                               total_bb.Min.y + (height - track_h) * 0.5f);
+
+        // Hover halo: their C(75,126,255,45*hover) pad, expressed in the user's
+        // accent so the hue control still owns the colour.
+        if (hover > 0.001f)
         {
-            *v = !(*v);
-            MarkItemEdited(id);
+            const float pad = (1.0f + hover) * control_scale;
+            draw_list->AddRectFilled(track_min - ImVec2(pad, pad),
+                                     track_min + ImVec2(track_w + pad, track_h + pad),
+                                     GetColorU32(c::accent, 0.18f * hover),
+                                     10.0f * control_scale);
         }
 
-        const ImVec4 target_background = *v ? AccentShade(0.12f, 0.98f) : hovered ? ImVec4(0.10f, 0.11f, 0.15f, 0.96f) : ImVec4(0.07f, 0.08f, 0.11f, 0.94f);
-        const ImVec4 target_text = *v ? c::text::text_active : hovered ? c::text::text_hov : c::text::text_active;
-        it_anim->second.background = ImLerp(it_anim->second.background, target_background, g.IO.DeltaTime * 10.0f);
-        it_anim->second.text = ImLerp(it_anim->second.text, target_text, g.IO.DeltaTime * 10.0f);
-        it_anim->second.alpha_mark = ImLerp(it_anim->second.alpha_mark, *v ? 1.f : 0.f, g.IO.DeltaTime * 12.0f);
-        it_anim->second.hover_t = ImLerp(it_anim->second.hover_t, hovered ? 1.0f : 0.0f, g.IO.DeltaTime * 10.0f);
-        it_anim->second.hold_t = ImLerp(it_anim->second.hold_t, held ? 1.0f : 0.0f, g.IO.DeltaTime * 18.0f);
-        const float target_box_scale = (*v ? 1.0f : 0.94f) + it_anim->second.hold_t * 0.05f + it_anim->second.hover_t * 0.02f;
-        it_anim->second.box_scale = ImLerp(it_anim->second.box_scale, target_box_scale, g.IO.DeltaTime * 14.0f);
+        draw_list->AddRectFilled(track_min, track_min + ImVec2(track_w, track_h),
+                                 GetColorU32(nl::Mix(nl::ToggleOff(), c::accent, on)),
+                                 nl::ToggleRadius() * control_scale);
 
-        const float row_overlay_alpha = 0.08f + it_anim->second.hover_t * 0.14f + it_anim->second.hold_t * 0.18f;
-        if (row_overlay_alpha > 0.01f) {
-            GetWindowDrawList()->AddRectFilled(
-                total_bb.Min,
-                total_bb.Max,
-                GetColorU32(c::elements::background_hovered, row_overlay_alpha),
-                6.0f * control_scale
-            );
-        }
-
-        const ImVec2 box_center(total_bb.Max.x - box_size * 0.5f - 1.0f * control_scale, total_bb.Min.y + height * 0.5f);
-        const ImVec2 scaled_half(box_size * it_anim->second.box_scale * 0.5f, box_size * it_anim->second.box_scale * 0.5f);
-        const ImVec2 box_min(box_center.x - scaled_half.x, box_center.y - scaled_half.y);
-        const ImVec2 box_max(box_center.x + scaled_half.x, box_center.y + scaled_half.y);
-        const float rounding = 4.5f * control_scale;
-
-        if (*v || it_anim->second.alpha_mark > 0.01f) {
-            const ImVec2 glow_pad(2.0f * control_scale, 2.0f * control_scale);
-            GetWindowDrawList()->AddRectFilled(
-                box_min - glow_pad,
-                box_max + glow_pad,
-                GetColorU32(AccentShade(0.08f), (0.10f + it_anim->second.hover_t * 0.05f) * it_anim->second.alpha_mark),
-                rounding + 2.0f * control_scale
-            );
-        }
-
-        const ImVec4 off_left = ImVec4(0.16f, 0.16f, 0.18f, 0.82f);
-        const ImVec4 off_right = ImVec4(0.07f, 0.08f, 0.10f, 0.90f);
-        const ImVec4 on_left = AccentLift(0.14f, 0.94f);
-        const ImVec4 on_right = AccentShade(0.72f, 0.96f);
-        const ImVec4 left_fill = MixColor(off_left, on_left, it_anim->second.alpha_mark);
-        const ImVec4 right_fill = MixColor(off_right, on_right, it_anim->second.alpha_mark);
-        ImDrawList* draw_list = GetWindowDrawList();
-        const int gradient_vtx_start = draw_list->VtxBuffer.Size;
-        draw_list->AddRectFilled(box_min, box_max, GetColorU32(left_fill), rounding);
-        ShadeVertsLinearColorGradientKeepAlpha(
-            draw_list,
-            gradient_vtx_start,
-            draw_list->VtxBuffer.Size,
-            box_min,
-            ImVec2(box_max.x, box_min.y),
-            GetColorU32(left_fill),
-            GetColorU32(right_fill)
-        );
-        draw_list->AddRect(
-            box_min,
-            box_max,
-            GetColorU32(*v ? WithAlpha(AccentLift(0.08f), 0.34f + it_anim->second.hover_t * 0.08f) : WithAlpha(c::widget::outlinecolor, 0.58f + it_anim->second.hover_t * 0.08f)),
-            rounding,
-            0,
-            1.0f * control_scale
-        );
-        if (*v || it_anim->second.alpha_mark > 0.01f) {
-            const float box_w = box_max.x - box_min.x;
-            const float box_h = box_max.y - box_min.y;
-            const float reveal_t = ImSaturate((it_anim->second.alpha_mark - 0.06f) / 0.94f);
-            const float first_t = ImSaturate(reveal_t / 0.48f);
-            const float second_t = ImSaturate((reveal_t - 0.48f) / 0.52f);
-            const float mark_drop = (1.0f - reveal_t) * 2.0f * control_scale;
-            const ImVec2 p1(box_min.x + box_w * 0.24f, box_min.y + box_h * 0.55f + mark_drop);
-            const ImVec2 p2(box_min.x + box_w * 0.43f, box_min.y + box_h * 0.73f + mark_drop * 0.4f);
-            const ImVec2 p3(box_min.x + box_w * 0.77f, box_min.y + box_h * 0.28f + mark_drop * 0.1f);
-            if (first_t > 0.0f)
-                GetWindowDrawList()->AddLine(p1, ImLerp(p1, p2, first_t), GetColorU32(c::checkbox::mark, it_anim->second.alpha_mark), 1.55f * control_scale);
-            if (second_t > 0.0f)
-                GetWindowDrawList()->AddLine(p2, ImLerp(p2, p3, second_t), GetColorU32(c::checkbox::mark, it_anim->second.alpha_mark), 1.55f * control_scale);
-        }
-
-        GetWindowDrawList()->AddText(
-            pos + ImVec2(0.0f, (height - label_size.y) * 0.5f),
-            GetColorU32(it_anim->second.text),
-            label,
-            label_end
-        );
+        const float knob_x = (9.0f + 11.0f * on) * control_scale;
+        draw_list->AddCircleFilled(ImVec2(track_min.x + knob_x, track_min.y + track_h * 0.5f),
+                                   nl::ToggleKnob() * control_scale,
+                                   GetColorU32(nl::Mix(nl::ToggleKnobOff(), nl::ToggleKnobOn(), on)));
 
         return pressed;
     }
