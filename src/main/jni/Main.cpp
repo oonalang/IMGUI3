@@ -2216,6 +2216,13 @@ if (runtimeState.activeTab == 4) {
                                     ImGui::TextColored(dim, "Pace=%.3fs skipped=%d waiting=%d reassert=%d",
                                         td.paceSeconds, td.repressSkipped,
                                         td.paceWaiting ? 1 : 0, td.reasserts);
+                                    // Same-frame guard: scans the trigger SITS OUT
+                                    // because our fire request is still on the
+                                    // weapon (its get_IsFiring still true). A number
+                                    // stuck at 0 with Fire above it means the
+                                    // getter did not resolve and the guard is off.
+                                    ImGui::TextColored(dim, "SameFrame=%d",
+                                        td.sameFrameSkips);
                                     // Which path accepted (or would accept) the shot, and
                                     // what the visibility ray actually hit. "Rays=id/blk"
                                     // is the anti-wall gate: id = the nearest thing on the

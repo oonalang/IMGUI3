@@ -1602,6 +1602,8 @@ static float g_realInterval   = 0.20f;
 static void  fake_startFire(void *)       { g_startFireCalls++; }
 static void  fake_stopFire(void *, bool)  { g_stopFireCalls++; }
 static bool  fake_canFire(void *)         { return g_canFireValue; }
+static bool  g_weaponIsFiringValue = false;
+static bool  fake_weaponIsFiring(void *)  { return g_weaponIsFiringValue; }
 static float fake_realInterval(void *)    { return g_realInterval; }
 static bool  fake_autoFire(void *)        { return true; }
 
@@ -1625,6 +1627,7 @@ static void testRepressPacing()
     fn_WeaponIsAutoFire              = nullptr;      // unresolved -> edge press
     fn_WeaponRealFireInterval        = fake_realInterval;
     fn_WeaponCanFire                 = fake_canFire;
+    fn_WeaponIsFiring                = fake_weaponIsFiring;   // the same-frame guard's source
     fn_Weapon_StartFire              = fake_startFire;
     fn_Weapon_StopFire               = fake_stopFire;
     Config.NewFeaturesMenu.Triggerbot = true;
@@ -1639,6 +1642,7 @@ static void testRepressPacing()
     g_startFireCalls = g_stopFireCalls = 0;
     g_afireLastPressTime   = -1000.0;
     g_afireLastPressWeapon = nullptr;
+    g_weaponIsFiringValue  = false;      // the weapon has nothing pending from us
 
     // --- P0: the pure helper's clamps --------------------------------------
     CHECK(std::fabs(A_FireRepressPaceSeconds(0.20f) - 0.18f) < 1e-5f,
@@ -1888,6 +1892,141 @@ static void testModelBound()
     g_w2sImpl = nullptr;
 }
 
+// ---------------------------------------------------------------------------
+// 7b. THE SAME-FRAME FIRE GUARD
+//
+// The report: "the triggerbot ... only works for a bit then crashes." The held
+// weapon's own Tick is a trigger heartbeat, and both sides of the press live on
+// it: the trigger presses through the weapon's Tick hook and the game runs the
+// press in the Tick that is still executing. The 4 ms per-frame gate is open
+// again by the game's NEXT frame, but nothing checked what the LAST press had
+// set - so the trigger re-answered every fresh fire decisor the weapon body had
+// not reached yet, pressing an armed weapon on every scan, frame after frame.
+// The crash is that re-answer, not a guard bug.
+//
+// The fix reads ONE field the weapon itself owns: Weapon.get_IsFiring
+// 0x50EB644 (dump 739309). StartFire's last write is set_IsFiring(true), and
+// the Tick body consumes/clears it - so while it still answers true, the
+// request from our press is on its way and the trigger SITS OUT. Bounded by
+// the press time so a stuck-true getter can never silence the trigger, and a
+// getter that never resolved only turns the guard off.
+// ---------------------------------------------------------------------------
+static void testSameFrameGuard()
+{
+    // Same world as the pacing tests: edge-press weapon, everything resolved.
+    api12 = (uintptr_t)&fake_localPawnCounted;
+    api22 = (uintptr_t)&fake_currentWeapon;
+    fn_PawnIsAiming                  = nullptr;
+    fn_WeaponGetCurrentFireComponent = nullptr;
+    fn_FireComponentGetIsAiming      = nullptr;
+    fn_PawnGetIsFiring               = nullptr;
+    fn_WeaponIsAutoFire              = nullptr;
+    fn_WeaponRealFireInterval        = fake_realInterval;
+    fn_WeaponCanFire                 = fake_canFire;
+    fn_WeaponIsFiring                = fake_weaponIsFiring;
+    fn_Weapon_StartFire              = fake_startFire;
+    fn_Weapon_StopFire               = fake_stopFire;
+    Config.NewFeaturesMenu.Triggerbot   = true;
+    Config.NewFeaturesMenu.TriggerbotMode = 0;
+    g_realInterval        = 0.20f;
+    g_canFireValue        = false;
+    g_weaponIsFiringValue = false;
+
+    resetWorld();
+    armFiringWorld();
+    resetLocalPawnCache();
+    g_triggerDiag = TriggerbotDiag{};
+    g_startFireCalls = g_stopFireCalls = 0;
+    g_afireHoldingFire = false;
+    g_afireFiringOn    = nullptr;
+    g_afireTargetPawn     = nullptr;
+    g_afireLastPressWeapon = nullptr;
+    g_afireLastPressTime   = -1000.0;
+
+    // --- G1: press -> weapon reports the request -> the NEXT scan sits out ---
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(g_startFireCalls == 1, "G1 the press went out");
+    g_weaponIsFiringValue = true;                       // StartFire's request is live
+    const int skips0 = g_triggerDiag.sameFrameSkips;
+    const int fires0  = g_triggerDiag.fires;
+    openTickWindow();                                   // the very next heartbeat
+    A_FireTick(nullptr);
+    CHECK(g_triggerDiag.sameFrameSkips == skips0 + 1,
+          "G1 the scan right after our press SITS OUT (the weapon still holds our request)");
+    CHECK(g_triggerDiag.fires == fires0 && g_startFireCalls == 1,
+          "G1 ... and it pressed and released NOTHING behind the weapon's back");
+    CHECK(!g_afireHoldingFire || g_afireFiringOn == (void *)g_weaponObj.b,
+          "G1 ... and our own press record is untouched (no Release, no re-press)");
+
+    // An edge-press weapon RELEASES on its first post-press scan (one press =
+    // one shot) and re-presses on the next, so every case below is measured
+    // over two heartbeats: the release scan, then the answer scan.
+    g_weaponIsFiringValue = false;                      // the weapon ran the shot
+    g_afireLastPressTime = A_FireNow() - 0.20;          // past the 0.18 s pace
+    openTickWindow(); A_FireTick(nullptr);              // the release scan
+    openTickWindow(); A_FireTick(nullptr);              // the answer scan
+    CHECK(g_startFireCalls == 2,
+          "G2 once the weapon consumed the request the trigger answers again (release scan, then press)");
+
+    // --- G3: a getter stuck at true can never silence the trigger -----------
+    // The press below is 0.30 s old - older than the kMaxRepressPace bound -
+    // so even a get_IsFiring that answers TRUE forever must not suppress it.
+    g_startFireCalls = 1;                               // measure the delta from here
+    g_weaponIsFiringValue = true;                       // a getter that always says true
+    g_afireHoldingFire    = true;
+    g_afireFiringOn       = (void *)g_weaponObj.b;
+    g_afireTargetPawn     = (void *)g_targetPawn.b;
+    g_afireLastPressTime  = A_FireNow() - 0.30;
+    openTickWindow(); A_FireTick(nullptr);              // release scan
+    openTickWindow(); A_FireTick(nullptr);              // press scan
+    CHECK(g_startFireCalls == 2,
+          "G3 a stuck-true get_IsFiring does NOT suppress the trigger (the press is out of the guard's time window)");
+
+    // --- G4: no getter resolved -> the guard is OFF, the trigger still works -
+    // With the getter gone the weapon looks unfired forever, so the press
+    // cadence falls back to the re-press pace exactly as before the guard.
+    fn_WeaponIsFiring = nullptr;
+    const int skipsBefore = g_triggerDiag.sameFrameSkips;
+    g_startFireCalls = 0;
+    g_afireLastPressTime = A_FireNow() - 0.30;
+    openTickWindow(); A_FireTick(nullptr);              // release scan
+    openTickWindow(); A_FireTick(nullptr);              // press scan
+    CHECK(g_startFireCalls == 1 && g_triggerDiag.sameFrameSkips == skipsBefore,
+          "G4 with no getter the guard is off and the trigger still fires");
+
+    // --- G5: the guard is keyed on the weapon WE pressed --------------------
+    // A press record pointing at a different object (swapped mid-hold) never
+    // sits out scans for the held weapon - and the swap itself still releases.
+    fn_WeaponIsFiring = fake_weaponIsFiring;
+    g_weaponIsFiringValue = true;                       // even "the weapon is firing"
+    g_startFireCalls = 0;
+    g_afireHoldingFire   = true;
+    g_afireFiringOn      = (void *)g_otherPawn.b;       // pressed somebody else
+    g_afireTargetPawn    = (void *)g_targetPawn.b;
+    g_afireLastPressTime = A_FireNow() - 0.30;          // past the pace: no pacing noise
+    openTickWindow(); A_FireTick(nullptr);
+    CHECK(g_triggerDiag.sameFrameSkips == skipsBefore,
+          "G5 the guard does not sit out a weapon we never pressed");
+    CHECK(g_startFireCalls == 1,
+          "G5 ... and the held weapon is serviced on the very first scan (swap released, then pressed)");
+    openTickWindow(); A_FireTick(nullptr);              // now the pending press is OURS
+    CHECK(g_startFireCalls == 1,
+          "G5 ... and only THAT fresh press sits out afterwards (the guard is ours-by-weapon, not any-weapon)");
+
+    // Leave the suite as it was found.
+    A_FireReleaseTrigger(nullptr);
+    g_afireHoldingFire = false;
+    g_afireFiringOn    = nullptr;
+    g_afireTargetPawn  = nullptr;
+    g_afireLastPressTime   = -1000.0;
+    g_afireLastPressWeapon = nullptr;
+    g_weaponIsFiringValue  = false;
+    fn_WeaponIsFiring = nullptr;
+    Config.NewFeaturesMenu.Triggerbot = false;
+    resetWorld();
+}
+
 int main()
 {
     installFns();
@@ -1904,6 +2043,7 @@ int main()
     testCrashFixes();
     testAdsGate();
     testRepressPacing();
+    testSameFrameGuard();
 
     if (g_failures == 0) {
         printf("\nOK: all LOS gate checks passed\n");

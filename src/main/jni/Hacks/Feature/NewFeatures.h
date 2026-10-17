@@ -412,6 +412,15 @@ namespace NewFeatures
         constexpr uintptr_t BaseGame_GetTeamPawns            = 0x9CAFEB4; // PawnList*() BaseGame (dump 702853)
         constexpr uintptr_t BaseGame_get_IsPaused            = 0x9CAFDC4; // bool()  BaseGame (dump 702829)
         constexpr uintptr_t Pawn_get_IsAlive                 = 0x51B7C40; // bool()  Pawn Slot 49 (dump 714397)
+        // Weapon.get_IsFiring 0x50EB644 (dump 739309, RVA header 739308): the
+        // weapon's OWN fire-request flag. Weapon.set_IsFiring is the last thing
+        // StartFire's write does - the very next Weapon::Tick reads it back - so
+        // when it is still true on the following scan, this build's last press
+        // reached the weapon and the weapon has not consumed it yet. It is the
+        // cheapest crash guard available, because a weapon that never answers it
+        // (a symbol that did not resolve answers false) only disables the guard,
+        // never the trigger.
+        constexpr uintptr_t Weapon_get_IsFiring              = 0x50EB644; // bool()  Weapon (dump 739309)
         constexpr uintptr_t Pawn_get_LastFireTime            = 0x51B843C; // float() Pawn (dump 714442, diagnostics)
 
         // Pawn velocity for target leading.
@@ -538,6 +547,9 @@ namespace NewFeatures
     inline bool   (*fn_PawnIsAiming)(void *)                = nullptr;
     inline void  *(*fn_WeaponGetCurrentFireComponent)(void *) = nullptr;
     inline bool   (*fn_FireComponentGetIsAiming)(void *)     = nullptr;
+    // Weapon.get_IsFiring 0x50EB644 - re-read every scan through the HOOKED
+    // Weapon::Tick, so always safe to call on a weapon that just ticked (below).
+    inline bool   (*fn_WeaponIsFiring)(void *)              = nullptr;
 
     // A hook only ever touches the local player
     inline bool IsLocalFireComponent(void *fireComponent)
@@ -1559,6 +1571,7 @@ namespace NewFeatures
         int    enemyCount;      // last EnemyPawns size
         int    targets;         // scans that returned a pawn
         int    fires;           // StartFire calls made by the trigger
+        int    sameFrameSkips;  // scans skipped because our fire request is still on the weapon
         int    losBlocked;      // lifetime: candidates rejected by geometry
         int    losBlockedScan;  // THIS scan (reset every scan, menu reads it)
         float  radiusPx;        // crosshair radius used by the last scan
@@ -3009,6 +3022,16 @@ namespace NewFeatures
             d.adsFcAim   = ads.fcAim;
             if (!ads.aiming)
                 return FireBlock::ModeNotAds;
+            // "ADS only isn't working" is only ever this, and it is now printed:
+            // nobody could answer. The gate was left OPEN because refusing to fire
+            // forever was the misfire "Doesn't work at all", but open means it
+            // cannot hold the mode. A symbol that did not resolve turns all three
+            // counters off for the whole session, so adsUnknown=1 with ads 1/0 0/0
+            // says exactly which getter to re-check (logcat has the resolve error).
+            if (ads.unknown && !ads.pawnOk && !ads.fcOk)
+                LOGE("[NewFeatures] triggerbot: ADS only has NO source this build"
+                     " (pawn=%d fc=%d) - the mode cannot hold, shots are fail-open",
+                     ads.pawnOk ? 1 : 0, ads.fcOk ? 1 : 0);
         } else if (Config.NewFeaturesMenu.TriggerbotMode == 2) {
             if (fn_PawnGetIsFiring == nullptr || !fn_PawnGetIsFiring(localPawn))
                 return FireBlock::ModeNotFiring;
@@ -3037,6 +3060,45 @@ namespace NewFeatures
             g_afireHoldingFire = false;
             g_afireFiringOn = nullptr;
         }
+    }
+
+    // ---- The same-frame fire guard ---------------------------------------
+    // WHAT CRASHED ("works for a bit, then dies"): the held weapon's own tick is
+    // a trigger heartbeat. The press on one scan calls Weapon.StartFire, the
+    // game's write completes, StartFire RETURNS for that frame, and the very
+    // next hook call through the SAME weapon tick arrives with the 4 ms
+    // per-frame gate already open (a new frame). Nothing on this side tracked
+    // what our last press had set, so the trigger re-answered every fresh decisor
+    // StartFire had not yet consumed - pressing an already-armed weapon on every
+    // scan, inside the weapon's own fire state machine, frame after frame. The
+    // crash was the game-side counterpart of the old fire spam: not on the press
+    // edge any more, but on the oblivious re-press.
+    //
+    // THE ANSWER IS ALREADY ON THE WEAPON: Weapon.set_IsFiring is the write
+    // StartFire ends with (dump 739309/739310 pair), and Weapon::Tick's own body
+    // consumes it. So after pressing, the weapon's get_IsFiring reads back TRUE
+    // until the weapon consumes / clears the request. While it does, and while
+    // the press is recent (a start that truly failed clears the flag within a
+    // frame or two - a deadlock is impossible), the trigger stays OUT of the
+    // weapon's fire logic completely, exactly the withdrawal a human finger
+    // does between shots.
+    //
+    // GUARD-SAFETY: get_IsFiring here is only reached for the weapon that is
+    // inside this very Weapon::Tick call (d.heldWeapon, already liveness-checked
+    // by A_FireObjectAlive one block above), so the call is exactly as safe as
+    // the tick that contains it. A weapon whose getter never resolved answers
+    // false and merely turns the guard off - the trigger, never the crash class,
+    // is what changes.
+    inline bool A_FireSameFramePressActive(void *held)
+    {
+        if (!g_afireHoldingFire || g_afireFiringOn != (void *)held) return false;
+        if (!(fn_WeaponIsFiring != nullptr && fn_WeaponIsFiring(held))) return false;
+        // A true that outlives a whole pace without a press is NOT ours - it is
+        // the weapon genuinely firing (or a getter that always says true). The
+        // press-time bound keeps the guard from ever suppressing a trigger that
+        // needs to re-answer.
+        const double since = A_FireNow() - g_afireLastPressTime;
+        return since >= 0.0 && since < A_FireTune::kMaxRepressPace;
     }
 
     // The menu's "Test Fire" button only queues the request: the menu runs on
@@ -3173,6 +3235,21 @@ namespace NewFeatures
         // Weapon swapped while the trigger was down - let the old one go.
         if (g_afireHoldingFire && g_afireFiringOn != (void *)held)
             A_FireReleaseTrigger(nullptr);
+
+        // ---- SAME-FRAME FIRE GUARD (the "works for a bit, then crashes" fix) --
+        // Our last press put the fire request on THIS weapon and the weapon's own
+        // get_IsFiring still says it has not consumed it: sit this scan out
+        // entirely. No fire-mode read, no interval read, no press, and no release
+        // either - A_FireShouldFire already validated the target, and StartFire's
+        // request is simply on its way. One state for the panel, no counter spins,
+        // and the guard is bounded by the press time so it can never replace a
+        // trigger that genuinely needs to re-answer (see the helper).
+        if (A_FireSameFramePressActive((void *)held)) {
+            d.sameFrameSkips++;
+            s_dbgTriggerState = 2;
+            g_afireInTick = false;
+            return;
+        }
 
         const FireMode mode     = GetWeaponFireMode(held);
         const float    interval = A_FireWeaponInterval(held);
@@ -3549,6 +3626,16 @@ namespace NewFeatures
         auto fcAimAddr = UnityRva(RVA::GetIsAiming);
         if (Tools::IsPtrValid(fcAimAddr))
             fn_FireComponentGetIsAiming = (bool (*)(void *))fcAimAddr;
+
+        // Weapon.get_IsFiring 0x50EB644 (dump 739309). A missing symbol must NOT
+        // disable the trigger - it only disables the same-frame guard below -
+        // which is why a failed resolve here logs and carries on.
+        auto wFireAddr = UnityRva(RVA::Weapon_get_IsFiring);
+        if (Tools::IsPtrValid(wFireAddr))
+            fn_WeaponIsFiring = (bool (*)(void *))wFireAddr;
+        else
+            LOGE("[NewFeatures] triggerbot: Weapon.get_IsFiring 0x%llX did not resolve -"
+                 " the same-frame fire guard is off", (unsigned long long)RVA::Weapon_get_IsFiring);
 
         auto firingAddr = UnityRva(RVA::Pawn_get_IsFiring);
         if (Tools::IsPtrValid(firingAddr))
