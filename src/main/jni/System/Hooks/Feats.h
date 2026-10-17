@@ -968,6 +968,12 @@ inline void InitializeAllHooks() {
     HOOK_LIB("libunity.so", "0x5D31A4C", CheckIsEquip, orig_CheckIsEquip);
     HOOK_LIB("libunity.so", "0x6741CE4", IsBlueprintWeaponValid, orig_IsBlueprintWeaponValid);
 
+    blueprint_equip::NoteLanded(blueprint_equip::GateClassifier, orig_IsBlueprintWeaponID != nullptr);
+    blueprint_equip::NoteLanded(blueprint_equip::GateItem,       orig_IsThisItemCanBeEquipedInMP != nullptr);
+    blueprint_equip::NoteLanded(blueprint_equip::GateSelect,     orig_IsSelectBlueprintWeaponUnlock != nullptr);
+    blueprint_equip::NoteLanded(blueprint_equip::GateEquip,      orig_CheckIsEquip != nullptr);
+    blueprint_equip::NoteLanded(blueprint_equip::GateValid,      orig_IsBlueprintWeaponValid != nullptr);
+
     //-- Unlock Attachments / Mythic Attachments (see MythicAttachments.h). The
     //   RVAs are the dump's, same convention as every hook above.
     HOOK_LIB("libunity.so", "0xA61AA00", IsWeaponAttachmentUnlock, orig_IsWeaponAttachmentUnlock);
