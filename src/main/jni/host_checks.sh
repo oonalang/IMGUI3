@@ -21,6 +21,11 @@ trap 'rm -rf "$OUT_DIR"' EXIT
     ImGui/tests/menu_layout_check.cpp
 "$OUT_DIR/menu_layout_check"
 
+"$CXX" -std=c++17 -O1 -I. -IImGui -o "$OUT_DIR/fonts_check" \
+    ImGui/tests/fonts_check.cpp \
+    ImGui/imgui.cpp ImGui/imgui_draw.cpp ImGui/imgui_widgets.cpp ImGui/imgui_tables.cpp
+"$OUT_DIR/fonts_check"
+
 "$CXX" -std=c++17 -fsyntax-only -DIMGUI_DEFINE_MATH_OPERATORS -D'__fastcall=' \
     -I Skin/tests/stubs -I . -I ImGui -I Includes \
     Skin/tests/skin_headers_check.cpp

@@ -46,22 +46,28 @@ commit messages.
 
 ## Phase C - Theme, fonts, widgets
 
-**NOT DONE.**
+**DONE.**
 
-Evidence:
-
-- `grep -ri poppins src/main/jni` -> 0 hits. `Main.cpp` loads
-  `icomoon_page`, `inter_semibold` (Inter), `font_awesome_data1` and an
-  unnamed `F50_data` TTF. The LANX Poppins family is not in the project.
-- `font::ui_scale` is declared in `imgui_settings.h`, but `density` is never
-  filled from Android (`grep -rn "density =" Main.cpp` -> nothing), so every
-  size is fixed.
-- `imgui_settings.h` still carries the pre-migration theme system next to the
-  LANX one: `main_runtime_theme::g_themes[5]` (LANX/NIGHT/FOREST/BLOOD/LIGHT),
-  "warm amber" comments, `UpdateTheme()` lerping the accent to green
-  `ImColor(118, 187, 117)`.
-- `custom_widgets.cpp` is clean of Windows APIs (`GetAsyncKeyState`, `wtypes`,
-  `Windows.h`: 0 hits), so the widget port itself is in place.
+- Fonts: `Fonts/poppins_fonts.h` now carries Poppins Regular / Medium /
+  SemiBold / Bold, subset to the exact ranges the menu loads (basic Latin,
+  Latin-1, Cyrillic, general punctuation, currency; 18 KB per weight).
+  `Main.cpp` loads all four, plus the LANX IcoMoon icon font
+  (`icomoon_page`, 18 px and 20 px logo) and `icon_notify`. The `font::` handles
+  from the brief (`regular_m`, `regular_l`, `inter_medium`, `inter_semibold`,
+  `bold_font`, `esp_font`, `icomoon_page`, `icomoon_logo`, `icon_notify`) exist;
+  `F50`/`F107` stay as aliases because the shell uses them.
+- Sizes scale with density: `ro.sf.lcd_density` / 160 feeds `font::SetDensity()`,
+  `ui_scale = clamp(density / 2.75, 0.8, 2.5)`, every AddFont size is
+  multiplied by it.
+- Theme: the second palette system (`g_themes[5]`, `THEME_*`, `ApplyThemePreset`),
+  the "warm amber" backdrops and the green `ImColor(118, 187, 117)` accent are
+  gone. `c::` holds the LANX values (accent 173,143,233, window 22,22,22/0.71,
+  child 60,60,60/0.25, page rounding 4, element rounding 2.5) and
+  `main_runtime_theme` is only the accent helpers the shell needs.
+- Widgets are the LANX `custom::` set, with no Windows calls (`GetAsyncKeyState`,
+  `wtypes`, `D3D*`, `HWND`: 0 hits in project code).
+- Verified by `ImGui/tests/fonts_check.cpp`: all four Poppins weights load, the
+  atlas builds, Latin/digits/Cyrillic glyphs exist, the icon font loads.
 
 ## Phase D - Pages, including Skins
 

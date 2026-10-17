@@ -878,6 +878,12 @@ namespace font {
     ImFont* icomoon_logo = nullptr;
     ImFont* inter_semibold = nullptr;
     ImFont* icomoon_page = nullptr;
+    ImFont* icon_notify = nullptr;
+    ImFont* regular_m = nullptr;
+    ImFont* regular_l = nullptr;
+    ImFont* inter_medium = nullptr;
+    ImFont* bold_font = nullptr;
+    ImFont* esp_font = nullptr;
 }
 
 static int g_GlWidth, g_GlHeight;
@@ -1301,21 +1307,32 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         if (!g_imguiBackendReady) { ImGui::DestroyContext(); return old_eglSwapBuffers(dpy, surface); }
         g_imguiDisplay = dpy; g_imguiContext = currentContext; g_imguiSurface = surface;
 
-        ImFontConfig ilc; ilc.MergeMode = false; ilc.PixelSnapH = true; ilc.FontDataOwnedByAtlas = false;
-        font::icomoon_logo = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 20.f, &ilc);
+        char lcdDensity[PROP_VALUE_MAX] = {};
+        if (__system_property_get("ro.sf.lcd_density", lcdDensity) > 0)
+            font::SetDensity((float)atoi(lcdDensity) / 160.0f);
+        const float uiScale = font::UiScale();
+        const ImWchar* textRanges = io.Fonts->GetGlyphRangesCyrillic();
 
-        ImFontConfig ic; ic.MergeMode = false; ic.PixelSnapH = true; ic.FontDataOwnedByAtlas = false;
-        font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)inter_semibold, sizeof(inter_semibold), 16.f, &ic);
+        ImFontConfig textCfg; textCfg.PixelSnapH = true; textCfg.FontDataOwnedByAtlas = false;
+        textCfg.OversampleH = 2; textCfg.OversampleV = 2;
+        font::regular_m = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsRegular, PoppinsRegular_size, 17.0f * uiScale, &textCfg, textRanges);
+        font::regular_l = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsRegular, PoppinsRegular_size, 20.0f * uiScale, &textCfg, textRanges);
+        font::inter_medium = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsMedium, PoppinsMedium_size, 15.0f * uiScale, &textCfg, textRanges);
+        font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsSemiBold, PoppinsSemiBold_size, 16.0f * uiScale, &textCfg, textRanges);
+        font::bold_font = io.Fonts->AddFontFromMemoryTTF((void*)PoppinsBold, PoppinsBold_size, 25.0f * uiScale, &textCfg, textRanges);
 
-        ImFontConfig pc; pc.MergeMode = false; pc.PixelSnapH = true; pc.FontDataOwnedByAtlas = false;
-        font::icomoon_page = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 18.f, &pc);
+        ImFontConfig iconCfg; iconCfg.PixelSnapH = true; iconCfg.FontDataOwnedByAtlas = false;
+        font::icomoon_page = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 18.0f * uiScale, &iconCfg);
+        font::icomoon_logo = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 20.0f * uiScale, &iconCfg);
+        font::icon_notify = io.Fonts->AddFontFromMemoryTTF((void*)icon_notify, sizeof(icon_notify), 16.0f * uiScale, &iconCfg);
 
         static const ImWchar icons_ranges[] = { 0xe000, 0xf8ff, 0 };
         ImFontConfig iconsCfg; iconsCfg.MergeMode = true; iconsCfg.PixelSnapH = true;
         iconsCfg.OversampleH = 2.5f; iconsCfg.OversampleV = 2.5f; iconsCfg.FontDataOwnedByAtlas = false;
-        F107 = io.Fonts->AddFontFromMemoryCompressedTTF((void*)font_awesome_data1, (int)font_awesome_size1, 25.0f, &iconsCfg, icons_ranges);
-        F50 = io.Fonts->AddFontFromMemoryTTF((void *)F50_data, F50_size, 30.0f, NULL, io.Fonts->GetGlyphRangesDefault());
-        if (!F107) F107 = font::inter_semibold;
+        F107 = io.Fonts->AddFontFromMemoryCompressedTTF((void*)font_awesome_data1, (int)font_awesome_size1, 25.0f * uiScale, &iconsCfg, icons_ranges);
+        F50 = font::bold_font;
+        font::esp_font = font::inter_semibold;
+        if (!F107) F107 = font::icomoon_page;
         if (font::inter_semibold) io.FontDefault = font::inter_semibold;
         io.Fonts->Build();
         ImGui_ImplOpenGL3_CreateFontsTexture();
