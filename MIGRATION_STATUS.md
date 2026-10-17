@@ -64,6 +64,10 @@ commit messages.
   gone. `c::` holds the LANX values (accent 173,143,233, window 22,22,22/0.71,
   child 60,60,60/0.25, page rounding 4, element rounding 2.5) and
   `main_runtime_theme` is only the accent helpers the shell needs.
+- The old font payload is gone as well: `Fonts/fonts.h` lost the 1.9 MB Inter
+  array and now only holds `icomoon_page` (the LANX icon font) and
+  `icon_notify`; `Fonts/Font.h` (unused, author-tagged) and `Fonts/SPECIAL.h`
+  (the unused `F50_data`) are deleted.
 - Widgets are the LANX `custom::` set, with no Windows calls (`GetAsyncKeyState`,
   `wtypes`, `D3D*`, `HWND`: 0 hits in project code).
 - Verified by `ImGui/tests/fonts_check.cpp`: all four Poppins weights load, the
