@@ -610,6 +610,10 @@ inline bool IsUnlocked(void *instance) {
     return orig_IsUnlocked(instance);
 }
 
+// Blueprint equip gates (System/Hooks/BlueprintEquip.h), installed below next
+// to the IsUnlocked hook they complete.
+#include "BlueprintEquip.h"
+
 // Mythic Attachments (unlock-as-if-owned) lives in its own header: the four
 // client-side gates that decide whether an applied skin and the weapon's
 // attachments count as unlocked - WeaponPromotionInfo.IsWeaponAttachmentUnlock
@@ -957,6 +961,15 @@ inline void InitializeAllHooks() {
     //   gates itself: see MythicAttachments.h. WeaponPromotionInfo.
     //   IsWeaponAttachmentUnlock(int attachment) @0xA61AA00 is the first of them.
     HOOK_LIB("libunity.so", "0x901F988", IsUnlocked, orig_IsUnlocked);
+
+    //-- Unlock Blueprints (SKINS tab), the equip path (BlueprintEquip.h): the
+    //   classifier plus the four client gates between the blueprint list and
+    //   the equip request. RVAs from the dump, same convention as above.
+    HOOK_LIB("libunity.so", "0x8D49D00", IsBlueprintWeaponID, orig_IsBlueprintWeaponID);
+    HOOK_LIB("libunity.so", "0x8D33914", IsThisItemCanBeEquipedInMP, orig_IsThisItemCanBeEquipedInMP);
+    HOOK_LIB("libunity.so", "0x5D30134", IsSelectBlueprintWeaponUnlock, orig_IsSelectBlueprintWeaponUnlock);
+    HOOK_LIB("libunity.so", "0x5D31A4C", CheckIsEquip, orig_CheckIsEquip);
+    HOOK_LIB("libunity.so", "0x6741CE4", IsBlueprintWeaponValid, orig_IsBlueprintWeaponValid);
 
     //-- Unlock Attachments / Mythic Attachments (see MythicAttachments.h). The
     //   RVAs are the dump's, same convention as every hook above.
