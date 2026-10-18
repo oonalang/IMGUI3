@@ -26,11 +26,6 @@
 //        dump.cs 468670  `public static void EndReportPlayerPull(request)`
 //        the send half; without it the request built above is never flushed.
 //
-//  (The request in the snippet this feature was asked for is named
-//   DoReport / DoReportPlayer / BeginReport / EndReport; the two "Report"
-//   ones are the dump's BeginReportPlayerPull / EndReportPlayerPull - same
-//   RVAs, same signatures, and the dump is what the offsets were checked
-//   against.)
 //
 //  GATING: Config.ExtraMenu.BlockReport, default ON, one row in the SETTINGS
 //  tab. While it is OFF every hook calls the game's original function with the

@@ -1,3 +1,14 @@
 # Downloaded il2cpp dumps (e.g. https://huggingface.co/datasets/jeudhehs/dump).
 # Reference material for verifying RVA/offsets, not a build input - ~80 MB.
 dumps/
+
+# Build output. ndk-build writes obj/ + libs/, AIDE writes build/, and the APK
+# is signed per machine - none of it belongs in the tree.
+build/
+src/main/obj/
+src/main/libs/
+src/main/jniLibs/
+*.apk
+*.o
+*.o.d
+*.so.tmp

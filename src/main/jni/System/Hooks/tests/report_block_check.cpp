@@ -27,9 +27,8 @@
 //       src/main/jni/System/Hooks/tests/report_block_check.cpp \
 //       -o /tmp/report_block_check && /tmp/report_block_check
 // Exits 0 and prints "OK: all report-block checks passed" on success.
-// Android.mk compiles only ImGui / IL2CppSDKGenerator/IL2Cpp /
-// IL2CppSDKGenerator/KittyMemory / System/Texture and the jni root, so nothing
-// under System/Hooks is ever compiled into the APK.
+// Android.mk compiles only ImGui / IL2CppSDKGenerator and the jni root, so
+// nothing under System/Hooks is ever compiled into the APK.
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -43,7 +42,6 @@
 #include "IL2CppSDKGenerator/IL2Cpp/Il2Cpp.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Tools.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
-#include "foxcheats/include/ScanEngine.hpp"
 #include "Hacks/StructGame/StructGame.h"
 #include "Hacks/Feature/Init_Hacks.h"      // sConfig Config - used by the header
 #include "System/Hooks/ReportBlock.h"

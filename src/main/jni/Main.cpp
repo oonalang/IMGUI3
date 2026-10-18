@@ -11,7 +11,6 @@
 #include "Hacks/Hacks.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
 #include "AstralPrtctn/AntiHook.h"
-#include "foxcheats/include/ScanEngine.hpp"
 #include "Includes/Jni_Stuff.h"
 
 #include <sys/stat.h>

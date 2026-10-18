@@ -13,7 +13,7 @@ trap 'rm -rf "$OUT_DIR"' EXIT
 COMMON="-DIMGUI_DEFINE_MATH_OPERATORS -D__fastcall= -D__aarch64__ -DHOST_SYNTAX_ONLY -DPROP_VALUE_MAX=92"
 INCLUDES="-I Skin/tests/stubs -I . -I ImGui -I Immenu -I menu -I Includes \
  -I curl/curl-android-arm64-v8a/include -I curl/openssl-android-arm64-v8a/include \
- -I foxcheats -I foxcheats/includes -I SDK/Xhook -I libzip"
+ -I SDK/Xhook -I libzip"
 
 "$CXX" -std=c++17 $COMMON $INCLUDES \
     -o "$OUT_DIR/skin_headers_check" Skin/tests/skin_headers_check.cpp \
@@ -54,6 +54,53 @@ INCLUDES="-I Skin/tests/stubs -I . -I ImGui -I Immenu -I menu -I Includes \
     -o "$OUT_DIR/auto_equip_check" Skin/tests/auto_equip_check.cpp \
     IL2CppSDKGenerator/IL2Cpp/Tools.cpp -lpthread
 "$OUT_DIR/auto_equip_check"
+
+# The skin loaders' offsets, the camo catalogue and the character-skin apply.
+"$CXX" -std=c++17 $COMMON $INCLUDES \
+    -o "$OUT_DIR/offset_check" Skin/tests/offset_check.cpp AstralPrtctn/md5.cpp
+"$OUT_DIR/offset_check"
+
+"$CXX" -std=c++17 $COMMON $INCLUDES \
+    -o "$OUT_DIR/camo_apply_check" Skin/tests/camo_apply_check.cpp \
+    IL2CppSDKGenerator/IL2Cpp/Tools.cpp -lpthread
+"$OUT_DIR/camo_apply_check"
+
+"$CXX" -std=c++17 $COMMON $INCLUDES \
+    -o "$OUT_DIR/character_apply_check" Skin/tests/character_apply_check.cpp \
+    IL2CppSDKGenerator/IL2Cpp/Tools.cpp -lpthread
+"$OUT_DIR/character_apply_check"
+
+# Tools::IsPtrValid under ThreadSanitizer.
+"$CXX" -std=c++17 -fsanitize=thread -g -O1 -ffunction-sections -fdata-sections \
+    -D__fastcall= -I Skin/tests/stubs -I . -I ImGui -I Includes \
+    -o "$OUT_DIR/tools_isvalid_tsan" \
+    IL2CppSDKGenerator/IL2Cpp/tests/tools_isvalid_tsan.cpp \
+    IL2CppSDKGenerator/IL2Cpp/Tools.cpp -Wl,--gc-sections
+"$OUT_DIR/tools_isvalid_tsan"
+
+# Combat-side logic: the ADS answer, the dot geometry, the body profile, the
+# feature defaults, and the entity walks (needs the patched ImGui core).
+"$CXX" -std=c++17 $COMMON $INCLUDES \
+    -o "$OUT_DIR/ads_safe_check" Hacks/Feature/tests/ads_safe_check.cpp
+"$OUT_DIR/ads_safe_check"
+
+"$CXX" -std=c++17 $COMMON $INCLUDES \
+    -o "$OUT_DIR/body_profile_check" Hacks/Feature/tests/body_profile_check.cpp
+"$OUT_DIR/body_profile_check"
+
+"$CXX" -std=c++17 $COMMON $INCLUDES \
+    -o "$OUT_DIR/crosshair_check" Hacks/Feature/tests/crosshair_check.cpp
+"$OUT_DIR/crosshair_check"
+
+"$CXX" -std=c++17 $COMMON $INCLUDES \
+    -o "$OUT_DIR/config_defaults_check" Hacks/Feature/tests/config_defaults_check.cpp
+"$OUT_DIR/config_defaults_check"
+
+"$CXX" -std=c++17 $COMMON $INCLUDES \
+    -o "$OUT_DIR/esp_walk_check" Hacks/Feature/tests/esp_walk_check.cpp \
+    ImGui/imgui.cpp ImGui/imgui_draw.cpp ImGui/imgui_widgets.cpp ImGui/imgui_tables.cpp \
+    menu/blur.cpp menu/gui.cpp
+"$OUT_DIR/esp_walk_check"
 
 "$CXX" -std=c++17 $COMMON -fsyntax-only $INCLUDES \
     -include Skin/tests/stubs/host_aarch64_shim.h \

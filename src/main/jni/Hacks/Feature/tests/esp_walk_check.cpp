@@ -37,13 +37,13 @@
 #include "Includes/Logger.h"
 #include "Includes/Macros.h"
 #include "Includes/obfuscate.h"
+#include "Includes/OverlayGeometry.h"   // glWidth/glHeight, read by DrawESP.h
 #include "Includes/Utils.h"
 #include "IL2CppSDKGenerator/BasicStructs/Vector3.hpp"
 #include "IL2CppSDKGenerator/BasicStructs/Vector2.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Il2Cpp.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Tools.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
-#include "foxcheats/include/ScanEngine.hpp"
 #include "IL2CppSDKGenerator/BasicStructs/Call_BasicStructs.h"
 #include "Hacks/StructGame/Defines.h"
 
@@ -312,6 +312,10 @@ static bool SetUpMatch()
     g_localPawn = MakePawn((Transform *)MakeTransform(), true, (Transform *)MakeTransform());
     return true;
 }
+
+// Host-only link stub: the include graph references the A64 hook engine.
+extern "C" void A64HookFunction(void *const symbol, void *const replace, void **result)
+{ (void)symbol; if (result) *result = replace; }
 
 int main()
 {

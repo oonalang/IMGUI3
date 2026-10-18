@@ -4,7 +4,7 @@
 #include <sstream>
 #include <ctime>
 
-#include "../foxcheats/include/json.hpp"
+#include "../AstralPrtctn/json.hpp"
 #include "../../Hacks/Feature/Init_Hacks.h"
 
 // Externals defined in Main.cpp

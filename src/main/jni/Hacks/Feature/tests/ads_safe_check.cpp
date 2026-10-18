@@ -41,7 +41,6 @@
 #include "IL2CppSDKGenerator/IL2Cpp/Il2Cpp.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Tools.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
-#include "foxcheats/include/ScanEngine.hpp"
 #include "Hacks/StructGame/StructGame.h"
 
 // Tools::IsPtrValid (Tools.cpp is intentionally not linked).
@@ -99,6 +98,10 @@ static char *make_weapon(bool flag, float pct)
     *(float *)(w + Class_Weapon_m_AimingPercentage) = pct;
     return w;
 }
+
+// Host-only link stub: the include graph references the A64 hook engine.
+extern "C" void A64HookFunction(void *const symbol, void *const replace, void **result)
+{ (void)symbol; if (result) *result = replace; }
 
 int main()
 {

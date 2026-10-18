@@ -41,7 +41,6 @@
 #include "IL2CppSDKGenerator/IL2Cpp/Il2Cpp.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Tools.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
-#include "foxcheats/include/ScanEngine.hpp"
 #include "Hacks/StructGame/StructGame.h"
 #include "Hacks/Feature/Init_Hacks.h"   // sConfig Config - referenced by NewFeatures.h
 #include "Hacks/Feature/NewFeatures.h"
@@ -429,6 +428,10 @@ static void testRay()
 }
 
 // ---------------------------------------------------------------------------
+// Host-only link stub: the include graph references the A64 hook engine.
+extern "C" void A64HookFunction(void *const symbol, void *const replace, void **result)
+{ (void)symbol; if (result) *result = replace; }
+
 int main()
 {
     installFns();
