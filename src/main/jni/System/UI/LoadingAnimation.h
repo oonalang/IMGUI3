@@ -48,7 +48,7 @@ namespace C {
 }
 
 static const char* kHex  = "0123456789ABCDEF";
-static const char* kHash = "ETHNIR NOIR LOADED SUCESSFULLY";
+static const char* kHash = "ETHNIR FREEMIUM LOADED SUCCESSFULLY";
 
 static uint32_t H32(uint32_t x) {
     x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x;
@@ -396,13 +396,10 @@ inline bool RenderWindow(ImTextureID tex = nullptr) {
 
         float cy = inn.y + 24.0f;
         {
-            const char* p1 = "ETHNIR NOIR";
-            const char* p2 = " V3";
+            const char* p1 = "ETHNIR FREEMIUM";
             float s1 = disp->CalcTextSizeA(26.0f, FLT_MAX, 0.0f, p1).x;
-            float s2 = disp->CalcTextSizeA(26.0f, FLT_MAX, 0.0f, p2).x;
-            float tx = rightX + ((rightEnd - rightX) - s1 - s2) * 0.5f;
-            dl->AddText(disp, 26.0f, {tx, cy},      C::U(C::White), p1);
-            dl->AddText(disp, 26.0f, {tx + s1, cy}, C::U(C::Purple),  p2);
+            float tx = rightX + ((rightEnd - rightX) - s1) * 0.5f;
+            dl->AddText(disp, 26.0f, {tx, cy}, C::U(C::White), p1);
             cy += 30.0f;
             const char* sub = "Call of Duty: 1.6.57";
             float ss = body->CalcTextSizeA(12.0f, FLT_MAX, 0.0f, sub).x;

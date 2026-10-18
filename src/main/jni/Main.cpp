@@ -1491,7 +1491,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 dl->AddRect(wp, {wp.x + WW, wp.y + WH}, C(46, 51, 66, 255), 14.0f, 0, 1.0f);
                 dl->AddRect({wp.x + 6, wp.y + 6}, {wp.x + WW - 6, wp.y + WH - 6}, C(33, 37, 48, 255), 11.0f, 0, 1.0f);
 
-                const char* brand = "ETHNIR NOIR";
+                const char* brand = "ETHNIR FREEMIUM";
                 ImVec2 brandSize = titleFont->CalcTextSizeA(32.0f, FLT_MAX, 0.0f, brand);
                 dl->AddText(titleFont, 32.0f, {wp.x + (WW - brandSize.x) * 0.5f, wp.y + 40.0f}, C(235, 238, 245, 255), brand);
 
@@ -1588,7 +1588,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             }
         }
         else {
-            uncollapseOpenAnim = ImClamp(uncollapseOpenAnim + ImGui::GetIO().DeltaTime * 5.0f, 0.0f, 1.0f);
+            uncollapseOpenAnim = ImClamp(uncollapseOpenAnim + ImGui::GetIO().DeltaTime * 14.0f, 0.0f, 1.0f);
             float openEase = uncollapseOpenAnim * uncollapseOpenAnim * (3.0f - 2.0f * uncollapseOpenAnim);
             float openAlpha = 0.2f + 0.8f * openEase;
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, openAlpha);
@@ -1647,7 +1647,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     const float contentPadding = 10.0f;
                     const float columnGap = 10.0f;
                     const float headerHeight = 64.0f;
-                    const float closeHeaderWidth = 72.0f;
+                    const float closeHeaderWidth = 104.0f;
 
                     const float contentLeft = runtimeWindowPos.x + outerPad;
                     const float contentRight = runtimeWindowPos.x + runtimeWindowSize.x - outerPad;
@@ -1671,22 +1671,35 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     runtimeDrawList->AddRectFilled(headerMin, headerMax, nl5::ToolbarBg, 12.0f);
                     runtimeDrawList->AddRect(headerMin, headerMax, nl5::ToolbarLine, 12.0f, 0, 1.0f);
 
-                    const ImVec2 flameCenter(headerMin.x + 28.0f, headerMin.y + headerHeight * 0.5f);
-                    // No glow halo behind the icon any more - the accent circle used
-                    // to be a soft light spill ("neon"); the icon itself stays.
+                    const ImVec2 brandMarkCenter(headerMin.x + 28.0f, headerMin.y + headerHeight * 0.5f);
+                    // Use the loaded menu artwork as a picture mark in the
+                    // header instead of relying on a font glyph. If texture
+                    // creation failed, the picture glyph is the fallback.
                     {
-                        ImFont *iconFont = custom::shell::GetIconFont();
-                        const char *logoIcon = ICON_FA_FIRE;
-                        const ImVec2 ls = custom::shell::MeasureText(iconFont, 17.0f, logoIcon);
-                        runtimeDrawList->AddText(iconFont, 17.0f,
-                            ImVec2(flameCenter.x - ls.x * 0.5f, flameCenter.y - ls.y * 0.5f),
-                            main_runtime_theme::GetAccentU32(), logoIcon);
+                        const ImVec2 pictureMin(brandMarkCenter.x - 20.0f, brandMarkCenter.y - 20.0f);
+                        const ImVec2 pictureMax(brandMarkCenter.x + 20.0f, brandMarkCenter.y + 20.0f);
+                        if (g_menuBackground.id != 0) {
+                            runtimeDrawList->AddImageRounded(
+                                (ImTextureID)(intptr_t)g_menuBackground.id,
+                                pictureMin, pictureMax, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
+                                IM_COL32_WHITE, 10.0f);
+                        } else {
+                            ImFont *iconFont = custom::shell::GetIconFont();
+                            const char *pictureIcon = ICON_FA_IMAGE;
+                            const ImVec2 ls = custom::shell::MeasureText(iconFont, 20.0f, pictureIcon);
+                            runtimeDrawList->AddText(iconFont, 20.0f,
+                                ImVec2(brandMarkCenter.x - ls.x * 0.5f, brandMarkCenter.y - ls.y * 0.5f),
+                                main_runtime_theme::GetAccentU32(), pictureIcon);
+                        }
+                        runtimeDrawList->AddRect(pictureMin, pictureMax,
+                                                 main_runtime_theme::GetAccentU32(0.85f),
+                                                 10.0f, 0, 1.0f);
                     }
 
                     ImFont *runtimeTitleFont = custom::shell::GetTitleFont();
-                    const float runtimeTitleSize = 22.0f;
-                    const char *titleA = "ETHNIR NOIR";
-                    const char *titleB = " V3";
+                    const float runtimeTitleSize = headerMainWidth < 320.0f ? 18.0f : 22.0f;
+                    const char *titleA = "ETHNIR";
+                    const char *titleB = " FREEMIUM";
                     const ImVec2 titleASize = runtimeTitleFont->CalcTextSizeA(runtimeTitleSize, FLT_MAX, 0.0f, titleA);
                     runtimeDrawList->AddText(runtimeTitleFont, runtimeTitleSize,
                         ImVec2(headerMin.x + 56.0f, headerMin.y + 11.0f), nl5::TextBright, titleA);
@@ -1728,8 +1741,10 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         runtime_preview_menu::CollapseMenu(runtimeState);
                     }
 
-                    runtimeState.tabAlpha = ImClamp(runtimeState.tabAlpha + (4.0f * ImGui::GetIO().DeltaTime * (runtimeState.page == runtimeState.activeTab ? 1.0f : -1.0f)), 0.0f, 1.0f);
-                    if (runtimeState.tabAlpha == 0.0f && runtimeState.tabAdd == 0.0f) runtimeState.activeTab = runtimeState.page;
+                    // Tab changes are immediate. The sidebar assigns both
+                    // page and activeTab on click, so there is no cross-fade
+                    // for the user to wait through before controls appear.
+                    runtimeState.tabAlpha = 1.0f;
 
                     runtimeDrawList->AddRectFilled(hostMin, hostMax, nl5::SidebarBg, 12.0f);
                     runtimeDrawList->AddRect(hostMin, hostMax, nl5::SidebarLine, 12.0f, 0, 1.0f);
@@ -1745,9 +1760,9 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     static float g_sidebarAnim = 1.0f;
                     const float  sidebarTarget = g_sidebarOpen ? 1.0f : 0.0f;
                     g_sidebarAnim += (sidebarTarget - g_sidebarAnim) *
-                                     ImMin(1.0f, ImGui::GetIO().DeltaTime * 12.0f);
-                    if (g_sidebarAnim > 0.998f)      g_sidebarAnim = 1.0f;
-                    else if (g_sidebarAnim < 0.002f) g_sidebarAnim = 0.0f;
+                                     ImMin(1.0f, ImGui::GetIO().DeltaTime * 30.0f);
+                    if (g_sidebarAnim > 0.99f)       g_sidebarAnim = 1.0f;
+                    else if (g_sidebarAnim < 0.01f)  g_sidebarAnim = 0.0f;
 
                     const ImVec2 hostSize(ImMax(1.0f, hostMax.x - hostMin.x),
                                           ImMax(1.0f, hostMax.y - hostMin.y));
@@ -1776,8 +1791,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         // the one it called EXTRA is the changelog (5). Same
                         // order the tab strip on main used, plus the HOME entry
                         // the user asks for by name.
-                        static const char *sbIcons[] = { ICON_FA_HOME, ICON_FA_EYE, ICON_FA_MICROCHIP,
-                                                         ICON_FA_STAR, ICON_FA_SLIDERS_H, ICON_FA_COG };
+                        static const char *sbIcons[] = { ICON_FA_HOME, ICON_FA_EYE, ICON_FA_CROSSHAIRS,
+                                                         ICON_FA_TSHIRT, ICON_FA_LIST_ALT, ICON_FA_COG };
                         static const char *sbNames[] = { "HOME", "ESP", "AIM", "SKINS", "MISC", "SETTINGS" };
                         static const int   sbIds[]   = { 2, 1, 3, 4, 5, 6 };
 
@@ -1829,6 +1844,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                             if (ImGui::IsItemClicked()) {
                                 runtimeState.page = sbIds[i];
                                 runtimeState.activeTab = sbIds[i];
+                                runtimeState.tabAlpha = 1.0f;
                                 g_LogoPreviewMode = false;
                             }
                             rowY += sidebar.rowH + sidebar.rowGap;
@@ -1877,7 +1893,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                 custom::Checkbox("Mythic Attachments", &Config.ExtraMenu.MythicAttachments);
                                 custom::Checkbox("No Slide Fatigue", &Config.NewFeaturesMenu.NoSlideFatigue);
                                 custom::Separator();
-                                custom::Separator();
                                 // === NEW FEATURES: Misc ===
                                 custom::Checkbox("No Crouch", &Config.NewFeaturesMenu.NoCrouch);
                                 custom::Checkbox("No Hit Flinch", &Config.NewFeaturesMenu.NoHitFlinch);
@@ -1903,10 +1918,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                             : "waiting for the local pawn tick");
                                 }
                                 custom::Checkbox("No Hipfire Delay", &Config.NewFeaturesMenu.NoHipfireDelay);
-                                custom::Separator();
-                                // Dev / Debug options
-                                custom::Separator();
-                                custom::Separator();
 
                                 EndContentChild(left);
                             }
@@ -1942,6 +1953,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                 custom::Checkbox("ESP Name", &Config.ESPMenu.Name);
                                 custom::Checkbox("ESP Distance", &Config.ESPMenu.Distance);
                                 custom::Checkbox("ESP Count", &Config.ESPMenu.Count);
+                                custom::Checkbox("Throwable Alert", &Config.ESPMenu.GrenadeWarn);
+                                custom::Checkbox("Placed Items ESP", &Config.ESPMenu.Placables);
                                 custom::Checkbox("360 Alert", &Config.ESPMenu.Alert);
                                 custom::Checkbox("Show AimLine", &Config.ESPMenu.Aimline);
                                 custom::Checkbox("Yellow Wallhack", &Config.ExtraMenu.WallHack);
@@ -1973,10 +1986,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                 custom::Combo("Line Position", (int *)&Config.ESPMenu.Target, linePositions, IM_ARRAYSIZE(linePositions), -1);
                                 custom::Combo("Health Position", (int *)&Config.ESPMenu.HealthPosition, healthPositions, IM_ARRAYSIZE(healthPositions), -1);
                                 custom::Combo("ESP Style", (int *)&Config.ESPMenu.EspStyle, espStyles, IM_ARRAYSIZE(espStyles), -1);
-                                ImGui::Dummy(ImVec2(0.0f, 8.0f));
-                                ImGui::TextColored(main_runtime_theme::GetAccentVec4(), "EXTRA OPTIONS");
-                                ImGui::TextUnformatted("Player ESP Color");
-                                ImGui::TextUnformatted("Bot ESP Color");
                                 EndContentChild(options);
                             }
                             custom::EndGroup();

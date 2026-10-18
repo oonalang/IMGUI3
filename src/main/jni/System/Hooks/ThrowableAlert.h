@@ -6,9 +6,14 @@
 
 namespace ThrowAlertCfg {
     constexpr uintptr_t PosRva = 0xB1F087C;       // WeaponProjectile.Position
-    constexpr uintptr_t TickRva = 0xB200314;      // WeaponProjectile.Tick(float)
+    // Corrected against dump.cs (GR .57, github.com/eliwoahzja/dump): the old
+    // 0xB200314 is WeaponProjectile_CombatAxe.Tick, so the hook only ever saw
+    // thrown combat axes. 0xB1F4E2C is the base WeaponProjectile.Tick(float).
+    constexpr uintptr_t TickRva = 0xB1F4E2C;      // WeaponProjectile.Tick(float)
     constexpr uintptr_t Exploded = 0xA1;          // WeaponProjectile.bHasExplode
-    constexpr uintptr_t DamageRadius = 0xA8;      // WeaponProjectile.m_DamageRadius
+    // Same dump: m_DamageRadius is at 0x98. 0xA8 is m_ExplosionEffect (a
+    // BaseEffect*), whose bits were being read as a float radius.
+    constexpr uintptr_t DamageRadius = 0x98;      // WeaponProjectile.m_DamageRadius
     constexpr uintptr_t ItemId = 0xE4;            // WeaponProjectile.m_WeaponItemID
     constexpr uintptr_t LethalRadius = 0x200;     // WeaponProjectile.m_LethalRadius
     constexpr float MaxDist = 70.0f;

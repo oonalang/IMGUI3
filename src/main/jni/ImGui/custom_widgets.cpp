@@ -220,16 +220,34 @@ namespace custom
                 );
             }
 
+            // This control collapses the menu to its restore bar; it does not
+            // power the overlay off. Use the window-minimize glyph, make it
+            // large enough to read at a glance, and label the enlarged touch
+            // target so its purpose is clear even if the icon font fails.
             ImFont* iconFont = GetIconFont();
-            const char* powerIcon = ICON_FA_POWER_OFF;
-            const float iconFontSize = hovered || held ? 22.0f : 20.5f;
-            const ImVec2 iconSize = MeasureText(iconFont, iconFontSize, powerIcon);
+            ImFont* labelFont = GetTextFont();
+            const char* minimizeIcon = ICON_FA_WINDOW_MINIMIZE;
+            const char* minimizeLabel = "MINIMIZE";
+            const float iconFontSize = hovered || held ? 32.0f : 30.0f;
+            const float labelFontSize = 9.0f;
+            const ImVec2 iconSize = MeasureText(iconFont, iconFontSize, minimizeIcon);
+            const ImVec2 labelSize = MeasureText(labelFont, labelFontSize, minimizeLabel);
+            const float contentHeight = iconSize.y + labelSize.y + 3.0f;
+            const float iconY = min.y + ImMax(0.0f, (size.y - contentHeight) * 0.5f);
+            const ImU32 controlColor = hovered || held ? nl5::AccentIcon() : nl5::TextBright;
             drawList->AddText(
                 iconFont,
                 iconFontSize,
-                ImVec2(min.x + (size.x - iconSize.x) * 0.5f, min.y + (size.y - iconSize.y) * 0.5f - 1.0f),
-                hovered ? nl5::AccentIcon() : nl5::TextBright,
-                powerIcon
+                ImVec2(min.x + (size.x - iconSize.x) * 0.5f, iconY),
+                controlColor,
+                minimizeIcon
+            );
+            drawList->AddText(
+                labelFont,
+                labelFontSize,
+                ImVec2(min.x + (size.x - labelSize.x) * 0.5f, iconY + iconSize.y + 3.0f),
+                controlColor,
+                minimizeLabel
             );
 
             return clicked;
@@ -990,8 +1008,9 @@ namespace custom
 
         static std::map<ImGuiID, button_state> anim;
         auto it_anim = anim.find(id);
+        const bool first_anim_frame = (it_anim == anim.end());
 
-        if (it_anim == anim.end())
+        if (first_anim_frame)
         {
             anim.insert({ id, button_state() });
             it_anim = anim.find(id);
@@ -1006,8 +1025,15 @@ namespace custom
             ? c::text::text_active
             : hovered ? c::text::text_active : c::text::text_hov;
 
-        it_anim->second.background = ImLerp(it_anim->second.background, target_background, g.IO.DeltaTime * 10.0f);
-        it_anim->second.text = ImLerp(it_anim->second.text, target_text, g.IO.DeltaTime * 10.0f);
+        // As with Checkbox, a button first drawn after a tab switch must not
+        // spend half a second fading in from the zero-initialised state.
+        if (first_anim_frame)
+        {
+            it_anim->second.background = target_background;
+            it_anim->second.text = target_text;
+        }
+        it_anim->second.background = ImLerp(it_anim->second.background, target_background, ImMin(1.0f, g.IO.DeltaTime * 30.0f));
+        it_anim->second.text = ImLerp(it_anim->second.text, target_text, ImMin(1.0f, g.IO.DeltaTime * 30.0f));
 
         const float rounding = 6.0f * c::scale;
         GetWindowDrawList()->AddRectFilled(bb.Min, bb.Max, GetColorU32(it_anim->second.background), rounding);
@@ -1167,7 +1193,8 @@ namespace custom
 
         static std::map<ImGuiID, check_state> anim;
         auto it_anim = anim.find(id);
-        if (it_anim == anim.end())
+        const bool first_anim_frame = (it_anim == anim.end());
+        if (first_anim_frame)
         {
             anim.insert({ id, check_state() });
             it_anim = anim.find(id);
@@ -1187,9 +1214,17 @@ namespace custom
         const ImVec4 target_text = (hovered || g.ActiveId == id)
             ? ImGui::ColorConvertU32ToFloat4(nl5::TextBright)
             : ImGui::ColorConvertU32ToFloat4(nl5::RowText);
-        it_anim->second.background = ImLerp(it_anim->second.background, target_background, g.IO.DeltaTime * 10.0f);
-        it_anim->second.text = ImLerp(it_anim->second.text, target_text, g.IO.DeltaTime * 10.0f);
-        it_anim->second.alpha_mark = ImLerp(it_anim->second.alpha_mark, *v ? 1.f : 0.f, g.IO.DeltaTime * 12.0f);
+        // A row shown for the first time (for example, right after a tab
+        // switch) starts at its final colors instead of fading in from the
+        // zero-initialised animation state. Later changes remain animated.
+        if (first_anim_frame)
+        {
+            it_anim->second.background = target_background;
+            it_anim->second.text = target_text;
+        }
+        it_anim->second.background = ImLerp(it_anim->second.background, target_background, ImMin(1.0f, g.IO.DeltaTime * 30.0f));
+        it_anim->second.text = ImLerp(it_anim->second.text, target_text, ImMin(1.0f, g.IO.DeltaTime * 30.0f));
+        it_anim->second.alpha_mark = ImLerp(it_anim->second.alpha_mark, *v ? 1.f : 0.f, ImMin(1.0f, g.IO.DeltaTime * 36.0f));
         it_anim->second.hover_t = ImLerp(it_anim->second.hover_t, hovered ? 1.0f : 0.0f, g.IO.DeltaTime * 10.0f);
         it_anim->second.hold_t = ImLerp(it_anim->second.hold_t, held ? 1.0f : 0.0f, g.IO.DeltaTime * 18.0f);
         const float target_box_scale = (*v ? 1.0f : 0.94f) + it_anim->second.hold_t * 0.05f + it_anim->second.hover_t * 0.02f;
@@ -1316,8 +1351,9 @@ namespace custom
 
         static std::map<ImGuiID, begin_state> anim;
         auto it_anim = anim.find(id);
+        const bool first_anim_frame = (it_anim == anim.end());
 
-        if (it_anim == anim.end())
+        if (first_anim_frame)
         {
             anim.insert({ id, begin_state() });
             it_anim = anim.find(id);
@@ -1337,14 +1373,24 @@ namespace custom
         const float popup_target = (popup_open && it_anim->second.want_open)
             ? ImClamp(CalcMaxPopupHeightFromItemCount(val) + 6.0f * c::scale, 0.0f, 300.0f * c::scale)
             : 0.0f;
-        it_anim->second.arrow_roll = ImLerp(it_anim->second.arrow_roll, (popup_open && it_anim->second.want_open) ? 1.0f : 0.0f, g.IO.DeltaTime * 12.0f);
-        it_anim->second.text = ImLerp(it_anim->second.text, (popup_open && it_anim->second.want_open) ? c::text::text_active : hovered ? c::text::text_hov : c::text::text_active, g.IO.DeltaTime * 10.0f);
+        const ImVec4 target_combo_text = (popup_open && it_anim->second.want_open) ? c::text::text_active : hovered ? c::text::text_hov : c::text::text_active;
         const ImVec4 target_combo_bg = hovered || popup_open ? ImVec4(0.0f, 0.0f, 0.0f, 0.92f) : ImVec4(0.0f, 0.0f, 0.0f, 0.84f);
-        it_anim->second.background = ImLerp(it_anim->second.background, target_combo_bg, g.IO.DeltaTime * 10.0f);
-        it_anim->second.combo_size = ImLerp(it_anim->second.combo_size, popup_target, g.IO.DeltaTime * 14.0f);
-        it_anim->second.popup_alpha = ImLerp(it_anim->second.popup_alpha, (popup_open && it_anim->second.want_open) ? 1.0f : 0.0f, g.IO.DeltaTime * 14.0f);
-        it_anim->second.popup_offset = ImLerp(it_anim->second.popup_offset, (popup_open && it_anim->second.want_open) ? 0.0f : -6.0f * c::scale, g.IO.DeltaTime * 14.0f);
-        it_anim->second.field_emphasis = ImLerp(it_anim->second.field_emphasis, hovered || popup_open ? 1.0f : 0.0f, g.IO.DeltaTime * 12.0f);
+        // First-drawn combo fields (for example, right after switching to the
+        // ESP or AIM tab) start at their final colors. Popup opening remains
+        // animated, just at roughly three times the old rate.
+        if (first_anim_frame)
+        {
+            it_anim->second.text = target_combo_text;
+            it_anim->second.background = target_combo_bg;
+            it_anim->second.field_emphasis = hovered || popup_open ? 1.0f : 0.0f;
+        }
+        it_anim->second.arrow_roll = ImLerp(it_anim->second.arrow_roll, (popup_open && it_anim->second.want_open) ? 1.0f : 0.0f, ImMin(1.0f, g.IO.DeltaTime * 36.0f));
+        it_anim->second.text = ImLerp(it_anim->second.text, target_combo_text, ImMin(1.0f, g.IO.DeltaTime * 30.0f));
+        it_anim->second.background = ImLerp(it_anim->second.background, target_combo_bg, ImMin(1.0f, g.IO.DeltaTime * 30.0f));
+        it_anim->second.combo_size = ImLerp(it_anim->second.combo_size, popup_target, ImMin(1.0f, g.IO.DeltaTime * 36.0f));
+        it_anim->second.popup_alpha = ImLerp(it_anim->second.popup_alpha, (popup_open && it_anim->second.want_open) ? 1.0f : 0.0f, ImMin(1.0f, g.IO.DeltaTime * 36.0f));
+        it_anim->second.popup_offset = ImLerp(it_anim->second.popup_offset, (popup_open && it_anim->second.want_open) ? 0.0f : -6.0f * c::scale, ImMin(1.0f, g.IO.DeltaTime * 36.0f));
+        it_anim->second.field_emphasis = ImLerp(it_anim->second.field_emphasis, hovered || popup_open ? 1.0f : 0.0f, ImMin(1.0f, g.IO.DeltaTime * 36.0f));
 
         if (popup_open && !it_anim->second.want_open && it_anim->second.combo_size <= 2.0f && it_anim->second.popup_alpha <= 0.04f)
         {
@@ -2526,8 +2572,9 @@ namespace custom
 
         static std::map<ImGuiID, slider_state> anim;
         auto it_anim = anim.find(id);
+        const bool first_anim_frame = (it_anim == anim.end());
 
-        if (it_anim == anim.end())
+        if (first_anim_frame)
         {
             anim.insert({ id, slider_state() });
             it_anim = anim.find(id);
@@ -2535,12 +2582,20 @@ namespace custom
         }
 
         const bool active_slider = IsItemActive();
-        it_anim->second.text = ImLerp(it_anim->second.text,
-            ImGui::ColorConvertU32ToFloat4((hovered || active_slider) ? nl5::TextBright : nl5::RowText),
-            g.IO.DeltaTime * 6.f);
-        it_anim->second.hover_t = ImLerp(it_anim->second.hover_t, hovered ? 1.0f : 0.0f, g.IO.DeltaTime * 10.0f);
-        it_anim->second.active_t = ImLerp(it_anim->second.active_t, active_slider ? 1.0f : 0.0f, g.IO.DeltaTime * 14.0f);
-        it_anim->second.value_alpha = ImLerp(it_anim->second.value_alpha, active_slider ? 1.0f : hovered ? 0.9f : 0.78f, g.IO.DeltaTime * 10.0f);
+        const ImVec4 target_slider_text = ImGui::ColorConvertU32ToFloat4((hovered || active_slider) ? nl5::TextBright : nl5::RowText);
+        // A slider first drawn after a tab switch starts with its label and
+        // state already settled; only the fill (set below) needs the value.
+        if (first_anim_frame)
+        {
+            it_anim->second.text = target_slider_text;
+            it_anim->second.hover_t = hovered ? 1.0f : 0.0f;
+            it_anim->second.active_t = active_slider ? 1.0f : 0.0f;
+            it_anim->second.value_alpha = active_slider ? 1.0f : hovered ? 0.9f : 0.78f;
+        }
+        it_anim->second.text = ImLerp(it_anim->second.text, target_slider_text, ImMin(1.0f, g.IO.DeltaTime * 24.0f));
+        it_anim->second.hover_t = ImLerp(it_anim->second.hover_t, hovered ? 1.0f : 0.0f, ImMin(1.0f, g.IO.DeltaTime * 30.0f));
+        it_anim->second.active_t = ImLerp(it_anim->second.active_t, active_slider ? 1.0f : 0.0f, ImMin(1.0f, g.IO.DeltaTime * 36.0f));
+        it_anim->second.value_alpha = ImLerp(it_anim->second.value_alpha, active_slider ? 1.0f : hovered ? 0.9f : 0.78f, ImMin(1.0f, g.IO.DeltaTime * 30.0f));
 
         const bool value_changed = SliderBehavior(slider_bb, id, data_type, p_data, p_min, p_max, format, flags, &grab_bb);
 
@@ -2552,7 +2607,11 @@ namespace custom
         const float track_width = ImMax(1.0f, slider_bb.GetWidth() - track_margin * 2.0f);
         const float grab_center_x = (grab_bb.Min.x + grab_bb.Max.x) * 0.5f;
         const float fill_target = ImClamp(grab_center_x - (slider_bb.Min.x + track_margin), 0.0f, track_width);
-        it_anim->second.slow = ImLerp(it_anim->second.slow, fill_target, g.IO.DeltaTime * 18.0f);
+        // Do not animate the fill from zero the first time a tab shows this
+        // slider; that sweep is what made tab switches feel unfinished.
+        if (first_anim_frame)
+            it_anim->second.slow = fill_target;
+        it_anim->second.slow = ImLerp(it_anim->second.slow, fill_target, ImMin(1.0f, g.IO.DeltaTime * 36.0f));
 
         const float header_y = total_bb.Min.y + (header_height - label_size.y) * 0.5f;
         GetWindowDrawList()->AddText(ImVec2(total_bb.Min.x, header_y), GetColorU32(it_anim->second.text), label, label_end);
