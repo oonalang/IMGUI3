@@ -884,7 +884,12 @@ static std::mutex g_imguiInitMutex;
 static EGLDisplay g_imguiDisplay = EGL_NO_DISPLAY;
 static EGLContext g_imguiContext = EGL_NO_CONTEXT;
 static EGLSurface g_imguiSurface = EGL_NO_SURFACE;
-static bool g_imguiBackendReady = false;    struct My_Patches {
+static bool g_imguiBackendReady = false;
+// Set when the game's EGL context changed: the menu's GL textures and font
+// atlas belong to the old context and are rebuilt at the top of the next frame.
+static bool g_menuGlReset = false;
+
+struct My_Patches {
     MemoryPatch A1, grap, NoCrouch, SpeedhackX, SpeedhackX1, NoWingsuit, fpss, frame;
     MemoryPatch NoHitFlinch, NoDrift;
     // 8-byte leaf getters - they can never be inline-hooked, see Feats.h /
@@ -977,19 +982,28 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     screenWidth = (float)g_GlWidth;
     screenHeight = (float)g_GlHeight;
 
+    if (g_menuGlReset) {
+        nl_ui::Shutdown();
+        nl_ui::Init(g_GlWidth, g_GlHeight);
+        g_menuGlReset = false;
+    }
+
     // One-time menu setup (REPLACE_EVERYTHING.md): asset reader, overlay config.
     if (!nl_ui::IsReady()) {
         nl_ui::SetConfig({0.97f, 1.0f, false, false});   // in-game overlay: no intro, no background
         nl_ui::SetAssetReader(nl_embedded_asset_reader);
         nl_ui::Init(g_GlWidth, g_GlHeight);
-        if (io->Fonts && io->Fonts->Fonts.Size > 1) {
-            font::inter_semibold = io->Fonts->Fonts[1];
-            if (font::inter_semibold) io->FontDefault = font::inter_semibold;
-        }
     }
 
     ImGui_ImplOpenGL3_NewFrame();
     nl_ui::BeginFrame(g_GlWidth, g_GlHeight);           // layout + fonts + canvas DisplaySize
+
+    // nl_ui re-rasterises the atlas whenever the surface size changes, which
+    // frees every ImFont. Resolve the bold handle after BeginFrame, every frame,
+    // instead of caching a pointer the next rotation would leave dangling.
+    font::inter_semibold = (io->Fonts && io->Fonts->Fonts.Size > 1) ? io->Fonts->Fonts[1] : nullptr;
+    if (font::inter_semibold) io->FontDefault = font::inter_semibold;
+
     ImGui::NewFrame();
 
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
@@ -1169,6 +1183,10 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             g_imguiBackendReady = ImGui_ImplOpenGL3_Init("#version 300 es");
             g_imguiDisplay = dpy; g_imguiContext = activeCtx; g_imguiSurface = surface;
             if (g_imguiBackendReady) ImGui_ImplOpenGL3_CreateFontsTexture();
+            // Not here: rebuilding the menu mid-frame would swap textures under
+            // the draw data that is about to be submitted. Next frame's start
+            // has the new context current and nothing rendered yet.
+            g_menuGlReset = true;
         }
         if (g_imguiBackendReady) {
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

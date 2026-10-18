@@ -982,7 +982,7 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
                     float infoContainerWidth = boxWidth * 1.6f * scaleFactor;
                     float infoContainerX = HeadSc.x - (infoContainerWidth / 2);
                     float infoCurrentY = sHeight - HeadSc.y - (50.0f * scaleFactor);
-                    float centerX = ImGui::GetIO().DisplaySize.x / 2.0f;
+                    float centerX = sWidth / 2.0f;
                     float headY = HeadSc.y; 
                     float fontSize = 18.0f * scaleFactor;
                     float infoTotalHeight = 0.0f;
@@ -1080,7 +1080,7 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
         const int totalEnemyCount = totalBots + totalEnemies;
         ImFont* hudFont = ImGui::GetFont();
         const float hudWidth = 240.0f, hudHeight = 62.0f;
-        const ImVec2 tl(ImGui::GetIO().DisplaySize.x * 0.5f - hudWidth * 0.5f, 32.0f);
+        const ImVec2 tl(sWidth * 0.5f - hudWidth * 0.5f, 32.0f);
         const ImVec2 br(tl.x + hudWidth, tl.y + hudHeight);
         draw->AddRectFilled(tl, br, IM_COL32(15, 23, 33, 242), hudHeight * 0.5f);
         draw->AddRect(tl, br, IM_COL32(51, 102, 153, 102), hudHeight * 0.5f, 0, 1.0f);

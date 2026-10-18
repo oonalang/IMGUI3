@@ -25,7 +25,11 @@ static AssetReader g_reader = nl_embedded_asset_reader;
 
 static nl::Layout g_layout;
 static float g_fontScale = 0.0f;
-static bool g_fontsLive = false;
+// g_backendAtlas: the GL font texture for the current atlas exists in the
+// current context. g_fontsDirty: the atlas was rebuilt (Init, or a new fitted
+// scale) and has to be uploaded before this frame draws any text.
+static bool g_backendAtlas = false;
+static bool g_fontsDirty = false;
 static bool g_initialized = false;
 static bool g_visible = true;
 
@@ -166,11 +170,8 @@ static void SyncFonts(float scale)
 {
     if (g_fontScale > 0.0f && std::fabs(scale - g_fontScale) < 0.02f * g_fontScale)
         return;
-    if (g_fontsLive)
-        ImGui_ImplOpenGL3_DestroyFontsTexture();
     AddFontsAtScale(scale);
-    if (g_fontsLive)
-        ImGui_ImplOpenGL3_CreateFontsTexture();   // first upload happens inside NewFrame
+    g_fontsDirty = true;   // uploaded in BeginFrame, where the GL context is current
 }
 
 // ---- lifetime ---------------------------------------------------------------
@@ -190,8 +191,9 @@ bool Init(int surfaceW, int surfaceH)
 void Shutdown()
 {
     if (!g_initialized) return;
-    if (g_fontsLive) ImGui_ImplOpenGL3_DestroyFontsTexture();
-    g_fontsLive = false;
+    if (g_backendAtlas) ImGui_ImplOpenGL3_DestroyFontsTexture();
+    g_backendAtlas = false;
+    g_fontsDirty = false;
     FreeTextures();
     g_fontScale = 0.0f;
     g_Wordmark = nullptr;
@@ -213,6 +215,17 @@ void BeginFrame(int surfaceW, int surfaceH)
     }
 
     ImGuiIO& io = ImGui::GetIO();
+    if (g_fontsDirty)
+    {
+        // Rasterise the rebuilt atlas and replace the GL texture. Without this
+        // a rotation (which re-fits the scale) would keep sampling the atlas
+        // rasterised for the previous size.
+        if (g_backendAtlas) ImGui_ImplOpenGL3_DestroyFontsTexture();
+        io.Fonts->Build();
+        ImGui_ImplOpenGL3_CreateFontsTexture();
+        g_backendAtlas = true;
+        g_fontsDirty = false;
+    }
     io.DisplaySize = ImVec2(nl::kCanvasW, nl::kCanvasH);   // logical canvas, not the screen
     io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
 }
@@ -280,7 +293,16 @@ void EndFrame()
     {
         ImDrawList* list = dd->CmdLists[n];
         const bool isMenuList = std::find(g_menuLists.begin(), g_menuLists.end(), list) != g_menuLists.end();
-        if (!isMenuList) continue;
+        if (!isMenuList)
+        {
+            // Everything else here is a feature overlay (ESP, dot crosshair,
+            // HUD), already drawn in physical pixels. Its clip rects were built
+            // against the logical canvas, so widen them to the whole surface
+            // instead of moving vertices that are already in the right space.
+            for (int c = 0; c < list->CmdBuffer.Size; ++c)
+                list->CmdBuffer[c].ClipRect = ImVec4(0.0f, 0.0f, fw, fh);
+            continue;
+        }
         // nl::TransformDrawData, applied to this one list only.
         for (int i = 0; i < list->VtxBuffer.Size; ++i)
         {
