@@ -203,6 +203,12 @@ sColorsESPBOT sColorsESPBOT{0};
         // is what makes an applied mythic behave as if it were really owned.
         bool MythicAttachments = true;
 		bool Blueprints;
+        // Block Report (legacy alias): keep the client from sending evidence
+        // when someone reports you. ON by default.
+        bool BlockReport = true;
+        // Block Report Evidence: keep the client from sending evidence when
+        // someone reports you. ON by default.
+        bool BlockReportEvidence = true;
 		bool ClearDisplay;
 		bool ResetGuest;
 		bool RedWallhack;

@@ -664,6 +664,9 @@ inline bool IsUnlocked(void *instance) {
 // LoadoutWeaponsUIHelper.IsThisAttachmentUnlock 0x5D40528 and
 // WeaponAttr.IsAttachUnlock 0xA188634. See System/Hooks/MythicAttachments.h.
 #include "MythicAttachments.h"
+// Block Report Evidence: keep the client from sending evidence when someone
+// reports you. See System/Hooks/BlockReportEvidence.h.
+#include "BlockReportEvidence.h"
 // VARIANT4's fixed mythic-attachment system: resolves the real mythic skin id
 // of every attachment and writes it into the AttachmentGroupNew / AttachItem /
 // AttachSkinData records. It OWNS 0xB83F1C0 (see MythicAttachments.h).
@@ -1075,4 +1078,14 @@ inline void InitializeAllHooks() {
     mythic_attachments::NoteLanded(mythic_attachments::GateItem,
         mythic_attachment_system::mythicRuntimeInstalled.load(std::memory_order_acquire));
     mythic_attachments::NoteLanded(mythic_attachments::GateCell,       orig_AttachmentCellSetData != nullptr);
+
+    //-- Block Report Evidence (see BlockReportEvidence.h). Keep on by default.
+    HOOK_LIB("libunity.so", "0xB23D358", hook_DoReport, orig_DoReport);
+    HOOK_LIB("libunity.so", "0x8FB4B60", hook_DoReportPlayer, orig_DoReportPlayer);
+    HOOK_LIB("libunity.so", "0x5620BAC", hook_BeginReport, orig_BeginReport);
+    HOOK_LIB("libunity.so", "0x5620F9C", hook_EndReport, orig_EndReport);
+    block_report_evidence::NoteLanded(block_report_evidence::GateDoReport,       orig_DoReport != nullptr);
+    block_report_evidence::NoteLanded(block_report_evidence::GateDoReportPlayer, orig_DoReportPlayer != nullptr);
+    block_report_evidence::NoteLanded(block_report_evidence::GateBeginReport,    orig_BeginReport != nullptr);
+    block_report_evidence::NoteLanded(block_report_evidence::GateEndReport,      orig_EndReport != nullptr);
 }

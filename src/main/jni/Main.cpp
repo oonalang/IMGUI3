@@ -1424,6 +1424,9 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         // above No Slide Fatigue; its live counters are in the SKINS tab, next to
         // Unlock Blueprints. See System/Hooks/MythicAttachments.h.
         Config.ExtraMenu.MythicAttachments = true;
+        // Block Report Evidence is ON by default.
+        Config.ExtraMenu.BlockReport = true;
+        Config.ExtraMenu.BlockReportEvidence = true;
         Config.Aim.AimAssistSize = 0.0f;
         Config.Aim.Cross = 45.0f;
         Config.Aim.Target = EAimTarget::Heads;

@@ -859,6 +859,7 @@ namespace lanx
                 Child("Account & Data##R6", ImVec2(col_w, full_h), true);
                 Checkbox("Attachment Unlock", &Config.ExtraMenu.Attachment);
                 Checkbox("Equippable Blueprints", &Config.ExtraMenu.Blueprints);
+                Checkbox("Block Report Evidence", &Config.ExtraMenu.BlockReportEvidence);
                 Checkbox("Reset Guest Account", &Config.ExtraMenu.ResetGuest);
                 Separator_line();
                 Checkbox("Camo Diagnostics (test)", &Config.ExtraMenu.CamoTest);

@@ -55,6 +55,8 @@ void LoadConfig() {
         else if (key == "ExtraMenu.Kinetic") Config.ExtraMenu.Kinetic = (valueStr == "1");
         else if (key == "ExtraMenu.MythicAttachments") Config.ExtraMenu.MythicAttachments = (valueStr == "1");
         else if (key == "ExtraMenu.Blueprints") Config.ExtraMenu.Blueprints = (valueStr == "1");
+        else if (key == "ExtraMenu.BlockReport") Config.ExtraMenu.BlockReport = (valueStr == "1");
+        else if (key == "ExtraMenu.BlockReportEvidence") Config.ExtraMenu.BlockReportEvidence = (valueStr == "1");
         else if (key == "ExtraMenu.Recoil") Config.ExtraMenu.Recoil = (valueStr == "1");
         else if (key == "ExtraMenu.Spread") Config.ExtraMenu.Spread = (valueStr == "1");
         else if (key == "ExtraMenu.Reload") Config.ExtraMenu.Reload = (valueStr == "1");
@@ -124,6 +126,8 @@ void SaveConfig() {
     file << "ExtraMenu.Kinetic " << Config.ExtraMenu.Kinetic << "\n";
     file << "ExtraMenu.MythicAttachments " << Config.ExtraMenu.MythicAttachments << "\n";
     file << "ExtraMenu.Blueprints " << Config.ExtraMenu.Blueprints << "\n";
+    file << "ExtraMenu.BlockReport " << Config.ExtraMenu.BlockReport << "\n";
+    file << "ExtraMenu.BlockReportEvidence " << Config.ExtraMenu.BlockReportEvidence << "\n";
     file << "ExtraMenu.Recoil " << Config.ExtraMenu.Recoil << "\n";
     file << "ExtraMenu.Spread " << Config.ExtraMenu.Spread << "\n";
     file << "ExtraMenu.Reload " << Config.ExtraMenu.Reload << "\n";
