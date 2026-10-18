@@ -102,6 +102,12 @@ INCLUDES="-I Skin/tests/stubs -I . -I ImGui -I Immenu -I menu -I Includes \
     menu/blur.cpp menu/gui.cpp
 "$OUT_DIR/esp_walk_check"
 
+# The license gate (System/UI/LoginGate.h): the phase machine, the clipboard
+# paste, the off-thread authenticate, the saved key, and the touch hit test.
+"$CXX" -std=c++17 $COMMON $INCLUDES \
+    -o "$OUT_DIR/login_gate_check" System/UI/tests/login_gate_check.cpp -lpthread
+"$OUT_DIR/login_gate_check"
+
 "$CXX" -std=c++17 $COMMON -fsyntax-only $INCLUDES \
     -include Skin/tests/stubs/host_aarch64_shim.h \
     System/Hooks/tests/feats_include_check.cpp

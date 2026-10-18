@@ -9,6 +9,7 @@
 
 #include "System/UI/GuestAccount.h"
 #include "System/UI/FloatingInfo.h"
+#include "System/UI/LoginGate.h"
 
 // Skin/Fields.h is a fragment without a guard: include exactly this order.
 #include "Skin/Fields.h"

@@ -1042,11 +1042,34 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
     const bool menuVisible = nl_ui::Visible();
 
-    if (menuVisible) {
+    // License gate (System/UI/LoginGate.h): until Login() answers "OK" the card
+    // is drawn instead of the menu, and the menu gets no touches below. The
+    // callbacks are the ones the old in-menu page used, so Login() and the
+    // codm.ini key file needed no changes - only the page had gone missing with
+    // the old menu (9d10e44).
+    static bool s_gateInstalled = false;
+    if (!s_gateInstalled) {
+        s_gateInstalled = true;
+        login_gate::Hooks gate;
+        gate.authenticate = [](const char *key) { return Login(key); };
+        gate.load_saved   = [](char *out, int cap) {
+            if (!LoadTextFromFile() || logintext[0] == '\0') return false;
+            strncpy(out, logintext, (size_t)cap - 1);
+            out[cap - 1] = '\0';
+            return true;
+        };
+        gate.save_key  = [](const char *key) { return SaveLoginTextToFile(key); };
+        gate.clipboard = []() { return getClipboard(); };
+        login_gate::Setup(gate);
+    }
+
+    const bool gateLocked = login_gate::Locked();
+    if (gateLocked) {
+        login_gate::Draw(io->DeltaTime);
+    } else if (menuVisible) {
         if (!g_RuntimeClearDisplayInit) { Config.ExtraMenu.ClearDisplay = true; g_RuntimeClearDisplayInit = true; }
         // The Neverlose/HexSync menu itself (nl_ui drives it).
         if (nl_ui::IsReady()) nl_ui::Draw();
-
     }
 
     // Feature flags -> memory patches. Every one of them is EDGE-TRIGGERED:
@@ -1081,25 +1104,36 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             Vector3 mp = Input_get_mousePosition(Config.ImGuiMenu.thiz);
             const float x = mp.x;
             const float y = (float)get_height() - mp.y;
+            // While the gate is up the card is the only thing on screen, so the
+            // same coordinates go to it instead of the menu.
+            const bool toGate = login_gate::Locked();
             switch (t.m_Phase) {
             case TouchPhase::Began:
-                nl_ui::OnTouch(nl_ui::Touch::Down, x, y);
+                if (toGate) login_gate::OnTouch(x, y, true);
+                else nl_ui::OnTouch(nl_ui::Touch::Down, x, y);
                 s_touchDown = true;
                 break;
             case TouchPhase::Stationary:
             case TouchPhase::Moved:
-                if (!s_touchDown) { nl_ui::OnTouch(nl_ui::Touch::Down, x, y); s_touchDown = true; }
-                else nl_ui::OnTouch(nl_ui::Touch::Move, x, y);
+                if (!s_touchDown) {
+                    if (toGate) login_gate::OnTouch(x, y, true);
+                    else nl_ui::OnTouch(nl_ui::Touch::Down, x, y);
+                    s_touchDown = true;
+                } else if (!toGate) {
+                    nl_ui::OnTouch(nl_ui::Touch::Move, x, y);
+                }
                 break;
             case TouchPhase::Ended:
             case TouchPhase::Canceled:
-                nl_ui::OnTouch(nl_ui::Touch::Up, x, y);
+                if (toGate) login_gate::OnTouch(x, y, false);
+                else nl_ui::OnTouch(nl_ui::Touch::Up, x, y);
                 s_touchDown = false;
                 break;
             default: break;
             }
         } else if (s_touchDown) {
-            nl_ui::OnTouch(nl_ui::Touch::Up, 0.0f, 0.0f);
+            if (login_gate::Locked()) login_gate::OnTouch(0.0f, 0.0f, false);
+            else nl_ui::OnTouch(nl_ui::Touch::Up, 0.0f, 0.0f);
             s_touchDown = false;
         }
     }
