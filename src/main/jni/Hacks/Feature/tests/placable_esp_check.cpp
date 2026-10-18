@@ -186,8 +186,34 @@ int main()
     CHECK(PlacableLabelFor("WeaponProjectile_ElectricTripWire") != nullptr, "electric trip wire classified");
     CHECK(PlacableLabelFor("WeaponProjectile_Bullet") == nullptr, "bullets are not placables");
     CHECK(PlacableLabelFor("WeaponProjectile_NA45") == nullptr, "NA45 rounds are not placables");
-    CHECK(PlacableLabelFor("WeaponProjectile_TripMine2") == nullptr, "near-miss class names rejected");
+    CHECK(PlacableLabelFor("WeaponProjectile_Smoke") == nullptr, "smoke is not a placed device");
     CHECK(PlacableLabelFor("") == nullptr, "empty class name rejected");
+
+    // The match is a NORMALISED SUBSTRING one (lower case, separators dropped),
+    // deliberately: the first on-device report was "the placed ESP does not
+    // work", and a class name that only ADDS to the dumped one (a suffix, a
+    // namespace, another capitalisation) used to be dropped silently. A near
+    // miss now classifies - the cost of a false positive is one marker on a
+    // projectile that is not really a device, the cost of the old rule was the
+    // whole feature doing nothing.
+    CHECK(strcmp(PlacableLabelFor("WeaponProjectile_TripMine2"), "TRIP MINE") == 0,
+          "a suffixed class name still classifies (tolerant match)");
+    CHECK(strcmp(PlacableLabelFor("tripMine"), "TRIP MINE") == 0, "letter case does not matter");
+    CHECK(strcmp(PlacableLabelFor("ImprovisedTripMine"), "TRIP MINE") == 0,
+          "a renamed (prefix-dropped) class still classifies");
+    CHECK(strcmp(PlacableLabelFor("CGame.WeaponProjectile_TrophySystem"), "TROPHY SYSTEM") == 0,
+          "a namespaced class still classifies");
+    CHECK(strcmp(PlacableLabelFor("WeaponProjectile_TacTripWire"), "TRIP SENSOR") == 0 &&
+          strcmp(PlacableLabelFor("WeaponProjectile_TripMine"), "TRIP MINE") == 0,
+          "the specific device keys still win over the shortened ones");
+
+    // --- Install truth: nothing is reported as hooked until Feats.h says so ---
+    CHECK(!g_placableHookLanded[PlcHookStick] && !g_placableHookLanded[PlcHookTripMine] &&
+          !g_placableHookLanded[PlcHookTrapChip] && !g_placableHookLanded[PlcHookTripWire],
+          "no Tick hook is reported installed until the installer records one");
+    NotePlacableHookLanded(PlcHookTripMine, true);
+    CHECK(g_placableHookLanded[PlcHookTripMine] && !g_placableHookLanded[PlcHookStick],
+          "the install verdict is recorded per hook");
 
     // -- Tracking --------------------------------------------------------------
     FakeProj tripmine("WeaponProjectile_TripMine");
@@ -219,6 +245,34 @@ int main()
           strcmp(g_Placables[(uintptr_t)tripmine.ptr()].label, "TRIP MINE") == 0,
           "tripmine stored with its label");
     CHECK(g_Placables[(uintptr_t)c4.ptr()].camp == 2, "owner camp stored");
+
+    // --- The on-device diagnostic line (the ESP page prints exactly this) ----
+    CHECK(g_placableDiag.hookCalls >= 5 && g_placableDiag.classified >= 4,
+          "the diagnosis counts every tick it saw and every device it classified");
+    CHECK(g_placableDiag.tracked >= 4, "... and every write into the map");
+    CHECK(strcmp(g_placableDiag.lastClass, "WeaponProjectile_TacTripWire") == 0,
+          "... and remembers the last device class it classified");
+
+    // --- The second route: the BASE WeaponProjectile.Tick hook --------------
+    // ThrowableAlert's hook calls this for every projectile that dispatches to
+    // the base entry point, so a device whose own Tick override chains into the
+    // base is still seen (the first on-device report is exactly why one route
+    // was not enough). Same gate, same tracker, same checks.
+    const int trackedBeforeBaseRoute = g_placableDiag.tracked;
+    PlacableOnProjectileTick(na45.ptr());
+    CHECK(g_placableDiag.tracked == trackedBeforeBaseRoute,
+          "the base-Tick route ignores a projectile that is not a device");
+    PlacableOnProjectileTick(sensor.ptr());
+    CHECK(g_placableDiag.tracked == trackedBeforeBaseRoute + 1,
+          "the base-Tick route tracks a device");
+    PlacableOnProjectileTick(nullptr);
+    CHECK(g_placableDiag.tracked == trackedBeforeBaseRoute + 1,
+          "the base-Tick route refuses a null instance");
+    Config.ESPMenu.Placables = false;
+    PlacableOnProjectileTick(sensor.ptr());
+    CHECK(g_placableDiag.tracked == trackedBeforeBaseRoute + 1,
+          "the base-Tick route is inert while the toggle is off");
+    Config.ESPMenu.Placables = true;
 
     tripmine.setExploded(true);
     TrackPlacable(tripmine.ptr());
@@ -271,6 +325,7 @@ int main()
     CHECK(drawList.VtxBuffer.Size > 0, "markers emitted for in-range placables");
     CHECK(AnyVertexColor(drawList, kFriendlyFill), "same-camp trophy drawn friendly (green)");
     CHECK(AnyVertexColor(drawList, kHostileFill), "enemy-camp sensor drawn hostile (orange)");
+    CHECK(g_placableDiag.drawn >= 2, "the diagnosis reports what the draw pass actually emitted");
 
     *(int *)(infoMem + 0x58) = 7; // local camp unknown to both owners now
     ImDrawList drawList2(ImGui::GetDrawListSharedData());
@@ -295,6 +350,8 @@ int main()
     drawList4.AddDrawCmd();
     DrawPlacableESP(&drawList4, 1920, 1080, Vector3::zero());
     CHECK(drawList4.VtxBuffer.Size == 0, "placable beyond MaxDist not drawn");
+    CHECK(g_placableDiag.drawn == 0,
+          "the diagnosis says 0 drawn for the out-of-range pass (that is the 'in range?' question)");
 
     g_fakePos[sensor.ptr()] = Vector3(0.0f, 0.0f, -5.0f);
     TrackPlacable(sensor.ptr());

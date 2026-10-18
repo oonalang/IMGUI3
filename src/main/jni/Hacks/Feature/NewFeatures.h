@@ -1182,7 +1182,128 @@ namespace NewFeatures
         return ((Pawn *)pawn)->m_IsAlive();
     }
 
-    inline AdsRead A_FireAdsGate(void *weapon, Pawn *localPawn)
+    inline double A_FireNow()
+    {
+        return std::chrono::duration<double>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    // ---- scoping-transition settle window -----------------------------------
+    // Scoping in or out swaps the weapon's current fire component and the aim
+    // state for a moment. Pressing fire inside that window is the other half of
+    // the triggerbot crash (it hit mode 0 "Always" as well as mode 1 "ADS only"
+    // - the press itself was the problem, not the mode gate). BOTH the press and
+    // the release are native calls into that same fire state machine, so both
+    // stay out of it while it is moving (see A_FireReleaseTriggerDeferred).
+    //
+    // HISTORY, because both mistakes here are already paid for:
+    //   * a flat 0.35 s after every scope edge held fire for a third of a second
+    //     before the FIRST scoped shot - the report "it's very delayed,
+    //     specially ADS only";
+    //   * cutting that to one blind frame (0.05 s) brought the crash straight
+    //     back the moment ADS was tapped back to back, because one frame is
+    //     shorter than the swap this window exists to cover.
+    // The window is therefore not a blind timer any more; it is a FLOOR plus a
+    // release condition the GAME answers:
+    //   FLOOR   kAdsSettleSeconds (0.12 s): nothing is pressed for at least this
+    //           long after an edge (scope state flip or fire-component swap).
+    //   RELEASE the hold ends on the first scan where BOTH
+    //             - the held weapon's current fire component is the SAME object
+    //               the previous scan saw (the swap itself has stopped), and
+    //             - Weapon.CanFire() says the gun is able to fire (the game's own
+    //               "the weapon state machine is settled" answer),
+    //           so a normal scope-in costs about a tenth of a second, not a third.
+    //   CEILING kAdsSettleMaxSeconds (0.35 s): the old value, never exceeded, so a
+    //           build where those two never agree can not stall the trigger.
+    // The edge is seen on TWO signals, because either alone can be missed: the
+    // scope flag (Pawn::IsAiming, a Pawn-level getter, safe on any live pawn) and
+    // the identity of the weapon's current fire component - the object the swap
+    // actually moves.
+    constexpr double kAdsSettleSeconds    = 0.12;   // floor, s
+    constexpr double kAdsSettleMaxSeconds = 0.35;   // ceiling, s (the old value)
+    inline double    g_afireAdsSettleUntil = -1000.0;
+    inline double    g_afireAdsSettleMax   = -1000.0;
+    inline int       g_afireAdsLastState   = -1;       // -1 unset, 0 hip, 1 scoped
+    inline void     *g_afireAdsLastComp     = nullptr; // last fetched fire component
+    inline bool      g_afireAdsCompSeen     = false;   // first sight is not an edge
+    inline bool      g_afireAdsSettling     = false;   // verdict of the last probe
+
+    // The Pawn::IsAiming answer the probe already paid for, handed to
+    // A_FireAdsGate so ADS mode does not ask the same pawn twice per scan.
+    struct ScopeSettle
+    {
+        bool settling;   // this scan: do not press, do not touch the fire state
+        bool asked;      // Pawn::IsAiming answered
+        bool aiming;     // ... and said "scoping"
+    };
+
+    // Is the game still inside a scope swap? Time-bounded by the window's own
+    // ceiling, so a stale "settling" verdict can never hold a release forever.
+    inline bool A_FireAdsSwapActive()
+    {
+        // The probe's own verdict, bounded by the window's ceiling: a scan that
+        // never reaches the probe (match paused, no weapon) cannot hold a release
+        // back for longer than the window itself.
+        return g_afireAdsSettling && A_FireNow() < g_afireAdsSettleMax;
+    }
+
+    inline ScopeSettle A_FireScopingTransition(void *weapon, Pawn *localPawn)
+    {
+        ScopeSettle s{false, false, false};
+        const double now = A_FireNow();
+        bool moved = false;
+
+        // ---- 1. the scope state (safe on any live pawn) ---------------------
+        if (fn_PawnIsAiming != nullptr && A_FirePawnCallable(localPawn)) {
+            s.asked  = true;
+            s.aiming = fn_PawnIsAiming((void *)localPawn);
+            const int state = s.aiming ? 1 : 0;
+            if (g_afireAdsLastState != -1 && state != g_afireAdsLastState) moved = true;
+            g_afireAdsLastState = state;
+        } else {
+            // No answer: the next answer is a first observation, not an edge.
+            g_afireAdsLastState = -1;
+        }
+
+        // ---- 2. the fire component (what the swap moves) --------------------
+        void *comp = GetCurrentFireComponent(weapon);
+        if (!g_afireAdsCompSeen) {
+            g_afireAdsCompSeen = true;      // first sighting of a component
+            g_afireAdsLastComp = comp;
+        } else if (comp != g_afireAdsLastComp) {
+            moved = true;
+            g_afireAdsLastComp = comp;
+        }
+
+        if (moved) {
+            g_afireAdsSettleUntil = now + kAdsSettleSeconds;
+            g_afireAdsSettleMax   = now + kAdsSettleMaxSeconds;
+        }
+
+        // ---- 3. the release condition ---------------------------------------
+        if (now >= g_afireAdsSettleMax) {          // ceiling: the hold is over
+            s.settling = false;
+            g_afireAdsSettling = false;
+            return s;
+        }
+        if (now < g_afireAdsSettleUntil) {         // floor
+            s.settling = true;
+            g_afireAdsSettling = true;
+            return s;
+        }
+        // Floor elapsed: hold only while the game still looks mid-swap.
+        const bool compStable = (comp != nullptr && !moved);
+        if (!compStable || !A_FireWeaponCanFire(weapon)) {
+            s.settling = true;
+            g_afireAdsSettling = true;
+            return s;
+        }
+        s.settling = false;
+        g_afireAdsSettling = false;
+        return s;
+    }
+
+    inline AdsRead A_FireAdsGate(void *weapon, Pawn *localPawn, const ScopeSettle &settle)
     {
         AdsRead r{};
         r.aiming = r.unknown = r.pawnOk = r.pawnAim = r.fcOk = r.fcAim = false;
@@ -1190,7 +1311,13 @@ namespace NewFeatures
         r.fieldPct  = 0.0f;
 
         // ---- 1. the game's own pawn-level flag -----------------------------
-        if (fn_PawnIsAiming != nullptr && A_FirePawnCallable(localPawn)) {
+        // The scope probe (A_FireScopingTransition) ran earlier in the SAME scan
+        // and asked that pawn exactly this question - reuse its answer instead of
+        // paying a second native call per scan.
+        if (settle.asked) {
+            r.pawnOk  = true;
+            r.pawnAim = settle.aiming;
+        } else if (fn_PawnIsAiming != nullptr && A_FirePawnCallable(localPawn)) {
             r.pawnOk  = true;
             r.pawnAim = fn_PawnIsAiming((void *)localPawn);
         }
@@ -1562,42 +1689,6 @@ namespace NewFeatures
 
     // Debug state for the menu: 0 = no target, 1 = target, 2 = firing.
     inline std::atomic<int> s_dbgTriggerState = 0;
-
-    inline double A_FireNow()
-    {
-        return std::chrono::duration<double>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
-    }
-
-    // ---- scoping-transition settle window -----------------------------------
-    // Scoping in or out swaps the weapon's current fire component and the aim
-    // state for a moment. Pressing fire inside that window is the other half of
-    // the triggerbot crash (it hit mode 0 "Always" as well as mode 1 "ADS
-    // only" - the press itself was the problem, not the mode gate). The edge is
-    // detected from Pawn::IsAiming (a Pawn-level getter, safe on any pawn) and
-    // firing is held back briefly after it, whichever mode is set.
-    // 0.35 s was the first guess; a touch ADS overlay animation alone runs
-    // ~0.3 s, so the old value shaved a full third of a second off every first
-    // scoped shot - the report "it's very delayed, specially ADS only". The
-    // component swap itself completes within a frame (the fire-component getter
-    // the scan already reads re-answers every frame), so a one-frame settle
-    // still never presses mid-swap while adding almost nothing.
-    constexpr double kAdsSettleSeconds = 0.05;
-    inline double    g_afireAdsSettleUntil = -1000.0;
-    inline int       g_afireAdsLastState   = -1;      // -1 unset, 0 hip, 1 scoped
-
-    inline bool A_FireScopingTransition(Pawn *localPawn)
-    {
-        const double now = A_FireNow();
-        const bool asked = (fn_PawnIsAiming != nullptr && A_FirePawnCallable(localPawn));
-        if (asked) {
-            const int state = fn_PawnIsAiming((void *)localPawn) ? 1 : 0;
-            if (g_afireAdsLastState != -1 && state != g_afireAdsLastState)
-                g_afireAdsSettleUntil = now + kAdsSettleSeconds;
-            g_afireAdsLastState = state;
-        }
-        return now < g_afireAdsSettleUntil;
-    }
 
     // ---- cached "who is the local player" ----------------------------------
     // The tick hooks below run for EVERY pawn and EVERY weapon in the world -
@@ -2882,7 +2973,8 @@ namespace NewFeatures
         // Never press fire while the player is scoping in or out: the game is
         // swapping the weapon's fire component in that window, and the press is
         // what used to take the client down (both "Always" and "ADS only").
-        if (A_FireScopingTransition(localPawn)) return FireBlock::AdsTransition;
+        const ScopeSettle settle = A_FireScopingTransition((void *)held, localPawn);
+        if (settle.settling) return FireBlock::AdsTransition;
         // Weapon.CanFire() is measured for the panel but never gates: StartFire
         // itself refuses an illegal shot, and hard-gating on it here is what made
         // the trigger go quiet mid-fight with no visible reason.
@@ -2903,7 +2995,7 @@ namespace NewFeatures
         //               going while the crosshair stays on the target - the same
         //               semantics the reference implementation had.
         if (Config.NewFeaturesMenu.TriggerbotMode == 1) {
-            const AdsRead ads = A_FireAdsGate((void *)held, localPawn);
+            const AdsRead ads = A_FireAdsGate((void *)held, localPawn, settle);
             d.adsFlag    = ads.fieldFlag ? 1 : 0;
             d.adsPct     = ads.fieldPct;
             d.adsUnknown = ads.unknown;
@@ -2932,15 +3024,38 @@ namespace NewFeatures
     }
 
     // Let go of the trigger we pressed.
+    // The weapon the trigger is on can be DESTROYED while it is held - death,
+    // respawn, round end, a weapon swap that removed the old object - and
+    // Weapon.StopFire is a native call into that object. The m_CachedPtr liveness
+    // check is the rule every other native call in this file already follows;
+    // this path was the one still calling into a dead weapon.
     inline void A_FireReleaseTrigger(void *instance)
     {
         if (!g_afireHoldingFire) return;
         if (instance == nullptr || instance == g_afireFiringOn) {
-            if (fn_Weapon_StopFire != nullptr && g_afireFiringOn != nullptr)
+            if (fn_Weapon_StopFire != nullptr && A_FireObjectAlive(g_afireFiringOn))
                 fn_Weapon_StopFire(g_afireFiringOn, false);
             g_afireHoldingFire = false;
             g_afireFiringOn = nullptr;
         }
+    }
+
+    // A release remembered for the first scan after a scope swap: set only by the
+    // deferred helper below, cleared either by it (once the swap is over) or by
+    // the flush that runs as soon as a scan is no longer blocked by the swap.
+    inline bool g_afireReleasePending = false;
+
+    // Let go - but never in the middle of a scope swap, where the fire state
+    // machine is moving (see the settle window above). The release is remembered
+    // and performed on the first scan the swap is over.
+    inline void A_FireReleaseTriggerDeferred(void *instance)
+    {
+        if (A_FireAdsSwapActive()) {
+            g_afireReleasePending = true;
+            return;
+        }
+        g_afireReleasePending = false;
+        A_FireReleaseTrigger(instance);
     }
 
     // The menu's "Test Fire" button only queues the request: the menu runs on
@@ -3057,8 +3172,15 @@ namespace NewFeatures
         const FireBlock block = A_FireShouldFire(target);
         A_FireReportBlock(block);
 
-        if (block != FireBlock::Fired || !Tools::IsPtrValid((void *)target.pawn)) {
+        // A release that was held back during a scope swap goes out on the first
+        // scan the swap no longer blocks us - before anything is pressed again.
+        if (g_afireReleasePending && block != FireBlock::AdsTransition) {
+            g_afireReleasePending = false;
             A_FireReleaseTrigger(nullptr);
+        }
+
+        if (block != FireBlock::Fired || !Tools::IsPtrValid((void *)target.pawn)) {
+            A_FireReleaseTriggerDeferred(nullptr);
             s_dbgTriggerState = 0;
             g_afireInTick = false;
             return;
@@ -3069,14 +3191,15 @@ namespace NewFeatures
 
         Weapon *held = (Weapon *)d.heldWeapon;
         if (!A_FireObjectAlive((void *)held)) {
-            A_FireReleaseTrigger(nullptr);
+            A_FireReleaseTriggerDeferred(nullptr);
             g_afireInTick = false;
             return;
         }
 
-        // Weapon swapped while the trigger was down - let the old one go.
+        // Weapon swapped while the trigger was down - let the old one go (the
+        // swap itself is exactly when StopFire must wait: see the settle window).
         if (g_afireHoldingFire && g_afireFiringOn != (void *)held)
-            A_FireReleaseTrigger(nullptr);
+            A_FireReleaseTriggerDeferred(nullptr);
 
         const FireMode mode     = GetWeaponFireMode(held);
         const float    interval = A_FireWeaponInterval(held);
@@ -3160,7 +3283,7 @@ namespace NewFeatures
         }
 
         if (fn_Weapon_StartFire == nullptr) {
-            A_FireReleaseTrigger(nullptr);
+            A_FireReleaseTriggerDeferred(nullptr);
             A_FireReportBlock(FireBlock::WeaponNotReady);
             g_afireInTick = false;
             return;
@@ -3206,6 +3329,15 @@ namespace NewFeatures
         g_afireLocalPawnCacheTime = -1000.0;
         g_afireHeldWeaponCache    = nullptr;
         g_afireHeldWeaponStamp    = -1000.0;
+        // The scope-swap bookkeeping is per-life as well: a new pawn/weapon pair
+        // must not be compared against the old one's fire component.
+        g_afireAdsSettleUntil  = -1000.0;
+        g_afireAdsSettleMax    = -1000.0;
+        g_afireAdsLastState    = -1;
+        g_afireAdsLastComp     = nullptr;
+        g_afireAdsCompSeen     = false;
+        g_afireAdsSettling     = false;
+        g_afireReleasePending  = false;
     }
 
     // Refreshes the held-weapon cache the hooked Weapon::get_DelaySprintFire

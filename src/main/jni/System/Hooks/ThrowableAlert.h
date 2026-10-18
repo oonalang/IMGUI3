@@ -29,6 +29,14 @@ struct ThrowInfo {
 };
 
 inline void (*orig_WeaponProjectileTick)(void*, float) = nullptr;
+
+// Second route into the Placed Items ESP tracker (see PlacableEsp.h, which is
+// included right after this header): a WeaponProjectile subclass whose own Tick
+// chains into this base entry point is seen HERE even if its own hook address
+// drifts between game builds. Set by Feats.h at install time; null until then
+// (and null in every host test that does not install hooks), which simply means
+// this route is off.
+inline void (*g_placableProjectileTickSink)(void *) = nullptr;
 inline std::unordered_map<uintptr_t, ThrowInfo> g_Throws;
 inline uint64_t g_ThrowSeen = 0;
 
@@ -160,4 +168,6 @@ inline void hook_WeaponProjectileTick(void* instance, float deltaTime)
     if (orig_WeaponProjectileTick)
         orig_WeaponProjectileTick(instance, deltaTime);
     TrackThrowable(instance);
+    if (g_placableProjectileTickSink != nullptr)
+        g_placableProjectileTickSink(instance);
 }

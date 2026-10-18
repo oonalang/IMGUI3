@@ -1000,6 +1000,20 @@ inline void InitializeAllHooks() {
           (void *)&hook_TripWireTick,
           (void **)&orig_TripWireTick);
 
+    // Which of the four landed? A DobbyHook that fails leaves its original
+    // pointer null, so that IS the verdict - and the ESP page prints these bits
+    // next to the tracker's counters, because "no devices drawn" and "the hook
+    // never installed" are two different problems with two different fixes.
+    NotePlacableHookLanded(PlcHookStick,    orig_StickTick    != nullptr);
+    NotePlacableHookLanded(PlcHookTripMine, orig_TripMineTick != nullptr);
+    NotePlacableHookLanded(PlcHookTrapChip, orig_TrapChipTick != nullptr);
+    NotePlacableHookLanded(PlcHookTripWire, orig_TripWireTick != nullptr);
+
+    // The same tracker also rides the base WeaponProjectile.Tick hook that
+    // ThrowableAlert installed above, so a device whose own Tick chains to the
+    // base is still seen (see PlacableEsp.h).
+    g_placableProjectileTickSink = &PlacableOnProjectileTick;
+
     //-- Clear Terrain
     DobbyHook((void *)getAbsoluteAddress("libunity.so", 0xAE2E1B0),
           (void *)&hook_SetGrassShowState,

@@ -780,6 +780,36 @@ namespace lanx
                 Checkbox("Armor ESP", &Config.ESPMenu.Armor);
                 Checkbox("Grenade Warning", &Config.ESPMenu.GrenadeWarn);
                 Checkbox("Placed Items ESP", &Config.ESPMenu.Placables);
+                // On-device proof for the device ESP, printed right under its
+                // switch: which of the four Tick hooks installed, how many ticks
+                // the tracker saw, how many of those classified as a device, how
+                // many are tracked and what the LAST draw pass emitted. Written by
+                // the game thread and read here (racy, harmless - same as the
+                // triggerbot panel). "Nothing on screen" then has a named cause:
+                // no hook, no tick, no classified name, or nothing in range.
+                {
+                    const PlacableDiag &pd = g_placableDiag;
+                    const ImVec4 okc(0.45f, 0.95f, 0.60f, 1.0f);
+                    const ImVec4 offc(0.62f, 0.62f, 0.70f, 1.0f);
+                    const bool anyHook = g_placableHookLanded[PlcHookStick] ||
+                                         g_placableHookLanded[PlcHookTripMine] ||
+                                         g_placableHookLanded[PlcHookTrapChip] ||
+                                         g_placableHookLanded[PlcHookTripWire];
+                    char hooks[80];
+                    snprintf(hooks, sizeof(hooks), "device hooks %s%s%s%s+base",
+                             g_placableHookLanded[PlcHookStick]    ? "stick " : "- ",
+                             g_placableHookLanded[PlcHookTripMine] ? "mine "  : "- ",
+                             g_placableHookLanded[PlcHookTrapChip] ? "chip "  : "- ",
+                             g_placableHookLanded[PlcHookTripWire] ? "wire "  : "- ");
+                    ImGui::TextColored(anyHook ? okc : offc, "%s", hooks);
+                    ImGui::TextColored(pd.drawn > 0 ? okc : offc,
+                                       "devices %d ticks / %d named / %d tracked / %d drawn",
+                                       pd.hookCalls, pd.classified, pd.tracked, pd.drawn);
+                    if (pd.lastClass[0] != '\0')
+                        ImGui::TextColored(offc, "last device: %s", pd.lastClass);
+                    else if (pd.nameFailed > 0)
+                        ImGui::TextColored(offc, "class name unreadable x%d", pd.nameFailed);
+                }
                 Checkbox("BR Class", &Config.ESPMenu.BRClass);
                 Checkbox("Vehicle ESP", &Config.ESPMenu.Vehicle);
                 Checkbox("Vehicle Health", &Config.ESPMenu.VehicleHealth);

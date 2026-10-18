@@ -301,9 +301,15 @@ static void resetWorld()
     // The scope-transition tracker is global state: a scenario that flips
     // Pawn.IsAiming leaves a settle window behind, and the next scenario's
     // FIRST scan would then be held as "scope transition" instead of reaching
-    // the gate under test. Each scenario starts un-scoped.
+    // the gate under test. Each scenario starts un-scoped, with no remembered
+    // fire component and no release waiting behind the window.
     NewFeatures::g_afireAdsLastState   = -1;
     NewFeatures::g_afireAdsSettleUntil = -1000.0;
+    NewFeatures::g_afireAdsSettleMax   = -1000.0;
+    NewFeatures::g_afireAdsLastComp    = nullptr;
+    NewFeatures::g_afireAdsCompSeen    = false;
+    NewFeatures::g_afireAdsSettling    = false;
+    NewFeatures::g_afireReleasePending = false;
 
     objSetBone(g_localPawn,  Class_Pawn_m_HeadBone, &g_localHead);
     objSetBone(g_localPawn,  Class_Pawn_m_Mesh,     &g_localMesh);
@@ -1475,11 +1481,13 @@ static void testAdsGate()
         TriggerTarget out{};
         CHECK(runTreeOnCrosshairSetup(out) == FireBlock::ModeNotAds,
               "B1 ADS Only: neither source is scoping -> the shot is blocked");
-        // Pawn.IsAiming is asked twice per scan by design: once by the
-        // scope-transition settle probe, once by the mode gate. The fire
-        // component is asked exactly once.
-        CHECK(g_pawnAimingCalls == 2 && g_fcAimingCalls == 1,
-              "B1 both ADS sources were asked (pawn: settle probe + gate)");
+        // Pawn.IsAiming is asked ONCE per scan: the scope-swap probe does it for
+        // every mode, and the mode gate reuses that same answer (the second call
+        // per scan the older version paid was pure waste). The fire component is
+        // asked exactly once, and the probe asks it as well - that read is what
+        // catches the component swap.
+        CHECK(g_pawnAimingCalls == 1 && g_fcAimingCalls == 1,
+              "B1 both ADS sources were asked once (probe -> the gate reuses the pawn answer)");
         CHECK(g_isAimingCalls == 0,
               "B1 ... through the resolved pointer, never the api15 macro (a trap that says 'scoping')");
         CHECK(g_triggerDiag.adsPawnOk && g_triggerDiag.adsFcOk &&
@@ -1509,7 +1517,7 @@ static void testAdsGate()
         TriggerTarget out{};
         CHECK(runTreeOnCrosshairSetup(out) == FireBlock::Fired,
               "B3 the fire component's get_IsAiming 0xC9AF4E0 = scoped -> fires");
-        CHECK(g_pawnAimingCalls == 2, "B3 ... the pawn is still asked (settle probe + primary gate)");
+        CHECK(g_pawnAimingCalls == 1, "B3 ... the pawn is still asked (once, by the scope-swap probe)");
         CHECK(g_triggerDiag.adsFcAim && !g_triggerDiag.adsPawnAim,
               "B3 ... and the fire component is credited");
     }
@@ -1533,7 +1541,8 @@ static void testAdsGate()
     {
         objSetAlive(g_localPawn, false);
         g_pawnAimingCalls = 0; g_fcAimingValue = false;
-        const AdsRead ads = A_FireAdsGate((void *)g_weaponObj.b, (Pawn *)g_localPawn.b);
+        ScopeSettle probe{};                       // no probe answer: the gate asks itself
+        const AdsRead ads = A_FireAdsGate((void *)g_weaponObj.b, (Pawn *)g_localPawn.b, probe);
         CHECK(g_pawnAimingCalls == 0 && !ads.pawnOk,
               "B5 a pawn whose alive flag is clear is NEVER handed to the native getter");
         objSetAlive(g_localPawn, true);
@@ -1543,7 +1552,8 @@ static void testAdsGate()
     {
         *(void **)(g_localPawn.b + 0x10) = nullptr;   // Object.m_CachedPtr cleared
         g_pawnAimingCalls = 0;
-        const AdsRead ads = A_FireAdsGate((void *)g_weaponObj.b, (Pawn *)g_localPawn.b);
+        ScopeSettle probe{};                       // no probe answer: the gate asks itself
+        const AdsRead ads = A_FireAdsGate((void *)g_weaponObj.b, (Pawn *)g_localPawn.b, probe);
         CHECK(g_pawnAimingCalls == 0 && !ads.pawnOk,
               "B6 a Destroy()ed pawn (m_CachedPtr cleared) is never passed to the game");
         objInit(g_localPawn);
@@ -1573,9 +1583,11 @@ static void testAdsGate()
         TriggerTarget out{};
         CHECK(runTreeOnCrosshairSetup(out) == FireBlock::Fired,
               "B8 mode Always fires with a hipfiring weapon");
-        // The mode gate asks neither source in Always mode; the settle
-        // probe still reads Pawn.IsAiming once per scan (it runs for every
-        // mode, so the crash-safe press rule holds in Always too).
+        // The mode gate asks neither source in Always mode; the scope-swap
+        // probe still reads Pawn.IsAiming once per scan and reads the held
+        // weapon's current fire component as an OBJECT IDENTITY (a pointer read
+        // - get_IsAiming itself is only ever asked by the ADS gate). That is what
+        // keeps the crash-safe press rule in force in Always mode too.
         CHECK(g_pawnAimingCalls == 1 && g_fcAimingCalls == 0,
               "B8 ... and the mode gate asks neither ADS source");
     }
@@ -1592,7 +1604,7 @@ static void testAdsGate()
         CHECK(runTreeOnCrosshairSetup(out) == FireBlock::Fired,
               "B9 mode Firing only uses Pawn.get_IsFiring, not the ADS gate");
         CHECK(g_pawnAimingCalls == 1 && g_fcAimingCalls == 0,
-              "B9 ... so the mode gate asks no ADS source (only the settle probe reads the pawn)");
+              "B9 ... so the mode gate asks no ADS source (only the scope-swap probe reads the pawn)");
     }
     g_isFiringValue = false;
     fn_PawnGetIsFiring = nullptr;
@@ -1779,6 +1791,203 @@ static void testRepressPacing()
     resetWorld();
 }
 
+// ---------------------------------------------------------------------------
+// 12. The scope-swap guard - the "crashes in the middle of the game while
+//     scoping back to back, ADS only" report.
+//
+// Both the press AND the release are native calls into the weapon's fire state
+// machine, and scoping in or out is exactly when that machine is rebuilt. The
+// guard is a FLOOR (0.12 s) plus a condition the GAME answers - the held
+// weapon's current fire component has to be the same object the previous scan
+// saw AND Weapon.CanFire() has to say the gun is ready - with the old 0.35 s as
+// a CEILING. This drives the real tree and the real tick path and pins all of
+// it, including the three things that were wrong on device:
+//   * a blind one-frame window (the crash came straight back, so a shorter
+//     window than the swap is not a fix),
+//   * a window that could only expire on a timer (the delay report), and
+//   * Weapon.StopFire being called on a weapon that was already destroyed.
+// ---------------------------------------------------------------------------
+static FakeObj g_fireCompObj2;
+static bool    g_fireCompSwapped = false;
+
+// The same weapon, but its current fire component can be swapped - which is the
+// exact event a scope-in/out performs.
+static void *fake_currentFireComponentSwappable(void *weapon)
+{
+    if (weapon != (void *)g_weaponObj.b)
+        return nullptr;
+    return g_fireCompSwapped ? (void *)g_fireCompObj2.b : (void *)g_fireCompObj.b;
+}
+
+// The window is a real clock; move the clock's own bounds instead of sleeping
+// through them (the pacing test does the same with its pace).
+static void endSettleFloor()
+{
+    g_afireAdsSettleUntil = A_FireNow() - 0.01;   // the floor has elapsed
+    g_afireAdsSettleMax   = A_FireNow() + 10.0;   // the ceiling has not
+}
+
+static void testAdsScopeSwapGuard()
+{
+    api12 = (uintptr_t)&fake_localPawnCounted;
+    api22 = (uintptr_t)&fake_currentWeapon;
+
+    resetWorld();
+    installAdsFakes();
+    objInit(g_fireCompObj2);
+    *(const char **)(g_fakeKlass + 0x10) = g_instantName;
+    *(void **)(g_fireCompObj2.b + 0x00)  = g_fakeKlass;   // same "Instant" class
+    g_fireCompSwapped = false;
+    fn_WeaponGetCurrentFireComponent = fake_currentFireComponentSwappable;
+
+    fn_WeaponIsAutoFire       = nullptr;          // edge press: one press, one shot
+    fn_WeaponCanFire          = fake_canFire;
+    fn_Weapon_StartFire       = fake_startFire;
+    fn_Weapon_StopFire        = fake_stopFire;
+    fn_WeaponRealFireInterval = fake_realInterval;
+    g_realInterval = 0.20f;
+    g_canFireValue = true;
+
+    Config.NewFeaturesMenu.Triggerbot     = true;
+    Config.NewFeaturesMenu.TriggerbotMode = 0;    // Always: the mode gate stays out
+    armFiringWorld();
+    resetLocalPawnCache();
+    g_startFireCalls = g_stopFireCalls = 0;
+    g_afireLastPressTime   = -1000.0;
+    g_afireLastPressWeapon = nullptr;
+    g_pawnAimingValue      = false;
+    g_fcAimingValue        = false;
+
+    // --- G1: with no scope motion the guard is not a delay ------------------
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(g_startFireCalls == 1 && g_afireHoldingFire,
+          "G1 no scope motion: the first scan presses fire (the guard adds no delay)");
+    CHECK(g_stopFireCalls == 0 && !g_afireReleasePending,
+          "G1 ... and nothing is being held back");
+
+    // --- G2: a scope edge must not press INTO the swap ----------------------
+    g_pawnAimingValue = true;                     // the player scopes in
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(g_startFireCalls == 1,
+          "G2 the scan that sees the scope edge does NOT press (this is the crash)");
+    CHECK(g_triggerDiag.lastBlock == (int)FireBlock::AdsTransition,
+          "G2 ... it reports the scope transition as the reason");
+    CHECK(g_stopFireCalls == 0 && g_afireReleasePending,
+          "G2 ... and the RELEASE is deferred too: no native fire call inside the swap");
+
+    // --- G3: the floor alone does not end the hold --------------------------
+    g_canFireValue = false;                       // still mid-swap
+    endSettleFloor();
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(g_afireAdsSettling && g_startFireCalls == 1,
+          "G3 floor elapsed but Weapon.CanFire() says 'not ready' -> still held");
+    CHECK(g_stopFireCalls == 0 && g_afireReleasePending,
+          "G3 ... and the release is still waiting behind the window");
+
+    // --- G4: the game's own 'the gun is ready' answer ends it ---------------
+    g_canFireValue = true;
+    endSettleFloor();
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(!g_afireAdsSettling,
+          "G4 a stable fire component + CanFire() == true ends the hold (no fixed delay)");
+    CHECK(g_stopFireCalls == 1 && !g_afireReleasePending,
+          "G4 ... and the deferred release goes out on that first settled scan");
+
+    // --- G5: the component swap is an edge on its own -----------------------
+    // The scope flag does not move here at all: what moves is the object the
+    // game hands back for "the weapon's current fire component".
+    const int pressesBeforeSwap = g_startFireCalls;
+    g_fireCompSwapped = true;
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(g_startFireCalls == pressesBeforeSwap &&
+          g_triggerDiag.lastBlock == (int)FireBlock::AdsTransition,
+          "G5 a changed current-fire-component is a scope edge even with the pawn flag still");
+
+    // --- G5b: the swap edge itself settles ---------------------------------
+    // The component stays on the swapped object (that is the whole point: an
+    // edge is a CHANGE, not the value), so with no further motion the floor
+    // elapsing plus the game's own "ready" answer releases the trigger.
+    endSettleFloor();
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(!g_afireAdsSettling && g_triggerDiag.lastBlock != (int)FireBlock::AdsTransition,
+          "G5b the component swap edge settles on the floor + a stable component + CanFire");
+
+    // --- G6: the ceiling always ends a hold --------------------------------
+    // This scan has no edge of its own (G5b settled it) and the floor even claims
+    // "still settling" - the ceiling is what has to win, because a build where
+    // the component never settles must not stall the trigger either. The ceiling
+    // is the old 0.35 s and is checked BEFORE the floor.
+    g_afireAdsSettleUntil = A_FireNow() + 10.0;   // floor claims "still settling"
+    g_afireAdsSettleMax   = A_FireNow() - 0.01;   // ...but the window is over
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(!g_afireAdsSettling,
+          "G6 the ceiling is absolute: a window that never settles cannot stall the trigger");
+
+    // --- G6b: swapping BACK is an edge as well ------------------------------
+    // The other half of a scope cycle, and the one a "wait 0.35 s after an edge
+    // and hope" window cannot tell apart from the first half.
+    const int pressesBeforeSwapBack = g_startFireCalls;
+    g_fireCompSwapped = false;
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(g_startFireCalls == pressesBeforeSwapBack &&
+          g_triggerDiag.lastBlock == (int)FireBlock::AdsTransition,
+          "G6b scoping back out (the component swaps back) is an edge too, and it holds");
+    g_afireAdsSettleUntil = -1000.0;              // drop the window for the rest
+    g_afireAdsSettleMax   = -1000.0;
+
+    // --- G7: a destroyed weapon never reaches StopFire ---------------------
+    // Held weapons die with the player (death, respawn, round end) while the
+    // trigger is still down; Weapon.StopFire on one of those is a native call
+    // into freed state - the stale-weapon crash this path was exposed to.
+    g_afireHoldingFire = true;
+    g_afireFiringOn    = (void *)g_weaponObj.b;
+    g_afireReleasePending = false;
+    g_afireAdsSettling = false;
+    const int stopsBefore = g_stopFireCalls;
+    *(void **)(g_weaponObj.b + 0x10) = nullptr;    // m_CachedPtr cleared = Destroy()d
+    A_FireReleaseTrigger(nullptr);
+    CHECK(g_stopFireCalls == stopsBefore,
+          "G7 a Destroy()ed weapon is NEVER handed to Weapon.StopFire");
+    CHECK(!g_afireHoldingFire && g_afireFiringOn == nullptr,
+          "G7 ... and the trigger state is dropped anyway (nothing left to release)");
+    objInit(g_weaponObj);
+
+    // --- G8: a live weapon is still released normally ----------------------
+    g_afireHoldingFire = true;
+    g_afireFiringOn    = (void *)g_weaponObj.b;
+    A_FireReleaseTrigger(nullptr);
+    CHECK(g_stopFireCalls == stopsBefore + 1,
+          "G8 a live weapon is released exactly as before (the check is not a mute)");
+
+    // Leave the suite as it was found.
+    g_afireHoldingFire     = false;
+    g_afireFiringOn        = nullptr;
+    g_afireTargetPawn      = nullptr;
+    g_afireLastPressWeapon = nullptr;
+    g_afireAdsSettleUntil  = -1000.0;
+    g_afireAdsSettleMax    = -1000.0;
+    g_afireAdsSettling     = false;
+    g_afireAdsCompSeen     = false;
+    g_afireAdsLastComp     = nullptr;
+    g_afireReleasePending  = false;
+    fn_Weapon_StartFire          = nullptr;
+    fn_Weapon_StopFire           = nullptr;
+    fn_WeaponCanFire             = nullptr;
+    fn_WeaponRealFireInterval    = nullptr;
+    fn_WeaponIsAutoFire          = nullptr;
+    fn_WeaponGetCurrentFireComponent = nullptr;
+    Config.NewFeaturesMenu.Triggerbot = false;
+    resetWorld();
+}
+
 int main()
 {
     installFns();
@@ -1794,6 +2003,7 @@ int main()
     testCrashFixes();
     testAdsGate();
     testRepressPacing();
+    testAdsScopeSwapGuard();
 
     if (g_failures == 0) {
         printf("\nOK: all LOS gate checks passed\n");

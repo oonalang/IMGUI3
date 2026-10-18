@@ -12,7 +12,7 @@
 // way players are (overlay marker + label + distance).
 //
 // Every one of these is a WeaponProjectile subclass (dump.cs, GR .57 -
-// github.com/eliwoahzja/dump):
+// dumps/dump.cs in this repo):
 //
 //   WeaponProjectile_TripMine         tripmine          (own Tick)
 //   WeaponProjectile_C4bomb           C4                (Stick Tick)
@@ -23,20 +23,44 @@
 //   WeaponProjectile_TrapChipMine     trap chip mine    (own Tick)
 //   WeaponProjectile_ElectricTripWire electric wire     (own Tick)
 //
-// Everything else Stick-based rides WeaponProjectile_Stick.Tick, so hooking
-// the four Tick entry points below sees every placed item on every frame.
+// WHERE THE INSTANCES COME FROM - two independent routes, because the first
+// report on device was "the placed ESP is not working" and a single route is a
+// single point of failure:
+//
+//   1. the four Tick entry points below, which is the exact function each class
+//      dispatches to (WeaponProjectile_TripMine.Tick @0x9B5B850,
+//      _Stick.Tick @0x956D4CC, _TrapChipMine.Tick @0x9B58A10,
+//      _ElectricTripWire.Tick @0xB201650 - all four re-checked in dumps/dump.cs
+//      for this file), and
+//   2. the BASE WeaponProjectile.Tick hook ThrowableAlert already installed
+//      (PlacableOnProjectileTick, wired to it in Feats.h). A subclass
+//      override that chains into the base is seen there even if its own hook
+//      address were to drift between game builds.
+//   Feeding the same map from both is free: an instance is keyed by its pointer,
+//   so a doubled tick just writes the same entry twice.
+//
 // The runtime class name (Il2CppClass::name, klass + 0x10 - same layout as
-// Il2CppClass_1 in IL2Cpp/Il2Cpp.h) tells us which device an instance is,
-// so a thrown NA45 / thermite / grapple passing through the Stick hook is
-// simply not in the table and gets ignored.
+// Il2CppClass_1 in IL2Cpp/Il2Cpp.h) tells us which device an instance is, so a
+// thrown NA45 / thermite / grapple passing through the hooks is simply not in
+// the table and gets ignored. The name match is NORMALISED (lower-cased, every
+// non-alphanumeric character dropped) and done on substrings, so a build that
+// renames the class to "WeaponProjectile_ImprovisedTripMine" or moves it into a
+// namespace still classifies instead of silently dropping the device - the
+// exact failure that reads as "the feature does nothing".
 //
 // Tracking mirrors ThrowableAlert: hooks register live instances in a map
 // keyed by object pointer, entries expire after 360 unseen ticks, and the
 // draw pass only reads what the track pass stored (plus the local camp).
+//
+// ON-DEVICE DIAGNOSTICS (the ESP page prints all of it, see lanx_menu.h): which
+// hooks landed at install time, how many ticks were seen, how many of those
+// classified, how many are tracked right now, how many markers the last draw
+// pass emitted, and the name of the last class that classified. That line is how
+// a "not working" report is turned into a named cause instead of a guess.
 // ---------------------------------------------------------------------------
 
 namespace PlacableCfg {
-    // libunity.so RVAs, dump.cs GR .57
+    // libunity.so RVAs, dump.cs GR .57 (dumps/dump.cs)
     constexpr uintptr_t StickTickRva    = 0x956D4CC; // WeaponProjectile_Stick.Tick(float)
     constexpr uintptr_t TripMineTickRva = 0x9B5B850; // WeaponProjectile_TripMine.Tick(float)
     constexpr uintptr_t TrapChipTickRva = 0x9B58A10; // WeaponProjectile_TrapChipMine.Tick(float)
@@ -48,6 +72,39 @@ namespace PlacableCfg {
     constexpr float MaxDist  = 100.0f;        // draw distance cap (m)
     constexpr float WarnDist = 12.0f;         // hostile pulse distance (m)
 }
+
+// Which of the four Tick hooks this install landed. Written once by Feats.h
+// right after the DobbyHook call (the hooker fills the original pointer only on
+// success) and read by the ESP page.
+enum PlacableHook
+{
+    PlcHookStick = 0,   // WeaponProjectile_Stick.Tick
+    PlcHookTripMine,    // WeaponProjectile_TripMine.Tick
+    PlcHookTrapChip,    // WeaponProjectile_TrapChipMine.Tick
+    PlcHookTripWire,    // WeaponProjectile_ElectricTripWire.Tick
+    PlcHookCount
+};
+
+inline bool g_placableHookLanded[PlcHookCount] = {false, false, false, false};
+
+inline void NotePlacableHookLanded(PlacableHook hook, bool landed)
+{
+    if (landed && hook >= 0 && hook < PlcHookCount) g_placableHookLanded[hook] = true;
+}
+
+// Game thread writes, render thread reads - plain counters, racy but harmless
+// (same convention as the triggerbot's TriggerbotDiag).
+struct PlacableDiag
+{
+    int  hookCalls;      // ticks that reached the tracker (toggle ON, live ptr)
+    int  classified;     // ... whose class name is a known device
+    int  tracked;        // lifetime writes into the map
+    int  drawn;          // markers emitted by the LAST draw pass
+    int  nameFailed;     // class name unreadable (stale/moved object)
+    char lastClass[48];  // last class name that classified ("" = none yet)
+};
+
+inline PlacableDiag g_placableDiag{};
 
 struct PlacableInfo {
     Vector3 pos;
@@ -99,24 +156,70 @@ inline bool PlacableClassName(void *proj, char *out, size_t outSize)
     return i > 0;
 }
 
+// Lower-case, drop every byte that is not a letter or a digit:
+//   "WeaponProjectile_TripMine" -> "weaponprojectiletripmine"
+// so the table below can be matched against it whatever the separator style,
+// the namespace or the letter case a build happens to use.
+inline void PlacableNormalise(const char *className, char *out, size_t outSize)
+{
+    size_t w = 0;
+    if (outSize == 0) return;
+    for (size_t i = 0; className[i] != '\0' && w + 1 < outSize; ++i) {
+        const char c = className[i];
+        if (c >= 'A' && c <= 'Z')      out[w++] = (char)(c - 'A' + 'a');
+        else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) out[w++] = c;
+    }
+    out[w] = '\0';
+}
+
+// Classification table. Every key is a NORMALISED substring; the exact dumped
+// names come first so they always win, and the shortened forms after them let a
+// class that dropped the "WeaponProjectile" prefix (or gained a namespace) still
+// classify. Order inside each group is specific -> general.
 inline const char *PlacableLabelFor(const char *className)
 {
-    struct Entry { const char *cls; const char *label; };
+    if (className == nullptr || className[0] == '\0')
+        return nullptr;
+
+    struct Entry { const char *key; const char *label; };
     static const Entry kEntries[] = {
-        {"WeaponProjectile_TripMine",         "TRIP MINE"},
-        {"WeaponProjectile_C4bomb",           "C4"},
-        {"WeaponProjectile_TankBattleC4",     "C4"},
-        {"WeaponProjectile_TankMine",         "TANK MINE"},
-        {"WeaponProjectile_TrophySystem",     "TROPHY SYSTEM"},
-        {"WeaponProjectile_TacTripWire",      "TRIP SENSOR"},
-        {"WeaponProjectile_TrapChipMine",     "TRAP CHIP MINE"},
-        {"WeaponProjectile_ElectricTripWire", "TRIP WIRE"},
+        // the names dumps/dump.cs lists for this build
+        {"weaponprojectiletactripwire",      "TRIP SENSOR"},
+        {"weaponprojectileelectrictripwire", "TRIP WIRE"},
+        {"weaponprojectiletrapchipmine",     "TRAP CHIP MINE"},
+        {"weaponprojectiletripmine",         "TRIP MINE"},
+        {"weaponprojectiletrophysystem",     "TROPHY SYSTEM"},
+        {"weaponprojectiletankbattlec4",     "C4"},
+        {"weaponprojectiletankmine",         "TANK MINE"},
+        {"weaponprojectilec4bomb",           "C4"},
+        // the same devices under a shorter (renamed / re-namespaced) class name
+        {"tactripwire",      "TRIP SENSOR"},
+        {"electrictripwire", "TRIP WIRE"},
+        {"trapchipmine",     "TRAP CHIP MINE"},
+        {"tripmine",         "TRIP MINE"},
+        {"trophysystem",     "TROPHY SYSTEM"},
+        {"tankbattlec4",     "C4"},
+        {"tankmine",         "TANK MINE"},
+        {"c4bomb",           "C4"},
     };
-    for (const Entry &e : kEntries) {
-        if (strcmp(className, e.cls) == 0)
+
+    char norm[64];
+    PlacableNormalise(className, norm, sizeof(norm));
+    if (norm[0] == '\0')
+        return nullptr;
+
+    for (const Entry &e : kEntries)
+        if (strstr(norm, e.key) != nullptr)
             return e.label;
-    }
     return nullptr;
+}
+
+inline void PlacableRememberClass(const char *className)
+{
+    size_t i = 0;
+    for (; i + 1 < sizeof(g_placableDiag.lastClass) && className[i] != '\0'; ++i)
+        g_placableDiag.lastClass[i] = className[i];
+    g_placableDiag.lastClass[i] = '\0';
 }
 
 inline void TrackPlacable(void *proj)
@@ -126,6 +229,8 @@ inline void TrackPlacable(void *proj)
     if (!Tools::IsPtrValid(proj))
         return;
 
+    g_placableDiag.hookCalls++;
+
     const uintptr_t base = (uintptr_t)proj;
     if (*(bool *)(base + PlacableCfg::ExplodedOff) || *(bool *)(base + PlacableCfg::DestroyedOff)) {
         g_Placables.erase(base);
@@ -133,12 +238,17 @@ inline void TrackPlacable(void *proj)
     }
 
     char className[64];
-    if (!PlacableClassName(proj, className, sizeof(className)))
+    if (!PlacableClassName(proj, className, sizeof(className))) {
+        g_placableDiag.nameFailed++;
         return;
+    }
 
     const char *label = PlacableLabelFor(className);
     if (!label)
         return; // bullet / NA45 / thermite / grapple... not placed equipment
+
+    g_placableDiag.classified++;
+    PlacableRememberClass(className);
 
     Vector3 pos = GetThrowPos(proj); // WeaponProjectile.get_Position (ThrowableAlert)
     if (pos == Vector3::zero())
@@ -149,6 +259,15 @@ inline void TrackPlacable(void *proj)
     info.label = label;
     info.camp = *(int *)(base + PlacableCfg::OwnerCampOff);
     info.seen = ++g_PlacableSeen;
+    g_placableDiag.tracked++;
+}
+
+// The second route into the tracker: the BASE WeaponProjectile.Tick hook in
+// ThrowableAlert.h calls this for every projectile that dispatches to the base
+// entry point (see the file head). Same on/off gate, same checks.
+inline void PlacableOnProjectileTick(void *proj)
+{
+    TrackPlacable(proj);
 }
 
 inline int PlacableLocalCamp()
@@ -168,6 +287,8 @@ inline int PlacableLocalCamp()
 
 inline void DrawPlacableESP(ImDrawList *draw, int width, int height, const Vector3 &localPos)
 {
+    g_placableDiag.drawn = 0;
+
     if (!PlacableEspOn()) {
         if (!g_Placables.empty())
             g_Placables.clear();
@@ -226,6 +347,7 @@ inline void DrawPlacableESP(ImDrawList *draw, int width, int height, const Vecto
         DrawTextWithBorder1(draw, text, {pos.x - textSize.x * 0.5f, pos.y - 28.0f},
                             color, IM_COL32(0, 0, 0, 255), fontSize);
 
+        g_placableDiag.drawn++;
         ++it;
     }
 }
