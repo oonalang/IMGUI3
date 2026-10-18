@@ -668,6 +668,10 @@ inline bool IsUnlocked(void *instance) {
 // of every attachment and writes it into the AttachmentGroupNew / AttachItem /
 // AttachSkinData records. It OWNS 0xB83F1C0 (see MythicAttachments.h).
 #include "MythicAttachmentSystem.h"
+// Block Report Evidence (HOME tab switch, ON by default): swallows the four
+// report-path entries your client uses to send evidence when you get reported.
+// See System/Hooks/ReportBlock.h.
+#include "ReportBlock.h"
 
 // No Spectate Deelay
 inline bool (*o_NeedDelayProcess)(void *instance, int a, int b);
@@ -1038,6 +1042,9 @@ inline void InitializeAllHooks() {
     blueprint_equip::NoteLanded(blueprint_equip::GateSimilar,  orig_GetOwnedMostSimilarWeaponID != nullptr);
     blueprint_equip::NoteLanded(blueprint_equip::GateSiWeapon, orig_GetSiWeaponByBluePrintWeaponId != nullptr);
     blueprint_equip::NoteLanded(blueprint_equip::GateClick,    orig_OnEasyListItemClick_Weapon != nullptr);
+    // The ownership resolver: an unowned blueprint tap resolves to an OWNED
+    // sibling of the same base gun (see BlueprintEquip.h).
+    blueprint_equip::SetOwnerSimilarResolver(&blueprint_equip::ResolveOwnedSibling);
 
     //-- Unlock Attachments / Mythic Attachments (see MythicAttachments.h). The
     //   RVAs are the dump's, same convention as every hook above.
@@ -1075,4 +1082,14 @@ inline void InitializeAllHooks() {
     mythic_attachments::NoteLanded(mythic_attachments::GateItem,
         mythic_attachment_system::mythicRuntimeInstalled.load(std::memory_order_acquire));
     mythic_attachments::NoteLanded(mythic_attachments::GateCell,       orig_AttachmentCellSetData != nullptr);
+
+    //-- Block Report Evidence (HOME tab switch, ON by default). The four
+    //   report-path RVAs were verified against the current dump
+    //   (0xB23D358 / 0x8FB4B60 / 0x5620BAC / 0x5620F9C). The SKINS tab's
+    //   diagnostics table reports the same landed bits here.
+    report_block::InstallReportBlockHooks();
+    report_block::NoteLanded(report_block::GateDoReport,       report_block::orig_DoReport != nullptr);
+    report_block::NoteLanded(report_block::GateDoReportPlayer, report_block::orig_DoReportPlayer != nullptr);
+    report_block::NoteLanded(report_block::GateBeginReport,    report_block::orig_BeginReportPlayerPull != nullptr);
+    report_block::NoteLanded(report_block::GateEndReport,      report_block::orig_EndReportPlayerPull != nullptr);
 }

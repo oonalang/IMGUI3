@@ -57,6 +57,7 @@ void SaveConfiguration(const std::string& filename) {
     // Both unlock switches persist: without this they flipped back to their
     // startup defaults on every launch.
     config["ExtraMenu"]["MythicAttachments"] = Config.ExtraMenu.MythicAttachments;
+    config["ExtraMenu"]["BlockReportEvidence"] = Config.ExtraMenu.BlockReportEvidence;
     config["ExtraMenu"]["Blueprints"] = Config.ExtraMenu.Blueprints;
 
     config["isJumpAdjustmentEnabled"] = isJumpAdjustmentEnabled;
@@ -155,6 +156,8 @@ bool LoadConfiguration(const std::string& filename) {
             // of the whole load.
             if (config["ExtraMenu"].contains("MythicAttachments"))
                 Config.ExtraMenu.MythicAttachments = config["ExtraMenu"]["MythicAttachments"].get<bool>();
+            if (config["ExtraMenu"].contains("BlockReportEvidence"))
+                Config.ExtraMenu.BlockReportEvidence = config["ExtraMenu"]["BlockReportEvidence"].get<bool>();
             if (config["ExtraMenu"].contains("Blueprints"))
                 Config.ExtraMenu.Blueprints = config["ExtraMenu"]["Blueprints"].get<bool>();
     if (config.contains("NewFeatures")) {

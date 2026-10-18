@@ -54,6 +54,7 @@ void LoadConfig() {
         else if (key == "Aim.By") Config.Aim.By = static_cast<EAim>(std::stoi(valueStr));
         else if (key == "ExtraMenu.Kinetic") Config.ExtraMenu.Kinetic = (valueStr == "1");
         else if (key == "ExtraMenu.MythicAttachments") Config.ExtraMenu.MythicAttachments = (valueStr == "1");
+        else if (key == "ExtraMenu.BlockReportEvidence") Config.ExtraMenu.BlockReportEvidence = (valueStr == "1");
         else if (key == "ExtraMenu.Blueprints") Config.ExtraMenu.Blueprints = (valueStr == "1");
         else if (key == "ExtraMenu.Recoil") Config.ExtraMenu.Recoil = (valueStr == "1");
         else if (key == "ExtraMenu.Spread") Config.ExtraMenu.Spread = (valueStr == "1");
@@ -123,6 +124,7 @@ void SaveConfig() {
     file << "Aim.By " << Config.Aim.By << "\n";
     file << "ExtraMenu.Kinetic " << Config.ExtraMenu.Kinetic << "\n";
     file << "ExtraMenu.MythicAttachments " << Config.ExtraMenu.MythicAttachments << "\n";
+    file << "ExtraMenu.BlockReportEvidence " << Config.ExtraMenu.BlockReportEvidence << "\n";
     file << "ExtraMenu.Blueprints " << Config.ExtraMenu.Blueprints << "\n";
     file << "ExtraMenu.Recoil " << Config.ExtraMenu.Recoil << "\n";
     file << "ExtraMenu.Spread " << Config.ExtraMenu.Spread << "\n";

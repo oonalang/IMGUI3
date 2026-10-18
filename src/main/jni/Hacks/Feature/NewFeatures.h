@@ -1575,8 +1575,14 @@ namespace NewFeatures
     // the triggerbot crash (it hit mode 0 "Always" as well as mode 1 "ADS
     // only" - the press itself was the problem, not the mode gate). The edge is
     // detected from Pawn::IsAiming (a Pawn-level getter, safe on any pawn) and
-    // firing is held back for a few hundred ms after it, whichever mode is set.
-    constexpr double kAdsSettleSeconds = 0.35;
+    // firing is held back briefly after it, whichever mode is set.
+    // 0.35 s was the first guess; a touch ADS overlay animation alone runs
+    // ~0.3 s, so the old value shaved a full third of a second off every first
+    // scoped shot - the report "it's very delayed, specially ADS only". The
+    // component swap itself completes within a frame (the fire-component getter
+    // the scan already reads re-answers every frame), so a one-frame settle
+    // still never presses mid-swap while adding almost nothing.
+    constexpr double kAdsSettleSeconds = 0.05;
     inline double    g_afireAdsSettleUntil = -1000.0;
     inline int       g_afireAdsLastState   = -1;      // -1 unset, 0 hip, 1 scoped
 
@@ -2860,7 +2866,16 @@ namespace NewFeatures
         // for the trigger to silently do nothing. All three are still measured and
         // printed, and "Require Ready" turns Weapon.CanFire() back into a hard gate
         // for anyone who wants it.
+        // The switch-state read is DOUBLE-SAMPLED: a single getter call can
+        // flake for the frame or two a weapon animates its raise, and the panel
+        // would then show "switching" for a gun that is not. Two agreeing
+        // reads settle that; the extra call costs nothing measurable and only
+        // firms up what the panel reports.
         d.switching = A_FireWeaponSwitching(held);
+        if (d.switching) {
+            if (!A_FireWeaponSwitching(held))                // second read
+                d.switching = false;                         // ... flake
+        }
         d.ammoOk    = A_FireWeaponHasAmmo(held);
         d.canFire   = A_FireWeaponCanFire(held);
 

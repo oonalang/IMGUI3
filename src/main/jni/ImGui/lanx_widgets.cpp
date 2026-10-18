@@ -1215,7 +1215,21 @@ namespace lanx
 			it_anim = anim.find(id);
 		}
 
-		if (hovered && g.IO.MouseClicked[0] || it_anim->second.opened_combo && g.IO.MouseClicked[0] && !it_anim->second.hovered) it_anim->second.opened_combo = !it_anim->second.opened_combo;
+		// Touch-toggle fix (was `hovered && click || open && click && !popupHovered`).
+		// Without parens, a click on an open combo's title ran the second arm too
+		// and flipped the state right back closed, so on a touch screen the
+		// dropdown never opened. Now a press toggles only when it lands on the
+		// title bar; a press that lands on the popup body keeps it open, and a
+		// press anywhere else closes it.
+		if (g.IO.MouseClicked[0])
+		{
+			ImGuiWindow* popup = ImGui::FindWindowByName(label);
+			const bool mouseOverPopup = (popup != nullptr && g.HoveredWindow == popup);
+			if (hovered)
+				it_anim->second.opened_combo = !it_anim->second.opened_combo;
+			else if (it_anim->second.opened_combo && !mouseOverPopup)
+				it_anim->second.opened_combo = false;
+		}
 
 		it_anim->second.arrow_roll = ImLerp(it_anim->second.arrow_roll, it_anim->second.opened_combo ? -1.f : 1.f, g.IO.DeltaTime * 6.f);
 		it_anim->second.text = ImLerp(it_anim->second.text, it_anim->second.opened_combo ? c::text::label::active : hovered ? c::text::label::hovered : c::text::label::def, GetAnimSpeed());

@@ -59,11 +59,14 @@ static void BuildFakes()
 
     // Entry 0: config-only blueprint (no SIWeapon -> unowned).
     Put<uint32_t>(g_info[0], blueprint_equip::kInfoBlueprintId, 5001u);
+    Put<uint32_t>(g_info[0], blueprint_equip::kInfoBaseId, 900u);
     Put<void *>(g_info[0], blueprint_equip::kInfoSiWeapon, nullptr);
-    // Entries 1-2: owned blueprints.
+    // Entries 1-2: owned blueprints of the SAME base gun.
     Put<uint32_t>(g_info[1], blueprint_equip::kInfoBlueprintId, 5002u);
+    Put<uint32_t>(g_info[1], blueprint_equip::kInfoBaseId, 900u);
     Put<void *>(g_info[1], blueprint_equip::kInfoSiWeapon, (void *)&g_ownedSentinel);
     Put<uint32_t>(g_info[2], blueprint_equip::kInfoBlueprintId, 5003u);
+    Put<uint32_t>(g_info[2], blueprint_equip::kInfoBaseId, 901u);
     Put<void *>(g_info[2], blueprint_equip::kInfoSiWeapon, (void *)&g_ownedSentinel);
 
     Put<uint64_t>(g_array, blueprint_equip::kArrayMaxLen, 3u);
@@ -159,18 +162,43 @@ int main()
     CHECK(GetOwnedMostSimilarWeaponID((void *)&g_ownedSentinel, 5001u) == 6001u);
     CHECK(g_diag.similarLastOut == 6001u && g_diag.granted[GateSimilar] == 1);
 
-    orig_GetSiWeaponByBluePrintWeaponId = &FakeSiNull;
-    CHECK(GetSiWeaponByBluePrintWeaponId((void *)&g_ownedSentinel, 5001u) == nullptr);
-    CHECK(g_diag.siNullResults == 1 && g_diag.asked[GateSiWeapon] == 1);
-
-    // The tap: unowned entry 0 is recorded, the game's verdict passes through.
     orig_OnEasyListItemClick_Weapon = &FakeClickTrue;
     CHECK(OnEasyListItemClick_Weapon(g_popup, nullptr, nullptr, 0) == true);
     CHECK(g_diag.lastClickBlueprintId == 5001u && g_diag.lastClickOwned == 0);
     CHECK(g_diag.asked[GateClick] == 1 && g_diag.granted[GateClick] == 1);
     CHECK(OnEasyListItemClick_Weapon(g_popup, nullptr, nullptr, 1) == true);
     CHECK(g_diag.lastClickBlueprintId == 5002u && g_diag.lastClickOwned == 1);
-    CHECK(g_diag.granted[GateClick] == 1);  // owned taps are not "granted"
+    CHECK(g_diag.asked[GateClick] == 2 && g_diag.granted[GateClick] == 1);  // owned taps are not "granted"
+
+    // ---- the OWNED-sIBLING resolver ------------------------------------------
+    // Fresh capture: tap the unowned entry 0 through the popup, then ask the
+    // store for a blueprint it cannot resolve (original answers 0).
+    Config.ExtraMenu.Blueprints = true;
+    blueprint_equip::SetOwnerSimilarResolver(&blueprint_equip::ResolveOwnedSibling);
+    ResetDiag();
+    orig_GetOwnedMostSimilarWeaponID = &FakeSimilarZero;
+    CHECK(OnEasyListItemClick_Weapon(g_popup, nullptr, nullptr, 0) == true);
+    CHECK(blueprint_equip::g_lastPopupController == g_popup);
+    CHECK(blueprint_equip::g_lastClickedBaseId == 900u);   // entry 0's base gun
+    CHECK(GetOwnedMostSimilarWeaponID((void *)&g_ownedSentinel, 5001u) == 5002u); // owned sibling of base 900
+    CHECK(g_diag.similarLastOut == 5002u && g_diag.granted[GateSimilar] == 1);
+
+    // The original's non-zero answer is still trusted over the resolver.
+    orig_GetOwnedMostSimilarWeaponID = &FakeSimilarOwned;
+    CHECK(GetOwnedMostSimilarWeaponID((void *)&g_ownedSentinel, 5001u) == 6001u);
+    CHECK(g_diag.granted[GateSimilar] == 2);
+
+    // No resolver installed -> stock answer (0), never granted.
+    orig_GetOwnedMostSimilarWeaponID = &FakeSimilarZero;
+    ResetDiag();
+    blueprint_equip::SetOwnerSimilarResolver(nullptr);
+    CHECK(GetOwnedMostSimilarWeaponID((void *)&g_ownedSentinel, 5001u) == 0u);
+    CHECK(g_diag.granted[GateSimilar] == 0);
+    Config.ExtraMenu.Blueprints = false;
+
+    orig_GetSiWeaponByBluePrintWeaponId = &FakeSiNull;
+    CHECK(GetSiWeaponByBluePrintWeaponId((void *)&g_ownedSentinel, 5001u) == nullptr);
+    CHECK(g_diag.siNullResults == 1 && g_diag.asked[GateSiWeapon] == 1);
 
     // ---- counter bounds -------------------------------------------------------
     ResetDiag();

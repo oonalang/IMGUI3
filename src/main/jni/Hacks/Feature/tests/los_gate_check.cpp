@@ -103,6 +103,14 @@ static FakeObj g_localPawn, g_targetPawn, g_otherPawn;
 static FakeObj g_localHead, g_localMesh, g_targetHead, g_targetMesh;
 static FakeObj g_selfCol, g_targetCol, g_wallCol, g_trigCol, g_deadCol;
 static FakeObj g_camObj, g_camTransform, g_gameObj, g_weaponObj;
+// A fake il2cpp class + type name. NewFeatures' ADS gate only asks the fire
+// component's get_IsAiming on a component whose class name says "Instant"
+// (WeaponFireComponent_Instant is the subclass that owns that non-virtual
+// getter); a fake object with no class header is refused, which is exactly
+// what made this suite's ADS block go stale when that guard landed.
+static unsigned char g_fakeKlass[0x20];
+static const char g_instantName[] = "WeaponFireComponent_Instant";
+static FakeObj        g_fireCompObj;
 
 static void objInit(FakeObj &o, FakeObj *identity = nullptr)
 {
@@ -289,6 +297,13 @@ static void resetWorld()
     objPos(g_camTransform, 0.0f, 1.6f, 0.0f);
     objInit(g_gameObj);
     objInit(g_weaponObj);
+
+    // The scope-transition tracker is global state: a scenario that flips
+    // Pawn.IsAiming leaves a settle window behind, and the next scenario's
+    // FIRST scan would then be held as "scope transition" instead of reaching
+    // the gate under test. Each scenario starts un-scoped.
+    NewFeatures::g_afireAdsLastState   = -1;
+    NewFeatures::g_afireAdsSettleUntil = -1000.0;
 
     objSetBone(g_localPawn,  Class_Pawn_m_HeadBone, &g_localHead);
     objSetBone(g_localPawn,  Class_Pawn_m_Mesh,     &g_localMesh);
@@ -1323,12 +1338,20 @@ static bool fake_fireComponentAiming(void *)
 }
 static void *fake_currentFireComponent(void *weapon)
 {
-    return weapon == (void *)g_weaponObj.b ? (void *)g_weaponObj.b : nullptr;
+    return weapon == (void *)g_weaponObj.b ? (void *)g_fireCompObj.b : nullptr;
 }
 static bool fake_pawnIsFiring(void *) { return g_isFiringValue; }
 
 static void installAdsFakes()
 {
+    // The fake fire component: live (m_CachedPtr) AND carrying a class header
+    // whose name contains "Instant" - the two things the real gate checks
+    // before it ever calls get_IsAiming on it.
+    objInit(g_fireCompObj);
+    std::memset(g_fakeKlass, 0, sizeof g_fakeKlass);
+    *(const char **)(g_fakeKlass + 0x10) = g_instantName;   // Il2CppClass.name
+    *(void **)(g_fireCompObj.b + 0x00)   = g_fakeKlass;     // object's class ptr
+
     fn_PawnIsAiming                  = fake_pawnAimingCounted;
     fn_WeaponGetCurrentFireComponent = fake_currentFireComponent;
     fn_FireComponentGetIsAiming      = fake_fireComponentAiming;
@@ -1452,8 +1475,11 @@ static void testAdsGate()
         TriggerTarget out{};
         CHECK(runTreeOnCrosshairSetup(out) == FireBlock::ModeNotAds,
               "B1 ADS Only: neither source is scoping -> the shot is blocked");
-        CHECK(g_pawnAimingCalls == 1 && g_fcAimingCalls == 1,
-              "B1 both ADS sources were asked, exactly once");
+        // Pawn.IsAiming is asked twice per scan by design: once by the
+        // scope-transition settle probe, once by the mode gate. The fire
+        // component is asked exactly once.
+        CHECK(g_pawnAimingCalls == 2 && g_fcAimingCalls == 1,
+              "B1 both ADS sources were asked (pawn: settle probe + gate)");
         CHECK(g_isAimingCalls == 0,
               "B1 ... through the resolved pointer, never the api15 macro (a trap that says 'scoping')");
         CHECK(g_triggerDiag.adsPawnOk && g_triggerDiag.adsFcOk &&
@@ -1483,7 +1509,7 @@ static void testAdsGate()
         TriggerTarget out{};
         CHECK(runTreeOnCrosshairSetup(out) == FireBlock::Fired,
               "B3 the fire component's get_IsAiming 0xC9AF4E0 = scoped -> fires");
-        CHECK(g_pawnAimingCalls == 1, "B3 ... the pawn is still asked (it is the primary)");
+        CHECK(g_pawnAimingCalls == 2, "B3 ... the pawn is still asked (settle probe + primary gate)");
         CHECK(g_triggerDiag.adsFcAim && !g_triggerDiag.adsPawnAim,
               "B3 ... and the fire component is credited");
     }
@@ -1547,8 +1573,11 @@ static void testAdsGate()
         TriggerTarget out{};
         CHECK(runTreeOnCrosshairSetup(out) == FireBlock::Fired,
               "B8 mode Always fires with a hipfiring weapon");
-        CHECK(g_pawnAimingCalls == 0 && g_fcAimingCalls == 0,
-              "B8 ... and asks neither ADS source");
+        // The mode gate asks neither source in Always mode; the settle
+        // probe still reads Pawn.IsAiming once per scan (it runs for every
+        // mode, so the crash-safe press rule holds in Always too).
+        CHECK(g_pawnAimingCalls == 1 && g_fcAimingCalls == 0,
+              "B8 ... and the mode gate asks neither ADS source");
     }
 
     // --- B9: "Firing only" is untouched by the ADS gate --------------------
@@ -1562,8 +1591,8 @@ static void testAdsGate()
         TriggerTarget out{};
         CHECK(runTreeOnCrosshairSetup(out) == FireBlock::Fired,
               "B9 mode Firing only uses Pawn.get_IsFiring, not the ADS gate");
-        CHECK(g_pawnAimingCalls == 0 && g_fcAimingCalls == 0,
-              "B9 ... so neither ADS source is asked in that mode");
+        CHECK(g_pawnAimingCalls == 1 && g_fcAimingCalls == 0,
+              "B9 ... so the mode gate asks no ADS source (only the settle probe reads the pawn)");
     }
     g_isFiringValue = false;
     fn_PawnGetIsFiring = nullptr;

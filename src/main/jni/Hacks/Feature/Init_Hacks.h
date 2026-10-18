@@ -202,6 +202,10 @@ sColorsESPBOT sColorsESPBOT{0};
         // question (see System/Hooks/MythicAttachments.h). ON by default - this
         // is what makes an applied mythic behave as if it were really owned.
         bool MythicAttachments = true;
+        // "Block Report Evidence": YOUR client never builds or sends report
+        // evidence when another player reports you
+        // (see System/Hooks/ReportBlock.h). ON by default.
+        bool BlockReportEvidence = true;
 		bool Blueprints;
 		bool ClearDisplay;
 		bool ResetGuest;

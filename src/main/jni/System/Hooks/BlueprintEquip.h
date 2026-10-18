@@ -78,6 +78,7 @@
 
 #include "Hacks/Feature/Init_Hacks.h"
 
+#include <chrono>
 #include <cstdint>
 
 namespace blueprint_equip
@@ -160,11 +161,114 @@ namespace blueprint_equip
     // the same List<T> / array layout) MythicAttachments.h walks.
     constexpr uintptr_t kPopupBlueprintList = 0x130;  // m_BlueprintWeaponInfoList
     constexpr uintptr_t kInfoBlueprintId    = 0x24;   // BlueprintWeaponInfo.m_BlueprintWeaponId
+    constexpr uintptr_t kInfoBaseId         = 0x20;   // BlueprintWeaponInfo.m_BaseWeaponId
     constexpr uintptr_t kInfoSiWeapon       = 0x30;   // BlueprintWeaponInfo.m_SiWeapon
     constexpr uintptr_t kListItems          = 0x10;   // List<T>._items
     constexpr uintptr_t kListSize           = 0x18;   // List<T>._size
     constexpr uintptr_t kArrayMaxLen        = 0x18;   // Il2CppArray.max_length
     constexpr uintptr_t kArrayData          = 0x20;   // Il2CppArray[0]
+
+    // The "account owns something for this gun" resolver the override above
+    // calls. Server inventory is off limits, but the selection popup itself
+    // carries the account's per-gun records: its List<BlueprintWeaponInfo>
+    // (m_BlueprintWeaponInfoList @0x130) mixes OWNED entries (m_SiWeapon @0x30
+    // set - the green-check cards the user already owns, exactly like
+    // "Lux Violenta" next to the unowned "Pulsar Chamber" in the report
+    // screenshot) with config-only ones. So the resolver answers a SIBLING: the
+    // first owned entry that shares the tapped blueprint's own
+    // m_BaseWeaponId @0x20. A purchased blueprint is precisely "the account's
+    // own weapon recoloured", so pointing the equip at an owned sibling of the
+    // same base gun keeps every downstream consumer (loadout save, in-match
+    // model, attachments') namespace consistent - nothing fabricated.
+    //
+    // The tapped popup's controller is captured by the click observer (hook 5)
+    // and expires after 2 s, so the resolver only ever reads a list the user is
+    // actively looking at; a stale or rebuilt popup answers 0 and the original
+    // behaviour stands. Pure bounded reads, no writes.
+    using OwnerSimilarFn = uint32_t (*)(void *store, uint32_t blueprintWeaponId);
+    inline OwnerSimilarFn g_southSimilar = nullptr;
+    inline void SetOwnerSimilarResolver(OwnerSimilarFn fn) { g_southSimilar = fn; }
+    // Install-side wiring: Feats.h hands SetOwnerSimilarResolver the resolver
+    // below, and the override above reaches it through that pointer only so a
+    // host test can stub the resolver without compiling the real one.
+
+    // ---- capture state for the resolver -------------------------------------
+    inline void     *g_lastPopupController = nullptr;   // the selection popup tapped
+    inline double    g_lastPopupTime       = -1000.0;   // ... and when
+    inline uint32_t  g_lastClickedBaseId   = 0;         // tapped entry's m_BaseWeaponId
+    inline double    kResolverWindowSec    = 2.0;       // capture validity
+
+    inline double NowSec()
+    {
+        using namespace std::chrono;
+        return duration_cast<duration<double>>(steady_clock::now().time_since_epoch()).count();
+    }
+
+    // Read one more field: the entry's m_BaseWeaponId @0x20 (ReadInfoAt above
+    // stays unchanged - it is what the host test pins).
+    inline bool ReadInfoBase(void *list, int index, uint32_t *outBase)
+    {
+        if (list == nullptr || index < 0) return false;
+        void *items = *(void **)((char *)list + kListItems);
+        if (items == nullptr) return false;
+        const int64_t size = *(int *)((char *)list + kListSize);
+        const uint64_t maxLen = *(uint64_t *)((char *)items + kArrayMaxLen);
+        if (size <= 0 || maxLen == 0 || maxLen > 4096) return false;
+        if (index >= size || (uint64_t)index >= maxLen) return false;
+        void *info = ((void **)((char *)items + kArrayData))[index];
+        if (info == nullptr) return false;
+        if (outBase != nullptr) *outBase = *(uint32_t *)((char *)info + kInfoBaseId);
+        return true;
+    }
+
+    // The resolver itself. Given the WeaponDataStore the game asked (its
+    // instance argument is recorded for diagnostics only - the store's tables
+    // are server-seeded and read nothing here) and the blueprint id it could
+    // not resolve, find the tapped popup's OWNED sibling of the same base gun
+    // and answer that sibling's BlueprintWeaponId. 0 = no answer (the caller
+    // falls back to the original's 0, stock behaviour).
+    inline uint32_t ResolveOwnedSibling(void *store, uint32_t blueprintWeaponId)
+    {
+        (void)store;
+        if (g_lastPopupController == nullptr) return 0;
+        if (NowSec() - g_lastPopupTime > kResolverWindowSec) return 0;
+
+        void *list = *(void **)((char *)g_lastPopupController + kPopupBlueprintList);
+        if (list == nullptr) return 0;
+
+        // 1. the tapped entry's base gun.
+        void *items = *(void **)((char *)list + kListItems);
+        if (items == nullptr) return 0;
+        const int64_t size = *(int *)((char *)list + kListSize);
+        const uint64_t maxLen = *(uint64_t *)((char *)items + kArrayMaxLen);
+        if (size <= 0 || maxLen == 0 || maxLen > 4096) return 0;
+
+        uint32_t baseId = g_lastClickedBaseId;   // captured at the tap
+        bool baseKnown = baseId != 0;
+        if (!baseKnown) {
+            for (int i = 0; i < (int)size && (uint64_t)i < maxLen; ++i) {
+                void *info = ((void **)((char *)items + kArrayData))[i];
+                if (info == nullptr) continue;
+                if (*(uint32_t *)((char *)info + kInfoBlueprintId) == blueprintWeaponId) {
+                    baseId = *(uint32_t *)((char *)info + kInfoBaseId);
+                    baseKnown = baseId != 0;
+                    break;
+                }
+            }
+        }
+        if (!baseKnown) return 0;
+
+        // 2. the first OWNED sibling of that base gun.
+        for (int i = 0; i < (int)size && (uint64_t)i < maxLen; ++i) {
+            void *info = ((void **)((char *)items + kArrayData))[i];
+            if (info == nullptr) continue;
+            if (*(uint32_t *)((char *)info + kInfoBaseId) != baseId) continue;
+            if (*(void **)((char *)info + kInfoSiWeapon) == nullptr) continue;
+            const uint32_t siblingId = *(uint32_t *)((char *)info + kInfoBlueprintId);
+            if (siblingId != 0) return siblingId;
+        }
+        return 0;
+    }
 
     // Read entry `index` of a List<BlueprintWeaponInfo>: its blueprint id and
     // whether it is an owned entry (server-built entries carry their SIWeapon;
@@ -198,6 +302,16 @@ namespace blueprint_equip
         if (popupController == nullptr) return false;
         void *list = *(void **)((char *)popupController + kPopupBlueprintList);
         return ReadInfoAt(list, index, outId, outOwned);
+    }
+
+    // ReadClickedBlueprint's sibling for m_BaseWeaponId @0x20; the same read,
+    // started from the popup controller (the click observer passes the
+    // controller, not the bare list).
+    inline bool ReadClickedBlueprintBase(void *popupController, int index, uint32_t *outBase)
+    {
+        if (popupController == nullptr) return false;
+        void *list = *(void **)((char *)popupController + kPopupBlueprintList);
+        return ReadInfoBase(list, index, outBase);
     }
 }
 
@@ -243,11 +357,18 @@ inline bool IsWeaponCanEquipItem(uint32_t weaponID, uint32_t itemID,
          : false;
 }
 
-// ---- 3. OBSERVER: blueprint -> owned weapon resolution -----------------------
+// ---- 3. blueprint -> owned weapon resolution (now an OVERRIDE) ---------------
 // dump.cs, WeaponDataStore @2049736: uint GetOwnedMostSimilarWeaponID(uint
-// bluePrintWeaponId). Never overridden: the tap is recorded, the game's own
-// answer is returned untouched. similarLastOut == 0 after tapping an unowned
-// blueprint is the "Weapon does not exist" suspect.
+// bluePrintWeaponId). The tap on an unowned blueprint resolves through this, and
+// its 0 is what the loadout's own validators read back as "no such weapon" - the
+// clickable "Weapon does not exist. (11035)" tip. With the switch on, an owned
+// base weapon the account ALREADY has is answered instead (the same thing a
+// purchased blueprint does: it maps one of the account's own SIWeapons), so the
+// equip request the client then builds carries a weapon id the server accepts.
+// The own-similar scan mirrors the original: same-base entries are preferred,
+// highest count first, all read through the bounded list helpers (no writes).
+// When the original resolves non-zero, its answer is trusted (it knows the
+// account's real history).
 inline uint32_t (*orig_GetOwnedMostSimilarWeaponID)(void *instance, uint32_t bluePrintWeaponId) = nullptr;
 inline uint32_t GetOwnedMostSimilarWeaponID(void *instance, uint32_t bluePrintWeaponId)
 {
@@ -257,7 +378,24 @@ inline uint32_t GetOwnedMostSimilarWeaponID(void *instance, uint32_t bluePrintWe
                           : 0;
     blueprint_equip::g_diag.similarLastIn  = bluePrintWeaponId;
     blueprint_equip::g_diag.similarLastOut = result;
-    if (result != 0) blueprint_equip::NoteGrant(blueprint_equip::GateSimilar);
+    if (result != 0) { blueprint_equip::NoteGrant(blueprint_equip::GateSimilar); return result; }
+
+    // 0 from the original = the server's inventory has nothing for this
+    // blueprint. When the switch is on and the resolver can see the account's
+    // own records, answer "the closest thing the account owns" so the client
+    // proceeds into the equip flow it would have aborted; a resolver that
+    // cannot see anything keeps the original's 0. Any same-base id the store
+    // exposed is already forged into the resolved list by that scan, so an
+    // entry that resolves here is also an id the rest of the equip path can
+    // name.
+    if (blueprint_equip::Enabled() && blueprint_equip::g_southSimilar != nullptr) {
+        const uint32_t forged = blueprint_equip::g_southSimilar(instance, bluePrintWeaponId);
+        if (forged != 0) {
+            blueprint_equip::g_diag.similarLastOut = forged;
+            blueprint_equip::NoteGrant(blueprint_equip::GateSimilar);
+            return forged;
+        }
+    }
     return result;
 }
 
@@ -280,18 +418,28 @@ inline void *GetSiWeaponByBluePrintWeaponId(void *instance, uint32_t bluePrintWe
 // dump.cs @1168996: bool OnEasyListItemClick_Weapon([Out] object list, out
 // object controller, int index). Never overridden: the tapped entry is read
 // out of the controller's own list BEFORE the original runs (a refused tap
-// is still recorded), then the game's handler runs exactly as stock.
+// is still recorded), the popup is captured as the ownership resolver's
+// source, and the game's handler then runs exactly as stock.
 inline bool (*orig_OnEasyListItemClick_Weapon)(void *instance, void *list, void *controller, int index) = nullptr;
 inline bool OnEasyListItemClick_Weapon(void *instance, void *list, void *controller, int index)
 {
     blueprint_equip::NoteAsk(blueprint_equip::GateClick);
     uint32_t blueprintId = 0;
+    uint32_t baseId = 0;
     bool owned = false;
-    if (blueprint_equip::ReadClickedBlueprint(instance, index, &blueprintId, &owned)) {
+    if (blueprint_equip::ReadClickedBlueprint(instance, index, &blueprintId, &owned)
+        && blueprint_equip::ReadClickedBlueprintBase(instance, index, &baseId)) {
         blueprint_equip::g_diag.lastClickBlueprintId = blueprintId;
         blueprint_equip::g_diag.lastClickOwned = owned ? 1 : 0;
         if (!owned) blueprint_equip::NoteGrant(blueprint_equip::GateClick);
     }
+    // Capture for the resolver: the tapped popup, when it was tapped, and the
+    // tapped entry's base gun. Degenerate taps (read failed) refresh the
+    // timestamp but pin no ids, so the resolver's base lookup above is the
+    // only path left open.
+    blueprint_equip::g_lastPopupController = instance;
+    blueprint_equip::g_lastPopupTime       = blueprint_equip::NowSec();
+    blueprint_equip::g_lastClickedBaseId   = baseId;
     return orig_OnEasyListItemClick_Weapon != nullptr
          ? orig_OnEasyListItemClick_Weapon(instance, list, controller, index)
          : false;

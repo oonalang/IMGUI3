@@ -541,7 +541,14 @@ namespace lanx
             if (pushed_menu_font)
                 ImGui::PushFont(font::menu_default);
 
-            c::anim::speed = ImGui::GetIO().DeltaTime * 14.f;
+            // Animation speed. `speed` is set in LANX main.cpp to DeltaTime * 14.f
+            // (~0.23 at 60 fps): the per-frame lerp t for the sidebar pages, the
+            // welcome background and the particles. Touch UIs read as sluggish
+            // below ~0.4/frame, so this build runs it at x2.1 (~0.5 at 60 fps,
+            // ~0.25 at 120 fps) - the menu visibly snappier, no lerp ever
+            // overshooting since every one of these animates a value towards a
+            // target that never swings the other way mid-motion.
+            c::anim::speed = ImGui::GetIO().DeltaTime * 30.f;
             c::second_color = utils::GetDarkColor(c::main_color);
 
             const ImVec2& pos = ImGui::GetWindowPos();
@@ -571,20 +578,21 @@ namespace lanx
             PopFont();
 
             // Minimize: collapses the panel to the thin restore bar Main.cpp
-            // already draws (tap the bar to bring the menu back).
+            // already draws (tap the bar to bring the menu back). Big touch
+            // target - 40x40 at the panel's top-right corner.
             {
-                const ImVec2 mn_pos = pos + ImVec2(c::bg::size.x - 46.f, 17.f);
+                const ImVec2 mn_pos = pos + ImVec2(c::bg::size.x - 56.f, 12.f);
                 ImGui::SetCursorScreenPos(mn_pos);
-                ImGui::InvisibleButton("##lanx_minimize", ImVec2(24.f, 24.f));
+                ImGui::InvisibleButton("##lanx_minimize", ImVec2(40.f, 40.f));
                 const bool mn_hot = ImGui::IsItemHovered();
-                draw_list->AddRectFilled(mn_pos, mn_pos + ImVec2(24.f, 24.f),
+                draw_list->AddRectFilled(mn_pos, mn_pos + ImVec2(40.f, 40.f),
                     mn_hot ? utils::GetColorWithAlpha(c::main_color, 0.95f)
-                           : utils::GetColorWithAlpha(c::main_color, 0.14f), 6.f);
+                           : utils::GetColorWithAlpha(c::main_color, 0.18f), 8.f);
                 const ImU32 dash_col = mn_hot
                     ? (ImU32)IM_COL32(18, 18, 22, 255)
                     : (ImU32)utils::GetColorWithAlpha(c::label::def, 1.0f);
-                draw_list->AddRectFilled(mn_pos + ImVec2(7.f, 11.f), mn_pos + ImVec2(17.f, 13.f),
-                    dash_col, 1.f);
+                draw_list->AddRectFilled(mn_pos + ImVec2(11.f, 18.5f), mn_pos + ImVec2(29.f, 21.5f),
+                    dash_col, 1.5f);
                 if (ImGui::IsItemClicked())
                     s.minimize_requested = true;
             }
@@ -785,8 +793,8 @@ namespace lanx
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "on the next frame.");
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "Hide Stream keeps them out of");
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "captured screenshots.");
-                Separator_line();
-                Checkbox("Hide Stream (screenshot-safe)", &HIDEESP);
+                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "(its toggle is on the Player");
+                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "ESP page).");
                 EndChild();
             }
 
@@ -858,8 +866,13 @@ namespace lanx
 
                 Child("Account & Data##R6", ImVec2(col_w, full_h), true);
                 Checkbox("Attachment Unlock", &Config.ExtraMenu.Attachment);
-                Checkbox("Equippable Blueprints", &Config.ExtraMenu.Blueprints);
+                // Equippable Blueprints lives on the Weapons page only - a
+                // second switch here was the same flag drawn twice.
                 Checkbox("Reset Guest Account", &Config.ExtraMenu.ResetGuest);
+                Separator_line();
+                Checkbox("Block Report Evidence", &Config.ExtraMenu.BlockReportEvidence);
+                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "On: your client never builds or");
+                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "sends evidence when reported.");
                 Separator_line();
                 Checkbox("Camo Diagnostics (test)", &Config.ExtraMenu.CamoTest);
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "Diagnostics only reports what the");
@@ -948,13 +961,13 @@ namespace lanx
                 Child("Configuration##L8", ImVec2(col_w, full_h), true);
                 if (Button("SAVE CONFIG", ImVec2(ImGui::GetContentRegionAvail().x, 47)))
                 {
-                    SaveConfiguration("lineflow");
-                    config_status = "saved -> configs/lineflow.json";
+                    SaveConfiguration("ethnir");
+                    config_status = "saved -> configs/ethnir.json";
                 }
                 if (Button("LOAD CONFIG", ImVec2(ImGui::GetContentRegionAvail().x, 47)))
-                    config_status = LoadConfiguration("lineflow")
-                        ? "loaded configs/lineflow.json"
-                        : "configs/lineflow.json not found";
+                    config_status = LoadConfiguration("ethnir")
+                        ? "loaded configs/ethnir.json"
+                        : "configs/ethnir.json not found";
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "%s", config_status.c_str());
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "Stored in the game's own files dir,");
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "so it survives app updates.");
