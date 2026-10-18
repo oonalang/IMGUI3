@@ -638,12 +638,19 @@ inline float DisperseBase(void * instance) {
     return orig_DisperseBase(instance);
 } 
 
+// Equippable Blueprints: the equip-path gates + observers behind the same
+// SKINS-tab switch. IsUnlocked below is its gate 0 and counts into its
+// diagnostics table, so the header lands first. See BlueprintEquip.h.
+#include "BlueprintEquip.h"
+
 // Unlock Blueprints (SKINS tab switch). BlueprintWeaponInfo.IsUnlocked()
 // @0x901F988 takes no parameters, so this pointer's shape is the method's own.
 inline bool (*orig_IsUnlocked)(void *instance);
 inline bool IsUnlocked(void *instance) {
+    blueprint_equip::NoteAsk(blueprint_equip::GateUnlock);
     if (instance != NULL) {
         if (Config.ExtraMenu.Blueprints) {
+            blueprint_equip::NoteGrant(blueprint_equip::GateUnlock);
             return true;
         }
     }
@@ -1014,6 +1021,23 @@ inline void InitializeAllHooks() {
     //   gates itself: see MythicAttachments.h. WeaponPromotionInfo.
     //   IsWeaponAttachmentUnlock(int attachment) @0xA61AA00 is the first of them.
     HOOK_LIB("libunity.so", "0x901F988", IsUnlocked, orig_IsUnlocked);
+
+    //-- Equippable Blueprints (see BlueprintEquip.h): the two equip verdicts
+    //   the selection's Equip can still refuse on (special-forbid list, the
+    //   loadout's can-equip validator), plus three observers that only count
+    //   - owned-weapon resolution, SI-weapon lookup, and the tap itself - so
+    //   the SKINS tab shows where an equip of an unowned blueprint dies.
+    HOOK_LIB("libunity.so", "0x6DCE594", IsSpecialForbid, orig_IsSpecialForbid);
+    HOOK_LIB("libunity.so", "0x5D34E50", IsWeaponCanEquipItem, orig_IsWeaponCanEquipItem);
+    HOOK_LIB("libunity.so", "0x6DCCFD0", GetOwnedMostSimilarWeaponID, orig_GetOwnedMostSimilarWeaponID);
+    HOOK_LIB("libunity.so", "0x6DCD3FC", GetSiWeaponByBluePrintWeaponId, orig_GetSiWeaponByBluePrintWeaponId);
+    HOOK_LIB("libunity.so", "0x5D2D420", OnEasyListItemClick_Weapon, orig_OnEasyListItemClick_Weapon);
+    blueprint_equip::NoteLanded(blueprint_equip::GateUnlock,   orig_IsUnlocked != nullptr);
+    blueprint_equip::NoteLanded(blueprint_equip::GateForbid,   orig_IsSpecialForbid != nullptr);
+    blueprint_equip::NoteLanded(blueprint_equip::GateCanEquip, orig_IsWeaponCanEquipItem != nullptr);
+    blueprint_equip::NoteLanded(blueprint_equip::GateSimilar,  orig_GetOwnedMostSimilarWeaponID != nullptr);
+    blueprint_equip::NoteLanded(blueprint_equip::GateSiWeapon, orig_GetSiWeaponByBluePrintWeaponId != nullptr);
+    blueprint_equip::NoteLanded(blueprint_equip::GateClick,    orig_OnEasyListItemClick_Weapon != nullptr);
 
     //-- Unlock Attachments / Mythic Attachments (see MythicAttachments.h). The
     //   RVAs are the dump's, same convention as every hook above.

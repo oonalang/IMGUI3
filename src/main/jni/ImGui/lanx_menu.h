@@ -700,7 +700,7 @@ namespace lanx
                 Child("Items & Movement##R2", ImVec2(col_w, full_h), true);
                 Checkbox("Weapon Kinetic", &Config.ExtraMenu.Kinetic);
                 Checkbox("Mythic Attachments", &Config.ExtraMenu.MythicAttachments);
-                Checkbox("Unlock Blueprints", &Config.ExtraMenu.Blueprints);
+                Checkbox("Equippable Blueprints", &Config.ExtraMenu.Blueprints);
                 Checkbox("Unlimited Fly", &UnlimitedFly);
                 Separator_line();
                 SliderFloat("Snowboard Speed", &SnowBsize, 0.0f, 100.0f, "%.1f");
@@ -858,7 +858,7 @@ namespace lanx
 
                 Child("Account & Data##R6", ImVec2(col_w, full_h), true);
                 Checkbox("Attachment Unlock", &Config.ExtraMenu.Attachment);
-                Checkbox("Unlock Blueprints", &Config.ExtraMenu.Blueprints);
+                Checkbox("Equippable Blueprints", &Config.ExtraMenu.Blueprints);
                 Checkbox("Reset Guest Account", &Config.ExtraMenu.ResetGuest);
                 Separator_line();
                 Checkbox("Camo Diagnostics (test)", &Config.ExtraMenu.CamoTest);
@@ -914,10 +914,27 @@ namespace lanx
                 Child("Skins##L8", ImVec2(col_w * 2.0f + col_gap, full_h), true);
                 if (Config.ExtraMenu.Blueprints)
                     ImGui::TextColored(ImVec4(0.55f, 0.85f, 0.55f, 1.0f),
-                        "Blueprints unlocked - the game's own loadout can equip these skins");
+                        "Equippable Blueprints ON - pick any blueprint in the selection to apply it");
                 else
                     ImGui::TextColored(ImVec4(0.90f, 0.70f, 0.35f, 1.0f),
-                        "Enable Unlock Blueprints (Weapons page) so the loadout accepts the equip");
+                        "Enable Equippable Blueprints (Weapons page) to equip any blueprint");
+                {
+                    // Equip-path diagnostics (System/Hooks/BlueprintEquip.h):
+                    // asked/granted per gate, so a refused equip shows which
+                    // question the game asked and what it was answered.
+                    const blueprint_equip::DiagStats &bd = blueprint_equip::g_diag;
+                    const bool *bl = blueprint_equip::g_landed;
+                    ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1.0f),
+                        "landed u%d f%d c%d s%d w%d k%d - asked/granted: unlock %d/%d forbid %d/%d canEquip %d/%d (last item %u)",
+                        bl[0] ? 1 : 0, bl[1] ? 1 : 0, bl[2] ? 1 : 0, bl[3] ? 1 : 0, bl[4] ? 1 : 0, bl[5] ? 1 : 0,
+                        bd.asked[0], bd.granted[0], bd.asked[1], bd.granted[1], bd.asked[2], bd.granted[2],
+                        (unsigned)bd.canEquipLastItemId);
+                    ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1.0f),
+                        "observed: similar %d/%d (last %u -> %u), siWeapon %d/%d (null %d), clicks %d (last %u, %s)",
+                        bd.asked[3], bd.granted[3], (unsigned)bd.similarLastIn, (unsigned)bd.similarLastOut,
+                        bd.asked[4], bd.granted[4], bd.siNullResults,
+                        bd.asked[5], (unsigned)bd.lastClickBlueprintId, bd.lastClickOwned ? "owned" : "UNOWNED");
+                }
                 RenderTab4Content();
                 EndChild();
             }
