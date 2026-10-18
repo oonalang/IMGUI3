@@ -1571,7 +1571,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 dl->AddRect(wp, {wp.x + WW, wp.y + WH}, IM_COL32(160, 80, 255, 100), 20.0f, 0, 1.5f);
                 dl->AddRect({wp.x + 6, wp.y + 6}, {wp.x + WW - 6, wp.y + WH - 6}, IM_COL32(160, 80, 255, 30), 16.0f, 0, 1.0f);
 
-                const char* brand = "ETHNIR NOIR";
+                const char* brand = "ETHNIR FREEMIUM";
                 ImVec2 brandSize = titleFont->CalcTextSizeA(32.0f, FLT_MAX, 0.0f, brand);
                 dl->AddText(titleFont, 32.0f, {wp.x + (WW - brandSize.x) * 0.5f, wp.y + 40.0f}, IM_COL32(160, 80, 255, 255), brand);
 

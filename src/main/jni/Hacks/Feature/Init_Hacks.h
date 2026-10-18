@@ -132,6 +132,7 @@ struct sWeaponAim {
         EspStyleTarget EspStyle;
         bool Armor;
         bool GrenadeWarn;
+        bool Placables;
         bool BRClass;
         bool Vehicle;
         bool VehicleHealth;

@@ -154,7 +154,7 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
     ImColor neonPink = GetNeonColor(animTime, 1.5f, 4.0f);
     ImColor pureWhite = ImColor(255, 255, 255, 255);
 
-    drawTextWithSpacing("ETHNIR NOIR", ImVec2(textStartX, startY), neonPurple, 1.4f);
+    drawTextWithSpacing("ETHNIR FREEMIUM", ImVec2(textStartX, startY), neonPurple, 1.4f);
     
     float dotRadius = 3.0f * c::scale;
     float premiumTextWidth = font::inter_semibold->CalcTextSizeA(11.5f * c::scale, FLT_MAX, 0.0f, "PREMIUM").x + (1.4f * 6);
