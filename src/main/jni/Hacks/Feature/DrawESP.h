@@ -718,6 +718,7 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
     auto espW2s = (Vector3 (*)(Camera *, Vector3))Class_Camera_WorldToScreenPoint;
     
     DrawThrowableAlert(draw, sWidth, sHeight, pLocalPawn_rootPos);
+    DrawPlacableESP(draw, sWidth, sHeight, pLocalPawn_rootPos);
 
     totalBots = 0, totalEnemies = 0;
     // Pawn-INDEPENDENT overlays used to run once per ENEMY inside the loop
@@ -737,8 +738,21 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
         if (!Tools::IsPtrValid((void *)m_PlayerInfo)) continue;
 
         auto m_AttackableInfo = *(uintptr_t *)(pawn + Class_AttackableTarget_m_AttackableInfo);
+        // Crash fix: m_AttackableInfo is released when a pawn dies / despawns
+        // while it is still listed in EnemyPawns (this read also runs BEFORE
+        // the m_IsAlive check below). The old code dereferenced the pointer
+        // unchecked, so the first stale pawn segfaulted the frame loop as
+        // soon as ESP Box / ESP Health was toggled on in a live match.
+        // GetInsideFOVTarget in this same file already null-checks it.
+        if (!Tools::IsPtrValid((void *)m_AttackableInfo)) continue;
+
         int CurHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_Health);
         int MaxHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_MaxHealth);
+        // Sanitize: a half-initialized AttackableTargetInfo can carry 0 /
+        // garbage HP, which fed NaN ratios into the health bar math.
+        if (MaxHP <= 0) { CurHP = 0; MaxHP = 1; }
+        if (CurHP < 0) CurHP = 0;
+        if (CurHP > MaxHP) CurHP = MaxHP;
 
         auto m_HeadBone = *(Transform **)(pawn + Class_Pawn_m_HeadBone);
         auto m_Mesh = *(Transform **)(pawn + Class_Pawn_m_Mesh);
