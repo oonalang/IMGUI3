@@ -468,3 +468,137 @@ inline void PopNativeCheckboxStyle() {
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(6);
 }
+
+inline void RenderInfoPopupModal() {
+    if (g_infoPopupRequested) {
+        ImGui::OpenPopup("##RuntimeInfoPopup");
+        g_infoPopupRequested = false;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(420.0f, 0.0f), ImGuiCond_Appearing);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 16.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.09f, 0.12f, 0.15f, 0.98f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.82f, 0.55f, 0.08f, 0.72f));
+    ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+
+    if (ImGui::BeginPopupModal("##RuntimeInfoPopup", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar)) {
+        ImFont *titleFont = F50 ? F50 : (font::inter_semibold ? font::inter_semibold : ImGui::GetFont());
+        const float titleFontSize = (titleFont == F50) ? 18.0f : titleFont->FontSize * 1.10f;
+        const ImVec2 headerCursor = ImGui::GetCursorScreenPos();
+        const ImVec2 contentAvail = ImGui::GetContentRegionAvail();
+        const ImVec2 closeButtonSize(36.0f, 28.0f);
+        ImGui::GetWindowDrawList()->AddText(titleFont, titleFontSize, headerCursor, IM_COL32(228, 213, 185, 255), "INFO");
+        ImGui::SetCursorScreenPos(ImVec2(headerCursor.x + ImMax(0.0f, contentAvail.x - closeButtonSize.x), headerCursor.y));
+        if (ImGui::Button("X##RuntimeInfoClose", closeButtonSize)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SetCursorScreenPos(ImVec2(headerCursor.x, headerCursor.y + closeButtonSize.y));
+        ImGui::Dummy(ImVec2(contentAvail.x, 8.0f));
+
+        ImGui::PushStyleColor(ImGuiCol_TableRowBg, ImVec4(0.09f, 0.12f, 0.15f, 0.70f));
+        ImGui::PushStyleColor(ImGuiCol_TableRowBgAlt, ImVec4(0.12f, 0.16f, 0.20f, 0.78f));
+        if (ImGui::BeginTable("##RuntimeInfoTable", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Field", ImGuiTableColumnFlags_WidthFixed, 132.0f);
+            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+            auto drawInfoRow = [](const char *icon, const char *field, const char *value) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                if (F107 != nullptr) ImGui::PushFont(F107);
+                ImGui::TextColored(ImVec4(0.82f, 0.65f, 0.25f, 0.96f), "%s", icon);
+                if (F107 != nullptr) ImGui::PopFont();
+                ImGui::SameLine(0.0f, 8.0f);
+                ImGui::TextColored(ImVec4(0.90f, 0.74f, 0.32f, 0.96f), "%s", field);
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextColored(ImVec4(0.88f, 0.82f, 0.72f, 0.94f), "%s", value);
+            };
+            drawInfoRow(ICON_FA_USER, "Developer", "Shaiaintshyy");
+            drawInfoRow(ICON_FA_GAMEPAD, "Game", "Call of Duty: Mobile");
+            drawInfoRow(ICON_FA_MICROCHIP, "Architecture", "arm64-v8a");
+            drawInfoRow(ICON_FA_UNLOCK_ALT, "Access", "Non-root");
+            ImGui::EndTable();
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+        ImGui::SetCursorPosX(ImMax(0.0f, ImGui::GetContentRegionAvail().x - 112.0f));
+        if (ImGui::Button("CLOSE", ImVec2(112.0f, 40.0f))) {
+            ImGui::CloseCurrentPopup();
+        }
+        RegisterPopupFocusWindow();
+        ImGui::EndPopup();
+    }
+
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(3);
+}
+
+inline void RenderPriceListPopupModal() {
+    if (g_priceListPopupRequested) {
+        ImGui::OpenPopup("##RuntimePriceListPopup");
+        g_priceListPopupRequested = false;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(520.0f, 0.0f), ImGuiCond_Appearing);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 16.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.09f, 0.12f, 0.15f, 0.98f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.82f, 0.55f, 0.08f, 0.72f));
+    ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+
+    if (ImGui::BeginPopupModal("##RuntimePriceListPopup", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar)) {
+        ImFont *titleFont = F50 ? F50 : (font::inter_semibold ? font::inter_semibold : ImGui::GetFont());
+        const float titleFontSize = (titleFont == F50) ? 18.0f : titleFont->FontSize * 1.10f;
+        const ImVec2 headerCursor = ImGui::GetCursorScreenPos();
+        const ImVec2 contentAvail = ImGui::GetContentRegionAvail();
+        const ImVec2 closeButtonSize(36.0f, 28.0f);
+        ImGui::GetWindowDrawList()->AddText(titleFont, titleFontSize, headerCursor, IM_COL32(228, 213, 185, 255), "PRICELIST");
+        ImGui::SetCursorScreenPos(ImVec2(headerCursor.x + ImMax(0.0f, contentAvail.x - closeButtonSize.x), headerCursor.y));
+        if (ImGui::Button("X##RuntimePriceClose", closeButtonSize)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SetCursorScreenPos(ImVec2(headerCursor.x, headerCursor.y + closeButtonSize.y));
+        ImGui::Dummy(ImVec2(contentAvail.x, 8.0f));
+
+        ImGui::PushStyleColor(ImGuiCol_TableRowBg, ImVec4(0.09f, 0.12f, 0.15f, 0.70f));
+        ImGui::PushStyleColor(ImGuiCol_TableRowBgAlt, ImVec4(0.14f, 0.18f, 0.22f, 0.82f));
+        if (ImGui::BeginTable("##RuntimePriceListTable", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Duration", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("PHP", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+            ImGui::TableSetupColumn("Dollars", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+            ImGui::TableHeadersRow();
+
+            int rowIndex = 0;
+            auto drawRow = [&rowIndex](const char *duration, const char *php, const char *dollars) {
+                ImGui::TableNextRow();
+                ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, (rowIndex % 2 == 0) ? IM_COL32(22, 29, 36, 156) : IM_COL32(32, 40, 48, 176));
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextColored(ImVec4(0.88f, 0.82f, 0.72f, 0.94f), "%s", duration);
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextColored(ImVec4(0.90f, 0.74f, 0.32f, 0.96f), "%s", php);
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextColored(ImVec4(0.90f, 0.74f, 0.32f, 0.96f), "%s", dollars);
+                ++rowIndex;
+            };
+            drawRow("3 Day", "PHP150", "$3");
+            drawRow("7 Days", "PHP300", "$6");
+            drawRow("30 Days", "PHP1000", "$60");
+            drawRow("60 Days", "PHP1800", "$110");
+            ImGui::EndTable();
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+        ImGui::SetCursorPosX(ImMax(0.0f, ImGui::GetContentRegionAvail().x - 112.0f));
+        if (ImGui::Button("CLOSE", ImVec2(112.0f, 40.0f))) {
+            ImGui::CloseCurrentPopup();
+        }
+        RegisterPopupFocusWindow();
+        ImGui::EndPopup();
+    }
+
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(3);
+}

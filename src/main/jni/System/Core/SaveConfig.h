@@ -115,8 +115,6 @@ bool LoadConfiguration(const std::string& filename) {
             Config.ESPMenu.Name = config["ESPMenu"]["Name"].get<bool>();
             Config.ESPMenu.Health = config["ESPMenu"]["Health"].get<bool>();
             Config.ESPMenu.Distance = config["ESPMenu"]["Distance"].get<bool>();
-            if (config["ESPMenu"].contains("GrenadeWarn")) Config.ESPMenu.GrenadeWarn = config["ESPMenu"]["GrenadeWarn"].get<bool>();
-            if (config["ESPMenu"].contains("Placables")) Config.ESPMenu.Placables = config["ESPMenu"]["Placables"].get<bool>();
             if (config["ESPMenu"].contains("Target")) Config.ESPMenu.Target = static_cast<LineTarget>(config["ESPMenu"]["Target"].get<int>());
             if (config["ESPMenu"].contains("BoxType")) Config.ESPMenu.BoxType = static_cast<EspBoxType>(config["ESPMenu"]["BoxType"].get<int>());
             if (config["ESPMenu"].contains("HealthPosition")) Config.ESPMenu.HealthPosition = static_cast<EspHealthPosition>(config["ESPMenu"]["HealthPosition"].get<int>());
