@@ -1032,11 +1032,7 @@ bool ImGui::ScrollbarEx(const ImRect& bb_frame, ImGuiID id, ImGuiAxis axis, ImS6
         const float grab_min_y = ImLerp(bb.Min.y + grab_pad_y, bb.Max.y - grab_pad_y - grab_h_pixels, grab_v_norm);
         grab_rect = ImRect(bb.Min.x + grab_pad_x, grab_min_y, bb.Max.x - grab_pad_x, grab_min_y + grab_h_pixels);
     }
-    // IMGUI5 scrollbars are quiet grey, not accent: the grab uses the style
-    // colours (C(34,38,48) / hovered / active, set in c::ApplyIMGUI5NativeStyle).
-    // Painting it in the accent used to put a bright blue bar down the side of
-    // every card that scrolls.
-    window->DrawList->AddRectFilled(grab_rect.Min, grab_rect.Max, grab_col, 12.0f);
+    window->DrawList->AddRectFilled(grab_rect.Min, grab_rect.Max, GetColorU32(c::accent), 30.f);
 
     return held;
 }
