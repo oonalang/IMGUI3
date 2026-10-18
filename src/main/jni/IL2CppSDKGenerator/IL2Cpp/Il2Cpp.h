@@ -216,12 +216,7 @@ template<typename T> struct Il2CppList {
     int version;
 
     T *getItems() {
-        // A list that is being built (match just joined, player still being
-        // added) can exist before its element array does; blindly following
-        // a null `items` here put a raw null deref in every caller's loop,
-        // including the always-on frame path. Answer null and let each caller
-        //'s existing Items check reject it.
-        return items ? items->getPointer() : nullptr;
+        return items->getPointer();
     }
 
     int getSize() {

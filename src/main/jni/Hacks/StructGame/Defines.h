@@ -131,14 +131,6 @@ void UpdateAllOffset(){
 #define Class_Pawn_get_TeamSeatId (m_unity + api20)
 #define Class_Input_get_touchSupported (m_unity + api21)
 
-//-- Weapon ADS state. Both are FIELD offsets on Weapon (dump.cs 737588
-//   m_AimingPercentage @0x460, dump.cs 738043 m_IsAiming @0xC21), read instead
-//   of calling Pawn.IsAiming() 0x519BB10 - a native method that walks the
-//   pawn's own weapon / fire-component chain, which is what crashed every
-//   "ADS only" gate that used it.
-#define Class_Weapon_m_IsAiming (0xC21)
-#define Class_Weapon_m_AimingPercentage (0x460)
-
 #define Class_Pawn_m_PlayerInfo (0x5C0)
 #define Class_Pawn_m_IsBot (0x5B9)
 #define Class_Pawn_m_IsAlive (0x548)

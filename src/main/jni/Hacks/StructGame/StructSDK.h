@@ -108,24 +108,6 @@ public:
         static GetWeaponIDFunc _Weapon__get_WeaponID = (GetWeaponIDFunc)(Weapon_GetWeaponId);
         return _Weapon__get_WeaponID ? _Weapon__get_WeaponID(this) : 0;
     }
-
-    // Is this weapon scoped in? Answered by TWO FIELD READS on this object
-    // (dump.cs 737588 m_AimingPercentage @0x460, dump.cs 738043 m_IsAiming
-    // @0xC21) instead of Pawn.IsAiming() 0x519BB10.
-    //
-    // That native method walks the pawn's own weapon / fire-component chain
-    // internally, so no guard on this side can bound what it touches - it is
-    // what crashed every "ADS only" gate that called it. A read at a fixed
-    // offset cannot jump anywhere: with a stale weapon pointer the answer is a
-    // wrong boolean, never a SIGSEGV. A transition more than half done already
-    // counts, so the gate opens while the scope comes up; a percentage outside
-    // 0..2 is not ADS progress and is ignored rather than read as "always
-    // scoped".
-    bool m_IsAiming() const {
-        const bool  flag = *(const bool  *) ((uintptr_t) this + Class_Weapon_m_IsAiming);
-        const float pct  = *(const float *) ((uintptr_t) this + Class_Weapon_m_AimingPercentage);
-        return flag || (pct > 0.5f && pct <= 2.0f);
-    }
 };
 
 class Pawn : public AttackableTarget {
@@ -172,16 +154,6 @@ public:
         using GetCurrentWeaponFunc = Weapon* (*)(Pawn*);
         static GetCurrentWeaponFunc _Pawn__get_CurrentWeapon = (GetCurrentWeaponFunc)(Pawn_get_CurrentWeapon);
         return _Pawn__get_CurrentWeapon ? _Pawn__get_CurrentWeapon(this) : nullptr;
-    }
-
-    // The safe replacement for ``Pawn.IsAiming() 0x519BB10`` (see Weapon::
-    // m_IsAiming above): the pawn's own held weapon is asked, by field read.
-    // A pawn with no weapon - dead, mid-respawn, in the pre-match lobby - is
-    // simply not scoping.
-    bool get_IsAimingSafe() {
-        Weapon *weapon = get_CurrentWeapon();
-        if (weapon == nullptr) return false;
-        return weapon->m_IsAiming();
     }
 };
 

@@ -277,11 +277,7 @@ inline bool A_BulletTrackTriggerReady()
     if (Config.Aim.Trigger == EAimTrigger::Shooting)
         return ((bool (*)(uintptr_t))(Class_Pawn_get_IsFiring))((uintptr_t)local);
     if (Config.Aim.Trigger == EAimTrigger::Scoping)
-        // Same swap as DrawESP.h's aim path: the pawn's own held weapon is
-        // asked (Weapon.m_IsAiming @0xC21 / m_AimingPercentage @0x460).
-        // Pawn.IsAiming() 0x519BB10 is never called - it is the native walk
-        // that crashed every "ADS only" gate.
-        return local->get_IsAimingSafe();
+        return ((bool (*)(uintptr_t))(Class_Pawn_IsAiming))((uintptr_t)local);
     return true;                                    // EAimTrigger::None
 }
 
@@ -610,9 +606,6 @@ inline bool IsUnlocked(void *instance) {
     return orig_IsUnlocked(instance);
 }
 
-// Blueprint equip gates (BlueprintEquip.h), installed below.
-#include "BlueprintEquip.h"
-
 // Mythic Attachments (unlock-as-if-owned) lives in its own header: the four
 // client-side gates that decide whether an applied skin and the weapon's
 // attachments count as unlocked - WeaponPromotionInfo.IsWeaponAttachmentUnlock
@@ -620,9 +613,6 @@ inline bool IsUnlocked(void *instance) {
 // LoadoutWeaponsUIHelper.IsThisAttachmentUnlock 0x5D40528 and
 // WeaponAttr.IsAttachUnlock 0xA188634. See System/Hooks/MythicAttachments.h.
 #include "MythicAttachments.h"
-// Block Report Evidence - the client's four report / evidence senders. See
-// System/Hooks/ReportBlock.h for the dump rows each RVA comes from.
-#include "ReportBlock.h"
 
 // No Spectate Deelay
 inline bool (*o_NeedDelayProcess)(void *instance, int a, int b);
@@ -961,19 +951,6 @@ inline void InitializeAllHooks() {
     //   IsWeaponAttachmentUnlock(int attachment) @0xA61AA00 is the first of them.
     HOOK_LIB("libunity.so", "0x901F988", IsUnlocked, orig_IsUnlocked);
 
-    //-- Unlock Blueprints (SKINS tab), the equip path (BlueprintEquip.h).
-    HOOK_LIB("libunity.so", "0x8D49D00", IsBlueprintWeaponID, orig_IsBlueprintWeaponID);
-    HOOK_LIB("libunity.so", "0x8D33914", IsThisItemCanBeEquipedInMP, orig_IsThisItemCanBeEquipedInMP);
-    HOOK_LIB("libunity.so", "0x5D30134", IsSelectBlueprintWeaponUnlock, orig_IsSelectBlueprintWeaponUnlock);
-    HOOK_LIB("libunity.so", "0x5D31A4C", CheckIsEquip, orig_CheckIsEquip);
-    HOOK_LIB("libunity.so", "0x6741CE4", IsBlueprintWeaponValid, orig_IsBlueprintWeaponValid);
-
-    blueprint_equip::NoteLanded(blueprint_equip::GateClassifier, orig_IsBlueprintWeaponID != nullptr);
-    blueprint_equip::NoteLanded(blueprint_equip::GateItem,       orig_IsThisItemCanBeEquipedInMP != nullptr);
-    blueprint_equip::NoteLanded(blueprint_equip::GateSelect,     orig_IsSelectBlueprintWeaponUnlock != nullptr);
-    blueprint_equip::NoteLanded(blueprint_equip::GateEquip,      orig_CheckIsEquip != nullptr);
-    blueprint_equip::NoteLanded(blueprint_equip::GateValid,      orig_IsBlueprintWeaponValid != nullptr);
-
     //-- Unlock Attachments / Mythic Attachments (see MythicAttachments.h). The
     //   RVAs are the dump's, same convention as every hook above.
     HOOK_LIB("libunity.so", "0xA61AA00", IsWeaponAttachmentUnlock, orig_IsWeaponAttachmentUnlock);
@@ -990,20 +967,6 @@ inline void InitializeAllHooks() {
     HOOK_LIB("libunity.so", "0xB83F1C0", AttachmentItemSetData, orig_AttachmentItemSetData);
     HOOK_LIB("libunity.so", "0xB83D5E0", AttachmentCellSetData, orig_AttachmentCellSetData);
 
-    //-- Mythic Attachments, LAYER 3: the two answers the gunsmith re-asks on
-    //   every row refresh (dump.cs 1163878 / 1163778). Layer 2 rewrote the row
-    //   the list handed out; these stop the same row coming back disabled and
-    //   stop the lock view repainting the lock.
-    HOOK_LIB("libunity.so", "0xB6371C0", IsAttachDisabledForCurrentWeapon, orig_IsAttachDisabledForCurrentWeapon);
-    HOOK_LIB("libunity.so", "0xB63532C", UpdateEquipLockView, orig_UpdateEquipLockView);
-
-    //-- Mythic Attachments, LAYER 4: the PRECONDITION answer. This is the one
-    //   that still held the Signature Attachment locked after layers 2/3: its
-    //   OwnState was already written to EUnlock and the row was still refused,
-    //   greyed and un-equippable by the gunsmith panel's own check
-    //   (dump.cs 1170281, slot 50 - WeaponIniAttachBaseController).
-    HOOK_LIB("libunity.so", "0xBB636D8", IsPreConditionSatisfied, orig_IsPreConditionSatisfied);
-
     // Which of those seven addresses actually took the hook? The hooker only
     // fills the original pointer on success, and the SKINS tab prints these -
     // a 0 there is the reason that gate's asked/granted counter stays at 0/0.
@@ -1014,20 +977,4 @@ inline void InitializeAllHooks() {
     mythic_attachments::NoteLanded(mythic_attachments::GateList,       orig_GetAttachmentList != nullptr);
     mythic_attachments::NoteLanded(mythic_attachments::GateItem,       orig_AttachmentItemSetData != nullptr);
     mythic_attachments::NoteLanded(mythic_attachments::GateCell,       orig_AttachmentCellSetData != nullptr);
-    mythic_attachments::NoteLanded(mythic_attachments::GateDisabled,   orig_IsAttachDisabledForCurrentWeapon != nullptr);
-    mythic_attachments::NoteLanded(mythic_attachments::GateLockView,   orig_UpdateEquipLockView != nullptr);
-    mythic_attachments::NoteLanded(mythic_attachments::GatePrecondition, orig_IsPreConditionSatisfied != nullptr);
-
-    //-- Block Report Evidence (see ReportBlock.h). Default ON; the SETTINGS
-    //   row is the only switch, and with it off every one of these calls the
-    //   game's own function with the caller's own arguments.
-    HOOK_LIB("libunity.so", "0xB23D358", DoReport, orig_DoReport);
-    HOOK_LIB("libunity.so", "0x8FB4B60", DoReportPlayer, orig_DoReportPlayer);
-    HOOK_LIB("libunity.so", "0x5620BAC", BeginReportPlayerPull, orig_BeginReportPlayerPull);
-    HOOK_LIB("libunity.so", "0x5620F9C", EndReportPlayerPull, orig_EndReportPlayerPull);
-
-    report_block::NoteLanded(report_block::GateDoReport, orig_DoReport != nullptr);
-    report_block::NoteLanded(report_block::GateVoice,    orig_DoReportPlayer != nullptr);
-    report_block::NoteLanded(report_block::GateBegin,    orig_BeginReportPlayerPull != nullptr);
-    report_block::NoteLanded(report_block::GateEnd,      orig_EndReportPlayerPull != nullptr);
 }

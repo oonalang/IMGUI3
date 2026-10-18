@@ -111,10 +111,8 @@ inline void DrawThrowableAlert(ImDrawList* draw, int width, int height, const Ve
     if (!ThrowAlertOn())
         return;
 
-    // A destroyed Camera keeps its managed wrapper readable, so a null check is
-    // not enough: WorldToScreenPoint would walk a cleared m_CachedPtr (@0x10).
     Camera* cam = Camera::get_main();
-    if (!Tools::IsPtrValid((void *)cam) || *(void **)((uintptr_t)cam + 0x10) == nullptr)
+    if (!cam)
         return;
 
     for (auto it = g_Throws.begin(); it != g_Throws.end();) {

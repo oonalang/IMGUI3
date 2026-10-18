@@ -201,19 +201,7 @@ sColorsESPBOT sColorsESPBOT{0};
         // question (see System/Hooks/MythicAttachments.h). ON by default - this
         // is what makes an applied mythic behave as if it were really owned.
         bool MythicAttachments = true;
-        // Block Report Evidence (System/Hooks/ReportBlock.h): while ON, the
-        // client's own report / evidence senders (ReportWindowController.
-        // DoReport, GVoiceSystem.DoReportPlayer, NetworkManager.
-        // BeginReportPlayerPull / EndReportPlayerPull) are swallowed, so no
-        // report payload leaves this phone. ON by default - the SETTINGS row
-        // is the only place it is turned off.
-        bool BlockReport = true;
 		bool Blueprints;
-        // Apply Skin On Equip (Skin/AutoEquipSkin.h): a skin picked in the GAME's
-        // own loadout is mirrored onto the gun locally, so nothing has to be
-        // searched for in the SKINS tab first. ON by default - the pick is taken
-        // from the equip gates, and nothing but the config table is written.
-        bool AutoSkin = true;
 		bool ClearDisplay;
 		bool ResetGuest;
 		bool RedWallhack;

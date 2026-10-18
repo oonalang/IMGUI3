@@ -8,14 +8,18 @@
 #include "System/Core/Bypass.h"
 
 #include "System/UI/GuestAccount.h"
-#include "System/UI/FloatingInfo.h"
-#include "System/UI/LoginGate.h"
+#include "System/UI/SearchFunction.h"
 
-// Skin/Fields.h is a fragment without a guard: include exactly this order.
-#include "Skin/Fields.h"
-#include "Skin/Thread.h"
-#include "Skin/AutoEquipSkin.h"
-#include "Skin/Camo.h"
+#include "System/UI/TextureLoader.h"
+#include "System/UI/MiscTab.h"
+#include "System/UI/SkinTab.h"
+#include "System/UI/SettingsTab.h"
+#include "System/UI/Keyboard.h"
+#include "System/UI/LoadingAnimation.h"
+#include "System/UI/Logo.h"
+#include "System/UI/FloatingInfo.h"
+#include "System/Texture/main.h"
+#include "IMAGE/astral.h"
 
 #include "AstralPrtctn/StrEnc.h"
 #include "AstralPrtctn/json.hpp"
@@ -25,9 +29,8 @@
 #include "xhook.h"
 #include "Includes/Jni_Stuff.h"
 
-// Neverlose/HexSync (IMGUI5) menu: the only UI. nl_ui is the adapter the
-// render loop calls (Init/BeginFrame/Draw/EndFrame/OnTouch/Shutdown).
-#include "nl_layout.hpp"
-#include "menu/nl_ui.hpp"
-#include "menu/nl_bindings.hpp"
-#include "menu/nl_embedded_assets.hpp"
+#include "ImGui/runtime_preview_menu.h"
+
+#include "Fonts/Iconcpp.h"
+#include "Fonts/fonts.h"
+#include "Fonts/SPECIAL.h"

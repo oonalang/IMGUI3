@@ -1,148 +1,242 @@
 #pragma once
 
-// The crash breadcrumb ("it dies after ~15 s of use" needs a name): the live
-// triggerbot state + a signal handler that appends it to a file.
-#include "CrashBreadcrumb.h"
-
 // ============================================================================
 //  NewFeatures.h  -  combat (Triggerbot) features
 //
-//  Every address/offset resolves out of "dump (GR .57).cs"
-//  (huggingface.co/datasets/jeudhehs/dump); the libanogs(.57).so.lst file in
-//  that dataset is an IDA listing of the anti-cheat library and carries no game
-//  symbols, so dump.cs is the only usable source.
+//  EVERY address/offset below was resolved from "dump (GR .57).cs"
+//  (huggingface.co/datasets/jeudhehs/dump).  The libanogs(.57).so.lst file in
+//  the same dataset is an IDA listing of the *anti-cheat* library and contains
+//  no game symbols (no CheckTarget / Breathe / Shake / Scope entries), so it is
+//  not usable as a source for gameplay functions - dump.cs is.
 //
-//  TRIGGERBOT (A-Fire): the heartbeat and StartFire/StopFire come from
-//  System/Hooks/Feats.h (hook_Weapon_Tick); the fire DECISION is A_FireScan.
+//  ---------------------------------------------------------------------------
+//  TRIGGERBOT  (A-Fire) - game-thread auto-fire.  Heartbeat and StartFire /
+//               StopFire come from the known-working reference oonalang/V3
+//               @3dd0151 (System/Hooks/Feats.h: hook_Weapon_Tick); the fire
+//               DECISION is this repo's own ShouldFire tree (below).
+//  ---------------------------------------------------------------------------
+//   THE DECISION (A_FireShouldFire -> A_FireScan): one named reason per scan,
+//   in this order, and NOT ONE of them fires on a guess.
 //
-//  HARD GATES (only these can refuse a shot):
-//    1  alive ............ Pawn::m_IsAlive @0x548; Pawn.get_IsAlive 0x51B7C40
-//    2  in a match ....... GamePlay::get_MatchGame 0x8569B10 +
-//                          BaseGame.get_IsPaused 0x9CAFDC4
-//    3  weapon present ... Pawn.get_CurrentWeapon 0x518BEA8
-//    4  trigger mode ..... Pawn.IsAiming 0x519BB10 (ADS only),
-//                          Pawn.get_IsFiring 0x51A8A38 (Firing only)
-//    5  target visible ... the two paths below
-//    6  friendlies ....... BaseGame.GetTeamPawns 0x9CAFEB4 - a living teammate
-//                          within 0.35 m of the bullet line and closer than the
-//                          target blocks the shot
+//   HARD GATES (only these can refuse a shot):
+//     1  alive ............ Pawn::m_IsAlive @0x548, second chance
+//                           Pawn.get_IsAlive() 0x51B7C40 (Slot 49)
+//     2  in a match ....... GamePlay::get_MatchGame() 0x8569B10 +
+//                           BaseGame.get_IsPaused() 0x9CAFDC4
+//     3  weapon present ... Pawn.get_CurrentWeapon() 0x518BEA8
+//     4  trigger mode ..... Pawn.IsAiming 0x519BB10 (ADS only),
+//                           Pawn.get_IsFiring 0x51A8A38 (Firing only)
+//     5  target visible ... the two paths below
+//     6  friendlies ....... BaseGame.GetTeamPawns() 0x9CAFEB4 - a living
+//                           teammate within 0.35 m of the bullet line and closer
+//                           than the target blocks the shot
 //
-//  PATH A - the enemy the dot is on: one ray from the camera through the dot's
-//    own pixel, turned into a world ray by Camera.ScreenToWorldPoint 0x5023D34
-//    (the exact inverse of the WorldToScreenPoint 0x5023B54 used to project) and
-//    traced by Physics.RaycastAll 0x506CBB0. The hit's identity comes from the
-//    game's collider registry (GamePlay.get_AttackableColliderMap 0x856A020 ->
-//    AttackableColliderMap.GetAttackableTargetForCollider 0x773FA68) with the
-//    parent-chain walk (Transform.get_parent 0x507BDEC) behind it. The dot must
-//    also PROJECT ONTO the body axis: aim-assist / fire volumes bulge past the
-//    silhouette, so a hit that merely grazes one would name him while the dot
-//    sits beside him. A body that cannot be measured is refused unless the dot
-//    sits inside its own radius of the enemy's aim point.
+//   PATH A - "the enemy the DOT is on" (the menu's dot crosshair):
+//     ONE ray from the camera THROUGH THE DOT'S OWN PIXEL, turned into the world
+//     ray by the game's own projection (Camera.ScreenToWorldPoint 0x5023D34, the
+//     exact inverse of the WorldToScreenPoint 0x5023B54 this repo projects
+//     with), traced by Physics.RaycastAll 0x506CBB0. Whichever pawn the first
+//     meaningful hit belongs to is the enemy the dot is on - centred AND
+//     unobstructed by construction, because a wall in front of him would have
+//     been the first hit. The hit's identity comes from the game's own collider
+//     registry (GamePlay.get_AttackableColliderMap 0x856A020 ->
+//     AttackableColliderMap.GetAttackableTargetForCollider 0x773FA68) with the
+//     parent-chain walk (Transform.get_parent 0x507BDEC) behind it.
+//     THE NAME IS NOT ENOUGH - the dot must also PROJECT ONTO him: the
+//     feet->head body axis is projected and the dot has to sit within the body's
+//     own WIDTH of it (0.32 m half width in pixels, from that same axis), plus
+//     the dot ray's own pixel thickness. Aim-assist / fire volumes bulge out of
+//     every silhouette, and a ray that grazes one walks up into HIS hierarchy,
+//     so without the bound the trigger fired with the dot BESIDE the enemy.
+//     A dot whose body cannot be measured that way is refused unless it is on
+//     the enemy's aim point inside the drawn dot's own radius.
 //
-//  PATH B - the crosshair zone: BaseGame::EnemyPawns @0x178 -> Pawn.get_TeamId
-//    0x51B89CC -> alive -> not self -> hitbox walk (head bone 0x308, chest 0.72
-//    and waist 0.45 of the feet->head axis, mesh root 0x628) projects inside the
-//    px zone (Camera.WorldToScreenPoint 0x5023B54), then the visibility ray.
+//   PATH B - the crosshair zone, for a crosshair that is near but not exactly on
+//     the enemy: BaseGame::EnemyPawns @0x178 -> team id (Pawn.get_TeamId
+//     0x51B89CC) -> alive -> NOT self -> the hitbox walk (head bone 0x308, chest
+//     at 0.72 of the feet->head axis, waist at 0.45, mesh root 0x628) must
+//     project inside the px zone (Camera.WorldToScreenPoint 0x5023B54), then the
+//     visibility ray below.
 //
-//  VISIBILITY (both paths): the nearest meaningful hit on the shot line must BE
-//    the pawn. Physics.RaycastAll 0x506CBB0 (dump.cs 174011) returns every hit
-//    in the segment, walked nearest-first, and two classes are skipped:
-//      - a hit in the LOCAL player's hierarchy. The camera sits inside the local
-//        pawn's own collider stack, so PhysX reports an initial-overlap hit at
-//        ~0 m; counting it vetoed every shot as "wall in the way".
-//      - a non-target TRIGGER collider (zone / streak / pickup volumes are
-//        invisible, so they cannot be what the player sees in the way).
-//    First remaining hit is the target -> clear; anything else -> blocked, the
-//    wall test never guesses by distance. No meaningful hit -> clear. A hit that
-//    cannot be named -> bounded stem ray that stops short of the target's own
-//    collider (0.80 of the hitbox radius). No RaycastAll symbol -> single
-//    nearest-hit Raycast 0x506C188. No ray symbol at all -> blocked (fail
-//    closed, never shoots walls).
-//    NEAR-ORIGIN ESCAPE: a first meaningful blocker within kSelfExclusion (15 cm)
-//    of the camera is geometry the camera is clipping, so the game's own
-//    occlusion verdict decides instead (Pawn.get_LastOccVisible 0x51BA800, or
-//    RecentlyRendered 0x51BA7E8). Never consulted at normal range.
+//   VISIBILITY (both paths): the nearest MEANINGFUL thing on the shot line
+//     must BE the pawn. Physics.RaycastAll(origin, dir, maxDistance) 0x506CBB0
+//     (dump.cs 174011) returns EVERY hit in the segment, so the line is walked
+//     nearest-first and two classes of hit are SKIPPED before the verdict:
+//       hit in the LOCAL player's hierarchy -> skipped. The camera sits inside
+//                                   the local pawn's own collider stack (head /
+//                                   upper-body hitbox, aim-assist volume,
+//                                   weapon), and PhysX reports an initial-
+//                                   overlap hit at distance ~0 for the
+//                                   collider containing the ray origin. Device
+//                                   proof from the broken build:
+//                                   "LOShit=0.00m Rays=0/1 Fire=0" - the ray's
+//                                   first "hit" was OUR OWN BODY a few cm from
+//                                   the camera, so every shot was vetoed as
+//                                   "wall in the way" while the enemy stood in
+//                                   the open 3.3 m away.
+//       non-target TRIGGER collider -> skipped. Trigger volumes (zone / streak
+//                                   / pickup volumes - the dump has Pawn
+//                                   m_IsInStreakTriggerVolume etc.) are
+//                                   invisible; they cannot be what the player
+//                                   sees in the way.
+//       first remaining hit IS the target -> clear (his body, his gear, even an
+//                                   arm reaching toward the muzzle - the bullet
+//                                   reaches HIM either way)
+//       first remaining hit is anything else -> blocked. A wall blocks however
+//                                   THIN it is, because the test never guesses
+//                                   from a distance. (The old kRaySlack = 0.40
+//                                   rule accepted any hit within 40 cm of the
+//                                   aim point, which is exactly how a thin
+//                                   panel in front of the target got shot
+//                                   through.)
+//       no meaningful hit        -> clear
+//       hit cannot be named      -> conservative stem test: a bounded ray that
+//                                   STOPS SHORT of the target's own collider
+//                                   surface (0.80 of the hitbox radius), so any
+//                                   hit at all is geometry in front of him
+//       no RaycastAll symbol     -> single nearest-hit Raycast 0x506C188 (same
+//                                   naming rules; a self/trigger hit cannot be
+//                                   skipped there, so it falls through to the
+//                                   occlusion escape below)
+//       no ray symbol at all     -> blocked (fail closed, never shoots walls)
+//     NEAR-ORIGIN ESCAPE: when the first meaningful blocker sits within
+//     kSelfExclusion (15 cm) of the camera it cannot honestly answer "is there
+//     a wall between me and a target 3 m away" - it is geometry the camera is
+//     clipping. In that ONE case the game's own occlusion verdict decides:
+//     Pawn.get_LastOccVisible 0x51BA800 (Slot 235, last frame's occlusion-
+//     culling result; RecentlyRendered 0x51BA7E8 second chance) true -> clear
+//     (the game rendered him, the player can see him), false -> blocked. It is
+//     NEVER consulted for a blocker at normal range, so a real wall keeps
+//     vetoing the shot exactly as before.
 //
-//  ADVISORY ONLY - measured every scan, shown in the menu, never refuses:
-//    Weapon.InSwitchWeaponState 0x512724C / HasSwitchingState 0x5124C70,
-//    Weapon.AmmoCanFire 0x50EB73C, Weapon.get_ClipAmmoCount 0x50EC614,
-//    Weapon.CanFire 0x5126CC4 (a gate only while "Require Ready" is on, OFF by
-//      default), Weapon.RealFireInterval 0x50EC250 (never enforced),
-//    lead (Weapon.get_CurrentFireComponent 0x50EB1E4 ->
-//      WeaponFireComponent.get_BulletInitSpeed 0xC14A158, Pawn.get_Velocity
-//      0x51B38CC) with a covered lead point falling back to the aim point,
-//    spread (Weapon.get_ShotSpreadSize 0x5109B68, Camera.get_fieldOfView
-//      0x5021F7C) and bullet travel time,
-//    diagnostics Weapon.get_AimingTarget 0x510EAAC /
-//      get_CurrentAimingTargetDis 0x510EABC (the game's own aim answer).
+//   ADVISORY ONLY - measured every scan, shown in the menu, never refuses:
+//     Weapon.InSwitchWeaponState 0x512724C / HasSwitchingState 0x5124C70,
+//     Weapon.AmmoCanFire 0x50EB73C, Weapon.get_ClipAmmoCount 0x50EC614,
+//     Weapon.CanFire() 0x5126CC4 (Slot 269 - only a gate while "Require Ready"
+//       is on, which is OFF by default),
+//     Weapon.RealFireInterval 0x50EC250 (the weapon's own rate, NOT enforced:
+//       there is no artificial re-press delay any more),
+//     lead (Weapon.get_CurrentFireComponent 0x50EB1E4 ->
+//       WeaponFireComponent.get_BulletInitSpeed 0xC14A158, Pawn.get_Velocity
+//       0x51B38CC): the aim point moves ahead of a moving target and a covered
+//       lead point falls back to the aim point instead of refusing the shot,
+//     spread (Weapon.get_ShotSpreadSize 0x5109B68 with the camera focal length
+//       from Camera.get_fieldOfView 0x5021F7C) and bullet travel time.
+//   Diagnostics: Weapon.get_AimingTarget 0x510EAAC /
+//                Weapon.get_CurrentAimingTargetDis 0x510EABC (the game's own
+//                aim answer, shown in the menu and used as a tie-break)
+//  ---------------------------------------------------------------------------
+//   Driver:  Weapon::Tick     RVA 0x5114C34  (Slot 33)  <- game-thread tick
+//            Weapon::StartFire   RVA 0x5123C84  (Slot 55)  called via raw ptr
+//            Weapon::StopFire    RVA 0x5124EAC  (Slot 73)  called via raw ptr
+//            (StartFire/StopFire are NEVER inline-hooked - exactly like V3.)
 //
-//  Driver: Weapon::Tick    RVA 0x5114C34 (Slot 33) <- game-thread tick
-//          Weapon::StartFire RVA 0x5123C84 (Slot 55), called via raw pointer
-//          Weapon::StopFire  RVA 0x5124EAC (Slot 73), called via raw pointer
-//          (StartFire/StopFire are NEVER inline-hooked.)
+//   Enemy scan - only accessors this repo already proved in-game (DrawESP.h):
+//     Gameplay::get_MatchGame()   RVA 0x8569B10   -> BaseGame / MatchGame*
+//     Gameplay::get_LocalPawn()   RVA 0x856AA08   -> Pawn*
+//     BaseGame::EnemyPawns        offset 0x178    -> List<Pawn*>*
+//       -> List<Pawn*>::getItems() / getSize()   (the ELEMENT array)
+//     Pawn::m_IsAlive             offset 0x548    (field read, as in DrawESP)
+//     Pawn::m_HeadBone            offset 0x308    Transform* -> get_position()
+//     Pawn::m_Mesh                offset 0x628    Transform* -> get_position()
+//     Camera::get_main()          RVA 0x5024010
+//     Camera::WorldToScreenPoint  RVA 0x5023B54   (the 1-arg overload - see the
+//                                 note above A_FireScan's candidate loop)
+//     Pawn::IsAiming()            RVA 0x519BB10   the "ADS only" mode's primary
+//                                 source - called again, but ONLY on a pawn that
+//                                 passed the same m_CachedPtr liveness check every
+//                                 other native call in this file goes through.
+//                                 (The crash that removed this call was a GUARD
+//                                 bug: the old gate validated the pawn with
+//                                 Tools::IsPtrValid() alone, which passes for a
+//                                 pawn the game already Destroyed.) A second,
+//                                 independent source
+//                                 - WeaponFireComponent_Instant::get_IsAiming
+//                                 0xC9AF4E0 on the held weapon's fire component -
+//                                 is asked as well, and when NEITHER can answer the
+//                                 mode FAILS OPEN and says so in the panel instead
+//                                 of silently blocking every shot. See A_FireAdsGate.
+//     Pawn::get_IsFiring()        RVA 0x51A8A38   ("Firing only" mode)
 //
-//  Enemy scan - accessors already proven in-game by DrawESP.h:
-//    Gameplay::get_MatchGame 0x8569B10      -> BaseGame / MatchGame*
-//    Gameplay::get_LocalPawn 0x856AA08      -> Pawn*
-//    BaseGame::EnemyPawns     offset 0x178  -> List<Pawn*> (getItems/getSize)
-//    Pawn::m_IsAlive          0x548  field read
-//    Pawn::m_HeadBone         0x308  Transform* -> get_position()
-//    Pawn::m_Mesh             0x628  Transform* -> get_position()
-//    Camera::get_main         0x5024010
-//    Camera::WorldToScreenPoint 0x5023B54   (1-arg overload)
-//    Pawn::IsAiming           0x519BB10   "ADS only", called only on a pawn that
-//      passed the m_CachedPtr liveness check; the second, independent source is
-//      WeaponFireComponent_Instant::get_IsAiming 0xC9AF4E0 on the held weapon,
-//      and when neither answers the mode FAILS OPEN (see A_FireAdsGate)
-//    Pawn::get_IsFiring        0x51A8A38  ("Firing only")
+//   The LOS rays used by the tree (dump.cs line -> RVA):
+//     Physics.Raycast(origin, dir, out RaycastHit hit, float maxDistance)
+//       0x506C188 (dump.cs 173930)  <- nearest hit + an explicit limit
+//     Physics.Raycast(origin, dir, float maxDistance)
+//       0x506BF60 (dump.cs 173912)  <- the same limit, no out struct
+//     0x506C1E4 (dump.cs 173933) is the 3-parameter overload with NO maxDistance
+//     and is no longer used for the verdict.
+//   RaycastHit (dump.cs 175618): m_FaceID @0x18, m_Distance @0x1C, m_UV @0x20,
+//     m_Collider @0x28 (the field right after m_UV).
 //
-//  LOS rays (dump.cs line -> RVA):
-//    Physics.Raycast(origin, dir, out RaycastHit hit, maxDistance)
-//      0x506C188 (dump.cs 173930) - nearest hit + explicit limit
-//    Physics.Raycast(origin, dir, maxDistance)
-//      0x506BF60 (dump.cs 173912) - same, no out struct
-//    0x506C1E4 (dump.cs 173933) is the 3-parameter overload with NO maxDistance
-//    and is not used for the verdict.
-//  RaycastHit (dump.cs 175618): m_FaceID @0x18, m_Distance @0x1C, m_UV @0x20,
-//    m_Collider @0x28.
+//   The old CheckTarget @0xC9C1B50 / HasEnemyInPort @0xC9C13F8 /
+//   WeaponFireComponent::StartFire @0xC14C29C hooks are gone: they only run on
+//   the game's own aim-assist path (too late for an auto-fire).
 //
-//  HOOK SAFETY: inline trampolines on tiny shared callers corrupt game state
-//  (see DrawESP.h). Every target here is a large function and every write is
-//  gated on "feature ON + local player + scoping", so the hooks are pass-through
-//  no-ops while the features are off.
+//   Pawn (TypeDefIndex 16146)
+//     m_IsAlive            0x548
+//
+//  ---------------------------------------------------------------------------
+//  STABLE SCOPE was removed with its UI; its four hooks (GetBreatheTremblingPos
+//  0xC9BD880, CollectWeaponShakeOffsets 0x9B774C0, UpdateFirstPersonCameraOffset
+//  0x51C489C, OnJumpHitGround 0x8599460) are gone. NoDrift now = the
+//  UpdateBreatheTrembling patch in Main.cpp (Patches.NoDrift).
+//  ---------------------------------------------------------------------------
+//
+//  HOOK SAFETY: the repo already learned (DrawESP.h comment block) that Dobby
+//  inline trampolines on tiny shared callers corrupt game state.  Every target
+//  used here is a large function, and every write is gated on
+//  "feature ON + local player + scoping", so with the features off the hooks
+//  are pass-through and NOTHING is written (same principle as the
+//  edge-triggered NoHitFlinch / NoDrift patches in Main.cpp).
 // ============================================================================
+
+//  ---------------------------------------------------------------------------
+//  FIRING TIMING (Task 3) - the .57 dump has NO m_HipfireDelay / m_NextFireTime
+//  for guns (NextFireTime only exists on WeaponFireComponent_Melee @0x408), so
+//  the three delays resolve to these dump-verified symbols:
 //
-//  FIRING TIMING - the .57 dump has no m_HipfireDelay / m_NextFireTime for guns
-//  (NextFireTime exists only on WeaponFireComponent_Melee @0x408):
+//   3.1 No Sprint Fire Delay
+//        Weapon::get_DelaySprintFire()  RVA 0x513CBC4
+//        Weapon.m_DelaySprintFire @0x9F8 / WeaponData.DelaySprintFire @0x2C8
+//        -> sprint-out timer that blocks firing.
+//        The Feats.h hook on that getter returns ~0 for the LOCAL player's held
+//        weapon only, and its body is a PURE pointer compare against a cache
+//        refreshed from the local pawn's tick. It used to resolve the local pawn
+//        and call Pawn.get_CurrentWeapon() from inside the getter - a native call
+//        on a possibly destroyed pawn - which is what crashed this option.
 //
-//   No Sprint Fire Delay
-//     Weapon::get_DelaySprintFire 0x513CBC4
-//     Weapon.m_DelaySprintFire @0x9F8 / WeaponData.DelaySprintFire @0x2C8
-//     The Feats.h hook returns ~0 for the LOCAL player's held weapon only and
-//     its body is a pure pointer compare against a cache refreshed from the
-//     local pawn's tick - no native call from inside the getter.
+//   3.3 No Fire Delay (re-fire cooldown)
+//        Weapon::get_FireInterval()     RVA 0x5105C74  (shot-to-shot cooldown)
+//        Weapon::get_FireBoltTime()     RVA 0x51237F4  (pump/bolt/chamber time,
+//                                       WeaponFireComponent.m_FireBoltTime @0xEC)
+//        -> only the interval is shortened; ammo/reload/fire mode are untouched
+//           because CanFire()/AmmoCanFire() are NEVER forced here.
 //
-//   No Fire Delay (re-fire cooldown)
-//     Weapon::get_FireInterval 0x5105C74 (shot-to-shot), get_FireBoltTime
-//     0x51237F4 (pump/bolt, WeaponFireComponent.m_FireBoltTime @0xEC).
-//     Only the interval is shortened; CanFire/AmmoCanFire are NEVER forced.
+//   3.2 No Hipfire Delay
+//        Weapon::get_UseGetReadyTime()    RVA 0x50E9F60  (m_UseGetReadyTime @0xDF)
+//        Weapon::get_SpringFireGetReady() RVA 0x50E9F28  (m_SpringFireGetReady @0xDC)
+//        Weapon::get_GetReadyTime()       RVA 0x514D2C8  (m_GetReadyTime @0xBA0)
+//        -> this build implements the hipfire "wind-up / readiness" as the
+//           GetReady / SpringFireGetReady gate on Weapon.  There is no
+//           dedicated hipfire timer in the dump, so these are the gate.
 //
-//   No Hipfire Delay
-//     Weapon::get_UseGetReadyTime 0x50E9F60 (m_UseGetReadyTime @0xDF),
-//     get_SpringFireGetReady 0x50E9F28 (m_SpringFireGetReady @0xDC),
-//     get_GetReadyTime 0x514D2C8 (m_GetReadyTime @0xBA0) - there is no
-//     dedicated hipfire timer in the dump, so the GetReady gate is the gate.
+//        0x513CBC4 / 0x5105C74 / 0x51237F4 are ALREADY hooked once by
+//        System/Hooks/Feats.h (Firerate).  We do not double-hook the same
+//        prologue (two trampolines on one address is what crashed the game
+//        before) - those three hooks call NoSprintFireDelayActive() /
+//        NoFireDelayActive() from this file instead.
 //
-//   0x513CBC4 / 0x5105C74 / 0x51237F4 are already hooked once by Feats.h
-//   (Firerate); two trampolines on one address crashes the game, so those hooks
-//   call NoSprintFireDelayActive() / NoFireDelayActive() from this file.
-//
-//   The two hipfire getters are NOT hooked: they are 8-byte leaf getters
-//   (ldrb w0,[x0,#..] ; ret) whose immediate neighbours are
-//   set_UseGetReadyTime 0x50E9F68 / set_SpringFireGetReady 0x50E9F30, which the
-//   game calls while it copies weapon data. A64 hooking writes a 16-byte stub
-//   there and would clobber them, so Main.cpp forces them false with 8-byte
-//   patches (Patches.NoHipfireUseGetReadyTime / NoHipfireSpringFireGetReady).
+//        The two hipfire getters are NOT hooked: get_UseGetReadyTime @0x50E9F60
+//        and get_SpringFireGetReady @0x50E9F28 are 8-byte leaf getters
+//        (ldrb w0,[x0,#..] ; ret) whose *immediate* neighbours are
+//        set_UseGetReadyTime @0x50E9F68 and set_SpringFireGetReady @0x50E9F30.
+//        A64 inline hooking (hook()/HOOK_LIB) writes a 16-byte LDR/BR stub in
+//        place whenever the replacement is more than +/-128MB away, so it
+//        overwrote those setters - and the game calls them while it copies
+//        weapon data, i.e. exactly when a match is joined.  They are forced to
+//        false with 8-byte patches from Main.cpp instead (Patches.
+//        NoHipfireUseGetReadyTime / NoHipfireSpringFireGetReady), the same
+//        mechanism the repo already uses for the other tiny functions.
 //
 #include <random>
 #include <chrono>
@@ -155,6 +249,7 @@
 #include "../../IL2CppSDKGenerator/BasicStructs/Vector2.h"
 #include "../../IL2CppSDKGenerator/IL2Cpp/Tools.h"
 #include "../../IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
+#include "../../foxcheats/include/ScanEngine.hpp"
 #include "../../Includes/Utils.h"
 #include "../../Includes/Macros.h"      // hook()/HOOK_LIB = A64HookFunction (safe for tiny getters)
 #include "../StructGame/StructGame.h"   // Pawn / GamePlay + Defines.h globals
@@ -179,20 +274,16 @@ namespace NewFeatures
 
         constexpr uintptr_t WeaponShake_Owner               = 0x78;  // WeaponShakeController::m_Pawn
 
-        // Weapon aiming state as raw FIELDS. VERIFIED against dumps/dump.cs,
-        // class Weapon ("public class Weapon : Inventory" at line 737390):
-        //   m_AimingPercentage private float // 0x460   dump.cs 737588
-        //   m_IsAiming         private bool  // 0xC21   dump.cs 738043
-        // An earlier note here called them unconfirmed; that was wrong - both are
-        // in the dump this repo ships. They stay DISPLAY-ONLY for the ADS verdict
-        // (the gate answers from the game's own getters, so a build with a drifted
-        // layout cannot turn "ADS only" into "always" or "never"), but they are
-        // safe by construction - two loads at fixed offsets on a weapon the
-        // liveness check already accepted - which is why the aim paths outside the
-        // trigger read exactly these instead of calling Pawn.IsAiming(). See
-        // StructSDK.h's Weapon::m_IsAiming / Pawn::get_IsAimingSafe.
-        constexpr uintptr_t Weapon_m_IsAiming               = 0xC21; // bool
-        constexpr uintptr_t Weapon_m_AimingPercentage       = 0x460; // float
+        // Weapon aiming state as raw FIELDS. These two offsets are NOT confirmed
+        // by any dump this repo still has: they arrived together with the attempt
+        // to make "ADS only" work without calling the game, and they are the prime
+        // suspect for that mode never firing - a wrong offset hands the gate an
+        // arbitrary byte, which makes the mode either block every shot or fire at
+        // random. They are DISPLAY-ONLY now (the panel prints them so they can be
+        // watched on device); the ADS verdict comes from the game's own getters
+        // (A_FireAdsGate).
+        constexpr uintptr_t Weapon_m_IsAiming               = 0xC21; // bool  (unverified)
+        constexpr uintptr_t Weapon_m_AimingPercentage       = 0x460; // float (unverified)
     }
 
     // ---------------------------------------------------------------------
@@ -317,15 +408,6 @@ namespace NewFeatures
         constexpr uintptr_t BaseGame_GetTeamPawns            = 0x9CAFEB4; // PawnList*() BaseGame (dump 702853)
         constexpr uintptr_t BaseGame_get_IsPaused            = 0x9CAFDC4; // bool()  BaseGame (dump 702829)
         constexpr uintptr_t Pawn_get_IsAlive                 = 0x51B7C40; // bool()  Pawn Slot 49 (dump 714397)
-        // Weapon.get_IsFiring 0x50EB644 (dump 739309, RVA header 739308): the
-        // weapon's OWN fire-request flag. Weapon.set_IsFiring is the last thing
-        // StartFire's write does - the very next Weapon::Tick reads it back - so
-        // when it is still true on the following scan, this build's last press
-        // reached the weapon and the weapon has not consumed it yet. It is the
-        // cheapest crash guard available, because a weapon that never answers it
-        // (a symbol that did not resolve answers false) only disables the guard,
-        // never the trigger.
-        constexpr uintptr_t Weapon_get_IsFiring              = 0x50EB644; // bool()  Weapon (dump 739309)
         constexpr uintptr_t Pawn_get_LastFireTime            = 0x51B843C; // float() Pawn (dump 714442, diagnostics)
 
         // Pawn velocity for target leading.
@@ -382,13 +464,23 @@ namespace NewFeatures
 
     // ---- Unity object liveness --------------------------------------------
     // Tools::IsPtrValid only answers "is this memory mapped and readable". A
-    // Destroyed UnityEngine.Object still has its managed wrapper in readable
-    // heap, so every guard passes while the native object is gone; anything
-    // asked of it (Transform.get_position, Pawn.get_TeamId, Weapon.StartFire)
-    // walks the cleared pointer and takes the client down. The native side is
-    // gone exactly when Object.m_CachedPtr @0x10 (dump.cs 169503) is 0, and
-    // every Pawn / Weapon / Transform / Collider derives from Object, so one
-    // offset covers all of them.
+    // UnityEngine.Object the game has already Destroyed still has its MANAGED
+    // wrapper sitting in readable heap, so every pointer guard passes, while the
+    // native object behind it is gone: Object.m_CachedPtr (dump.cs 169503,
+    // Object TypeDefIndex 1761) is cleared the moment the native side dies.
+    // Asking such an object for anything - Transform.get_position,
+    // Component.get_transform, Pawn.get_TeamId, Weapon.StartFire - walks that
+    // null native pointer and takes the client down.
+    //
+    // The enemy / team pawn lists keep an entry for a few frames after a pawn
+    // despawns (death, respawn, match end), so this is exactly the entity-
+    // detection path of a real match: the name-walk calls get_transform() on
+    // every pawn in the list, and the aim-point walk calls
+    // get_HeadPosition() / get_transform()->get_position() on every pawn under
+    // the crosshair. A readable-but-dead pawn passed every earlier check and
+    // crashed on the first native call.
+    // UnityEngine.Object.m_CachedPtr (dump.cs 169503) - every Pawn / Weapon /
+    // Transform / Collider derives from Object, so one offset covers all of them.
     constexpr size_t AF_OBJ_CACHEDPTR = 0x10;
 
     inline bool A_FireObjectAlive(void *obj)
@@ -396,21 +488,6 @@ namespace NewFeatures
         if (!Tools::IsPtrValid(obj)) return false;
         void *cached = *(void **)((uintptr_t)obj + AF_OBJ_CACHEDPTR);
         return Tools::IsPtrValid(cached);
-    }
-
-    // The il2cpp object header's first word is the object's own Il2CppClass*.
-    // m_CachedPtr answers "is this slot still a live managed object"; the class
-    // answers the different question "is it still the SAME KIND of object".
-    // A slot freed and recycled for another type passes the first check, and a
-    // native call made through it then runs the wrong class' code - a crash
-    // class that only appears once enough objects have died and been reused,
-    // i.e. after a while of playing, not on the first shot.
-    constexpr size_t AF_OBJ_KLASS = 0x0;
-    inline void *A_FireObjectKind(void *obj)
-    {
-        if (!Tools::IsPtrValid(obj)) return nullptr;
-        void *klass = *(void **)((uintptr_t)obj + AF_OBJ_KLASS);
-        return Tools::IsPtrValid(klass) ? klass : nullptr;
     }
 
     // The managed pawn lists hand out raw 8-byte object references. An il2cpp
@@ -457,9 +534,6 @@ namespace NewFeatures
     inline bool   (*fn_PawnIsAiming)(void *)                = nullptr;
     inline void  *(*fn_WeaponGetCurrentFireComponent)(void *) = nullptr;
     inline bool   (*fn_FireComponentGetIsAiming)(void *)     = nullptr;
-    // Weapon.get_IsFiring 0x50EB644 - re-read every scan through the HOOKED
-    // Weapon::Tick, so always safe to call on a weapon that just ticked (below).
-    inline bool   (*fn_WeaponIsFiring)(void *)              = nullptr;
 
     // A hook only ever touches the local player
     inline bool IsLocalFireComponent(void *fireComponent)
@@ -615,17 +689,31 @@ namespace NewFeatures
     inline void *(*fn_BaseGameGetTeamPawns)(void *) = nullptr;        // 0x9CAFEB4
     inline bool  (*fn_BaseGameIsPaused)(void *) = nullptr;            // 0x9CAFDC4
     inline bool  (*fn_PawnIsAlive)(void *) = nullptr;                 // 0x51B7C40 (second chance only)
-    // ====================================================================
+    // =====================================================================
     //  ENHANCED TRIGGERBOT HELPERS
     //
     //  The scan below is a decision TREE, not a chain of filters: every branch
-    //  either fires or returns ONE named reason (FireBlock) why it does not,
-    //  and the menu prints that reason live. A candidate is fired at only when
-    //  it survives all of: local player / weapon readiness, trigger mode,
-    //  target acquisition and validity, line of sight, lead and travel time,
-    //  spread containment, and friendlies in the line of fire - and only while
-    //  the crosshair keeps covering it.
-    // ====================================================================
+    //  either fires or returns ONE named reason (FireBlock) why it does not.
+    //  The menu prints that reason live, so "why did it not shoot" is never a
+    //  guess again.
+    //
+    //  Every gate answers a question the shot has to survive, in this order:
+    //    1. local player / weapon readiness   (alive, in a match, not paused,
+    //       weapon valid, not switching, ammo > 0, fire interval elapsed,
+    //       the game's own Weapon.CanFire())
+    //    2. trigger mode                      (Always / ADS only / Firing only)
+    //    3. target acquisition & validity     (enemy, alive, not self, not a
+    //       teammate, his on-screen BODY inside the crosshair zone)
+    //    4. line of sight                     (camera -> aim point, raycast)
+    //    5. rangeless + lead                  (travel time, predicted point,
+    //       the predicted point's own line of sight)
+    //    6. spread / recoil containment       (does the cone still cover the
+    //       hitbox where the target will be when the bullet arrives?)
+    //    7. friendly in the line of fire
+    //  Only a candidate that survives all seven is fired at, and only while the
+    //  crosshair keeps covering it (the trigger is released the moment it does
+    //  not).
+    // =====================================================================
 
     // Weapon fire mode. Weapon has no "get_FireMode" in the dump; the three
     // flags are asked one by one:
@@ -712,16 +800,6 @@ namespace NewFeatures
         // still be on the enemy (shoulders + gear). Deliberately NOT the half
         // HEIGHT - a body is tall, not round (see the path A bound below).
         static constexpr float kBodyHalfWidthM  = 0.32f;
-        // Path A's model bound, applied per HEIGHT of the body instead of once
-        // for the whole silhouette (see A_FireBodyHalfWidthM below): how much
-        // of the body's height span the dot may miss by (a hand, a backpack)
-        // and how many pixels of slack the projected profile gets.
-        static constexpr float kModelSpanMargin  = 0.04f;
-        static constexpr float kModelTolerancePx = 1.0f;
-        // m -> px floor on the profile: at 150 m an enemy's shoulders are only
-        // a couple of pixels wide, and a bound that shrinks below the dot's own
-        // size would refuse every distant shot instead of keeping it honest.
-        static constexpr float kModelMinPx       = 2.5f;
         static constexpr float kFriendlyRadius  = 0.35f;   // m - teammate capsule half width
         static constexpr float kSelfExclusion    = 0.15f;   // m - a blocker this close to the
                                                            // camera only proves the camera is
@@ -958,126 +1036,6 @@ namespace NewFeatures
         return ap;
     }
 
-    // ---- The model's own silhouette ---------------------------------------
-    // Half width (metres) of a standing soldier at `t`, where t is the fraction
-    // of the feet->head axis: 0 = feet, 1 = head. These are the model's own
-    // proportions - a human is NOT a 0.32 m cylinder all the way up:
-    //
-    //     t      part                 half width
-    //     0.00   ankles / boots        0.09 m
-    //     0.12   shins                0.10 m
-    //     0.28   knees                0.12 m
-    //     0.45   thighs               0.15 m
-    //     0.55   hips                 0.20 m
-    //     0.66   waist                0.19 m
-    //     0.78   chest                0.24 m
-    //     0.86   shoulders (+gear)    0.27 m
-    //     0.93   neck                 0.15 m
-    //     1.00   head                 0.13 m
-    //
-    // The single kBodyHalfWidthM (=0.32 m) this replaces was the SHOULDER width
-    // applied to every point of the body, so a dot beside his head, his waist or
-    // his shins sat "within the width" and the trigger fired at nothing - the
-    // "it still shoots even though I am not on his body" report. Widest at the
-    // shoulders, much narrower everywhere else, is what the silhouette actually
-    // is.
-    inline float A_FireBodyHalfWidthM(float t)
-    {
-        struct Row { float t; float halfWidth; };
-        static const Row kRows[] = {
-            { 0.00f, 0.09f }, { 0.12f, 0.10f }, { 0.28f, 0.12f },
-            { 0.45f, 0.15f }, { 0.55f, 0.20f }, { 0.66f, 0.19f },
-            { 0.78f, 0.24f }, { 0.86f, 0.27f }, { 0.93f, 0.15f },
-            { 1.00f, 0.13f },
-        };
-        constexpr int kCount = (int)(sizeof(kRows) / sizeof(kRows[0]));
-        if (!(t > 0.0f)) return kRows[0].halfWidth;
-        if (t >= 1.0f)  return kRows[kCount - 1].halfWidth;
-        for (int i = 1; i < kCount; i++) {
-            if (t <= kRows[i].t) {
-                const float span = kRows[i].t - kRows[i - 1].t;
-                const float f    = span > 0.0f ? (t - kRows[i - 1].t) / span : 0.0f;
-                return kRows[i - 1].halfWidth + f * (kRows[i].halfWidth - kRows[i - 1].halfWidth);
-            }
-        }
-        return kRows[kCount - 1].halfWidth;
-    }
-
-    // ---- "is the dot ON the model?" ---------------------------------------
-    // ONE answer, used by BOTH scan paths (the dot ray's path A and the zone
-    // scan), because "the dot is on his body" has to mean the same thing in
-    // both or the trigger still fires beside him through whichever one runs.
-    //
-    // Inputs are the enemy's head/feet in WORLD and on SCREEN (already
-    // projected), plus the dot. Everything else is derived from those - no
-    // screen size, no field of view, no bone offset:
-    //   * px per metre comes from the SAME axis (its projected length over its
-    //     world length), so the bound is physical at any distance;
-    //   * the dot's height fraction t decides WHERE on him it is, and the model
-    //     profile is read at exactly that height;
-    //   * a dot past his head or past his feet is OUTSIDE, never folded onto the
-    //     nearest end of the axis (that fold is what let a dot above his head
-    //     count as "on his shoulders").
-    enum AF_BodyFit
-    {
-        AF_BodyUnmeasurable = 0,   // his body did not project: caller decides
-        AF_BodyInside       = 1,   // the dot is on the silhouette at that height
-        AF_BodyOutside      = 2    // beside him / above his head / below his feet
-    };
-
-    struct AF_BodyProbe
-    {
-        int   fit;        // AF_BodyFit
-        float t;          // the dot's height fraction on him (0 feet .. 1 head)
-        float limitPx;    // the silhouette's half width in px AT that height
-        float latPx;      // the dot's lateral px from his axis at that height
-        float axisPx;     // his projected feet->head length in px
-    };
-
-    inline AF_BodyProbe A_FireFitToBody(const Vector3 &headW, const Vector3 &feetW,
-                                        const Vector3 &scHead, const Vector3 &scFeet,
-                                        float cx, float cy)
-    {
-        AF_BodyProbe p{};
-        p.fit = AF_BodyUnmeasurable;
-
-        const float axX    = scHead.x - scFeet.x;
-        const float axY    = scHead.y - scFeet.y;
-        const float axisPx = sqrtf(axX * axX + axY * axY);
-        const float axisM  = Vector3::Distance(headW, feetW);
-        if (!(axisPx > 0.5f) || !(axisM > 0.3f))
-            return p;                       // no usable axis: nothing to measure
-
-        const float len2     = axX * axX + axY * axY;
-        const float tRaw     = ((cx - scFeet.x) * axX + (cy - scFeet.y) * axY) / len2;
-        const float tClamped = tRaw < 0.0f ? 0.0f : (tRaw > 1.0f ? 1.0f : tRaw);
-
-        p.t       = tRaw;
-        p.axisPx  = axisPx;
-        p.limitPx = A_FireBodyHalfWidthM(tClamped) * (axisPx / axisM) +
-                    A_FireTune::kModelTolerancePx;
-        if (p.limitPx < A_FireTune::kModelMinPx)
-            p.limitPx = A_FireTune::kModelMinPx;   // never a sub-pixel target
-
-        if (tRaw < -A_FireTune::kModelSpanMargin ||
-            tRaw >  1.0f + A_FireTune::kModelSpanMargin) {
-            // above his head / below his feet: not his body, however close
-            p.fit   = AF_BodyOutside;
-            p.latPx = p.limitPx + 1.0f;
-            return p;
-        }
-
-        // Perpendicular distance to his axis AT HIS OWN HEIGHT, not to the
-        // nearest end of the segment.
-        const float projX = scFeet.x + axX * tClamped;
-        const float projY = scFeet.y + axY * tClamped;
-        const float dxp   = cx - projX;
-        const float dyp   = cy - projY;
-        p.latPx = sqrtf(dxp * dxp + dyp * dyp);
-        p.fit   = (p.latPx <= p.limitPx) ? AF_BodyInside : AF_BodyOutside;
-        return p;
-    }
-
     // ---- Weapon readiness -------------------------------------------------
     // All of these sit on the same object the scan already holds (a Weapon*):
     //   Weapon.AmmoCanFire()           0x50EB73C  dump 739774
@@ -1115,21 +1073,39 @@ namespace NewFeatures
     }
 
     // ---- "ADS only" (TriggerbotMode 1): is the LOCAL player scoping? ---------
-    // Two independent, dump-verified sources are asked and the mode lets the
-    // shot through when EITHER says "scoped":
-    //   1. Pawn::IsAiming 0x519BB10 on the LOCAL PAWN - the game's own scoping
-    //      flag, and it answers for every weapon, knives and mid-equip included.
-    //      Safe to call because the guard is A_FireObjectAlive() (the
-    //      m_CachedPtr check), not Tools::IsPtrValid alone - the old guard bug
-    //      is what crashed this before.
-    //   2. WeaponFireComponent_Instant::get_IsAiming 0xC9AF4E0 on the held
+    // Two independent, dump-verified sources are asked, cheapest and most general
+    // first, and the mode lets the shot through when EITHER says "scoped":
+    //
+    //   1. Pawn::IsAiming() 0x519BB10 on the LOCAL PAWN.
+    //      The game's own scoping flag - the symbol the reference triggerbot used
+    //      and the one the .57 dump labels "the local player is scoping /
+    //      hardscoping". It answers for every weapon, including ones with no fire
+    //      component yet (knives, launchers, a weapon mid-equip).
+    //      WHY IT IS SAFE TO CALL AGAIN: the crash that removed this call was a
+    //      GUARD bug, not a bad address. The old gate validated the pawn with
+    //      Tools::IsPtrValid() alone, which passes for a pawn the game already
+    //      Destroyed - the managed wrapper stays readable while
+    //      UnityEngine.Object.m_CachedPtr @0x10 is cleared - and the native method
+    //      then walked that pawn's own weapon chain. A_FireObjectAlive() IS that
+    //      check, and it is the guard every other native call in this file already
+    //      goes through; the pawn's own alive flag is asked as well.
+    //
+    //   2. WeaponFireComponent_Instant::get_IsAiming() 0xC9AF4E0 on the held
     //      weapon's current fire component (Weapon.get_CurrentFireComponent
-    //      0x50EB1E4) - where the ADS state actually lives, and the same chain
-    //      the bullet speed is read from every scan.
-    // The raw Weapon fields (m_IsAiming @0xC21 / m_AimingPercentage @0x460) are
-    // reported but NEVER trusted for the verdict.
-    // FAIL OPEN, LOUDLY: when no source can answer, adsUnknown is set and the
-    // panel turns red instead of silently blocking every shot. One source
+    //      0x50EB1E4). This is where the ADS state actually lives, and the same
+    //      component is read every scan for the bullet speed, so the chain is
+    //      already proven on device. It is the answer that survives a build where
+    //      the pawn-level getter moved.
+    //
+    //   3. The raw Weapon fields (m_IsAiming @0xC21 / m_AimingPercentage @0x460)
+    //      are reported and NEVER trusted - their offsets are unverified (see the
+    //      Offsets note), and a wrong offset is exactly what makes this mode block
+    //      every shot or fire at random.
+    //
+    // FAIL OPEN, LOUDLY: when no source can answer (symbols unresolved, or every
+    // object refused by the liveness checks) the mode does NOT block. It sets
+    // adsUnknown and the panel turns red, because silently refusing every shot is
+    // the failure that reads as "ADS Only does not work at all". One source
     // answering "not scoped" is still enough to block - that is the mode working.
     struct AdsRead
     {
@@ -1355,62 +1331,69 @@ namespace NewFeatures
         return blocked;
     }
 
-    // ====================================================================
+    // =====================================================================
     //  TRIGGERBOT  (A-Fire)  -  game-thread auto-fire
     //
-    //  Ported from oonalang/V3 @3dd0151 (Feats.h: hook_Weapon_Tick +
-    //  A_FireFindTarget + Weapon.StartFire/StopFire raw pointers), keeping V3's
-    //  shape: hook Weapon::Tick and act only while the ticked object is the
-    //  local player's held weapon.
+    //  A port of oonalang/V3 @3dd0151 (System/Hooks/Feats.h: hook_Weapon_Tick +
+    //  A_FireFindTarget + Weapon.StartFire/StopFire raw pointers). V3's exact
+    //  shape is kept: hook Weapon::Tick, and act only while the ticked object is
+    //  the local player's *held weapon*:
+    //      (void*)GamePlay::get_LocalPawn()->get_CurrentWeapon() == instance
     //
-    //  HEARTBEAT: Weapon::Tick 0x5114C34 (Slot 33) is what the game calls on
-    //  the held weapon every frame, and it demonstrably runs in this build.
-    //  Pawn::Tick 0x51C366C is only the BASE implementation - every player pawn
-    //  class overrides it (PlayerPawn 0x54816D8, MPPawn 0xB5D0DC8, BRPlayerPawn
-    //  0x78B68FC, DMZPlayerPawn 0x7FF06EC, PVEPlayerPawn 0x78378AC,
-    //  BRGroundWarPlayerPawn 0x6FB04A8, OpenWorldPlayerPawn 0x5A0E994), so it
-    //  can never be the only heartbeat. Kept as a second chance only.
+    //  HEARTBEAT - read this before changing it:
+    //    The heartbeat has to be a function that the game calls on the local
+    //    player's held weapon every frame. Weapon::Tick (0x5114C34) is that
+    //    function: V3 hooks it, and the earlier build of this repo that CRASHED
+    //    on match join was reaching A_FireFindTarget through this very hook, so
+    //    it demonstrably runs in this build.
     //
-    //  The menu's Test Fire button only QUEUES the request (the menu runs on the
-    //  render thread, where Weapon.StartFire does nothing); the game-thread
-    //  heartbeat performs it and reports the result back.
+    //    Pawn::Tick (0x51C366C) is only the BASE implementation. dump.cs shows
+    //    every player pawn class overriding it at its own RVA - PlayerPawn
+    //    0x54816D8, MPPawn 0xB5D0DC8, BRPlayerPawn 0x78B68FC, DMZPlayerPawn
+    //    0x7FF06EC, PVEPlayerPawn 0x78378AC, BRGroundWarPlayerPawn 0x6FB04A8,
+    //    OpenWorldPlayerPawn 0x5A0E994, ... - so "Pawn::Tick runs for every pawn
+    //    incl. the local player" is FALSE, and a build whose only heartbeat was a
+    //    Pawn::Tick hook gated on the local pawn (commit 7c542b5) could never
+    //    tick: the triggerbot and the queued Test Fire both went silent.
+    //    It is kept here purely as a second chance, never as the only heartbeat.
     //
-    //  RVAs (dump (GR .57).cs and jeudhehs/dump.cs agree on every one):
-    //    Weapon::Tick                0x5114C34  void(float) Slot 33 [HOOKED]
-    //    Pawn::Tick                  0x51C366C  void(float) Slot 33 (base only)
-    //    Pawn::get_CurrentWeapon     0x518BEA8  Weapon*()
-    //    Pawn::IsAiming              0x519BB10  bool() - NOT CALLED (see the ADS
-    //                                           note; 0x516699C is
-    //                                           Weapon::get_IsAiming)
-    //    Pawn::get_IsFiring          0x51A8A38  bool()
-    //    Weapon::StartFire           0x5123C84  void() Slot 55 [raw ptr]
-    //    Weapon::StopFire            0x5124EAC  void(bool) Slot 73 [raw ptr]
-    //    GamePlay::get_LocalPawn     0x856AA08  Pawn*
-    //    GamePlay::get_MatchGame     0x8569B10  MatchGame*
-    //    Camera::get_main            0x5024010  Camera*
-    //    Camera::WorldToScreenPoint 0x5023B54  Vector3(Vector3), 1-arg overload
-    //                                           (0x5023AB8 takes a bool)
-    //    Screen::get_width/height    0x50504BC / 0x5050520
-    //  Field offsets from the same dump:
-    //    Pawn.m_Mesh 0x628  Pawn.m_HeadBone 0x308  Pawn.m_IsAlive 0x548
-    //    BaseGame.EnemyPawns 0x178 (PawnList : List<Pawn>)
+    //  The menu's Test Fire button only QUEUES the request: the menu runs on the
+    //  render thread, and calling Weapon.StartFire from there does not fire (the
+    //  old direct-call version did nothing at all). The game-thread heartbeat
+    //  performs it and reports the result back.
     //
-    //  !! NEVER index the List object itself (*(uintptr_t**)(list + 0x10)): that
-    //  !! walks the il2cpp ARRAY HEADER, whose aligned mapped pointers pass
-    //  !! every guard and then reach Pawn virtual getters.
-    //  !! List<Pawn*>::getItems() returns the real element array.
-    // ====================================================================
+    //  Every address below is from "dump (GR .57).cs" and was re-checked against
+    //  "dump.cs" (jeudhehs/dump) - both give the same function for every RVA:
+    //    Weapon::Tick                  0x5114C34  void(float) Slot 33 [HOOKED]
+    //    Pawn::Tick                    0x51C366C  void(float) Slot 33 (base only)
+    //    Pawn::get_CurrentWeapon       0x518BEA8  Weapon*()
+    //    Pawn::IsAiming()              0x519BB10  bool()  - NOT CALLED (see the
+    //                                             ADS note; 0x516699C is
+    //                                             Weapon::get_IsAiming)
+    //    Pawn::get_IsFiring()          0x51A8A38  bool()
+    //    Weapon::StartFire()           0x5123C84  void()   Slot 55 [raw ptr]
+    //    Weapon::StopFire(bool)        0x5124EAC  void(bool) Slot 73 [raw ptr]
+    //    GamePlay::get_LocalPawn()     0x856AA08  Pawn*
+    //    GamePlay::get_MatchGame()     0x8569B10  MatchGame*
+    //    Camera::get_main()            0x5024010  Camera*
+    //    Camera::WorldToScreenPoint()  0x5023B54  Vector3(Vector3)  <- the 1-arg
+    //                                             overload (0x5023AB8 takes a
+    //                                             bool that must not be garbage)
+    //    Screen::get_width/get_height  0x50504BC / 0x5050520
+    //  Field offsets, all confirmed in the same dump:
+    //    Pawn.m_Mesh 0x628   Pawn.m_HeadBone 0x308   Pawn.m_IsAlive 0x548
+    //    BaseGame.EnemyPawns 0x178  (PawnList : List<Pawn>)
+    //
+    //  !! NEVER index the List object itself (*(uintptr_t**)(list + 0x10)):
+    //  !! that walks the il2cpp ARRAY HEADER (klass / bounds pointers), which
+    //  !! are aligned and mapped, so they pass every guard and then get handed
+    //  !! to Pawn virtual getters - that is what crashed the client on match
+    //  !! join.  List<Pawn*>::getItems() returns the real element array.
+    // =====================================================================
 
     // State - game thread only.
     inline bool     g_afireHoldingFire       = false;
     inline void    *g_afireFiringOn          = nullptr;
-    // The Il2CppClass* the pressed slot had WHEN WE PRESSED IT. The release is
-    // the one native call that happens later, on a pointer recorded earlier, so
-    // it is the one that can meet a recycled slot (see A_FireObjectKind).
-    inline void    *g_afireFiringOnKind      = nullptr;
-    // Same idea for the held weapon across the length of ONE scan: the scan can
-    // take milliseconds and the weapon can die inside it.
-    inline void    *g_afireHeldKind          = nullptr;
     inline double   g_afireLastPressTime     = -1000.0;
     // The WEAPON of the last press. A_FireReleaseTrigger clears g_afireFiringOn
     // (that is what "let go" means), so the released weapon cannot be recognised
@@ -1442,8 +1425,6 @@ namespace NewFeatures
         int    enemyCount;      // last EnemyPawns size
         int    targets;         // scans that returned a pawn
         int    fires;           // StartFire calls made by the trigger
-        int    sameFrameSkips;  // scans skipped because our fire request is still on the weapon
-        int    kindSkips;       // native calls refused: the slot was recycled as another class
         int    losBlocked;      // lifetime: candidates rejected by geometry
         int    losBlockedScan;  // THIS scan (reset every scan, menu reads it)
         float  radiusPx;        // crosshair radius used by the last scan
@@ -1484,12 +1465,6 @@ namespace NewFeatures
         bool   dotRayHonest;         // 1 = this scan had a ray through the dot
         bool   dotRayDecided;        // 1 = the shot was decided by the dot ray
         int    dotRayDeclined;       // lifetime: the dot ray named a pawn but the dot is not ON him
-        int    modelSpanMiss;        // lifetime: the dot sat above his head / below his feet
-        int    modelOffBody;         // lifetime: the zone scan refused a dot that was NOT on his silhouette
-        float  modelT;               // last scan: the dot's height fraction on his body (0 feet .. 1 head)
-        float  modelLimitPx;         // last scan: the silhouette half width in px at that height
-        float  modelLatPx;           // last scan: the dot's lateral px from his axis at that height
-        float  modelAxisPx;          // last scan: his projected feet->head length in px
         float  projKeepFrac;         // last accepted shot: dot->hit px / accepted body px (< 1 = on body)
         int    raysIdentified;  // last scan: rays whose nearest hit WAS the target
         int    raysBlocked;     // last scan: rays stopped by something else
@@ -1694,10 +1669,6 @@ namespace NewFeatures
         const int idx = (int)b;
         d.lastBlock = idx;
         if (idx >= 0 && idx < (int)FireBlock::Count) d.blockCount[idx]++;
-        // One line of live state for the crash breadcrumb (Hacks/Feature/
-        // CrashBreadcrumb.h): which reason this scan reached and how far the
-        // session had got. Written once per scan, three plain stores.
-        CrashBreadcrumb_NoteScan(idx, d.scans, d.fires, d.sameFrameSkips, d.kindSkips);
     }
 
 
@@ -1729,26 +1700,57 @@ namespace NewFeatures
     };
 
     // ---- Line of sight: the nearest MEANINGFUL hit has to BE the pawn ------
-    // Distance slack is never used to decide "clear": a thin panel 30 cm in
-    // front of the head bone is still a wall. Physics.RaycastAll 0x506CBB0
-    // (dump.cs 174011) returns EVERY hit in the segment, walked nearest-first:
-    //   hit in the LOCAL pawn's hierarchy -> SKIPPED (the camera sits inside
-    //     our own collider stack, so PhysX reports an initial-overlap hit at
-    //     ~0 m - counting it vetoed every shot, diag LOShit=0.00m Rays=0/1)
-    //   non-target TRIGGER collider       -> SKIPPED (invisible volumes cannot
-    //     be "the wall" the player sees)
-    //   remaining first hit IS the target -> clear; anything else -> blocked
-    //   nothing meaningful on the line    -> clear
-    //   a hit that cannot be named        -> conservative stem test that stops
-    //     short of the target's own collider
-    //   RaycastAll unusable               -> single nearest-hit Raycast
-    //     0x506C188 + the near-origin escape below
-    //   no ray symbol at all              -> fail closed, never shoots walls
-    // NEAR-ORIGIN ESCAPE: a blocker within kSelfExclusion (15 cm) of the camera
-    // only proves the camera is clipping geometry, so the game's own occlusion
-    // verdict decides instead (Pawn.get_LastOccVisible 0x51BA800, or
-    // RecentlyRendered 0x51BA7E8). Never consulted for a blocker at range, so a
-    // real wall keeps vetoing the shot exactly as before.
+    //
+    // The old gate read ONE number - the first hit distance - and called the
+    // line clear when that hit was within 0.40 m of the aim point. For an enemy
+    // standing behind a thin panel whose front face is 30 cm in front of his
+    // head bone, the first hit IS the panel, 30 cm short of the aim point, and
+    // the shot went through the wall. It also produced the mirror-image failure:
+    // the no-maxDistance overload ran the ray past the target, so scenery
+    // BEHIND the enemy came back as the first hit and "no line of sight" was
+    // reported on a clean shot.
+    //
+    // The next version named the single nearest hit and refused whenever that
+    // hit was not the target. Correct against walls, but it broke on device:
+    // the ray STARTS AT THE CAMERA, and the camera sits inside the local
+    // player's own collider stack (head / upper-body hitbox, aim-assist volume,
+    // weapon). PhysX reports an initial-overlap hit at distance ~0 for the
+    // collider containing the ray origin, so the "first thing on the line" was
+    // OUR OWN BODY a few centimetres from the camera - never the enemy - and
+    // every shot was vetoed. Device diag from the broken build:
+    //     Scan=9801 Cand=1 Ray=1 Tgt=0 Fire=0   LOShit=0.00m  Rays=0/1
+    //
+    // The gate below therefore does not look at "the first hit", it looks at
+    // the first hit that can honestly block a bullet the player can see fired:
+    //
+    //   Physics.RaycastAll(origin, dir, maxDistance) 0x506CBB0 (dump.cs 174011)
+    //   returns EVERY hit in the segment; they are walked nearest-first and:
+    //     hit in the LOCAL pawn's hierarchy      -> SKIPPED (our own body /
+    //                                               weapon / aim volume)
+    //     non-target TRIGGER collider            -> SKIPPED (invisible volumes
+    //                                               cannot be "the wall")
+    //     remaining first hit IS the target      -> clear (his body, his gear,
+    //                                               even an arm at the muzzle -
+    //                                               the bullet reaches HIM)
+    //     remaining first hit is anything else   -> blocked (a wall however
+    //                                               thin, a door, a vehicle,
+    //                                               another player)
+    //     nothing meaningful on the line         -> clear
+    //     a hit that cannot be named             -> conservative stem test
+    //                                               (stops short of the target's
+    //                                               own collider surface)
+    //     RaycastAll symbol / result unusable    -> single nearest-hit Raycast
+    //                                               0x506C188 + the escape below
+    //     no ray symbol at all                   -> Unknown, fail closed
+    //
+    // NEAR-ORIGIN ESCAPE: a "blocker" within kSelfExclusion (15 cm) of the
+    // camera only proves the camera is clipping geometry - it cannot answer
+    // whether a target at range is behind cover. In that one case the game's
+    // own occlusion verdict decides: Pawn.get_LastOccVisible 0x51BA800 (Slot
+    // 235, last frame's occlusion-culling result; RecentlyRendered 0x51BA7E8
+    // second chance) true -> clear (the game rendered him - the player sees
+    // him), false -> blocked. Never consulted for a blocker at normal range,
+    // so a real wall keeps vetoing the shot exactly as before.
     //
     constexpr size_t AF_RAYHIT_SIZE      = 0x30;  // through m_Collider @0x28 + pad
     constexpr size_t AF_RAYHIT_DISTOFF   = 0x1C;  // m_Distance for THIS build
@@ -1786,8 +1788,7 @@ namespace NewFeatures
     // accepting the pawn's own transform and its two known bones. A bone hit and a
     // body-mesh hit both reach the pawn's root transform, so the walk is what
     // makes this work for any collider layout without a hitbox enumeration API.
-    inline bool A_FireHitIsTarget(void *hitTransform, Pawn *pawn, int *depthOut = nullptr,
-                                  void *collider = nullptr)
+    inline bool A_FireHitIsTarget(void *hitTransform, Pawn *pawn, int *depthOut = nullptr)
     {
         if (depthOut != nullptr) *depthOut = -1;
         if (!A_FireObjectAlive(hitTransform) || !A_FireObjectAlive((void *)pawn)) return false;
@@ -1800,13 +1801,10 @@ namespace NewFeatures
         // names a DIFFERENT target, that hit is not this pawn. Registry has
         // no record (common for root transforms and skeleton bones) - keep
         // walking below; the parent-chain walk still owns those cases.
-        // The registry is keyed by COLLIDER (dump 961623) - it is only asked
-        // when the ray still carries the Collider it hit; a Transform handed to
-        // it is the wrong object type for the game's own lookup.
-        if (collider != nullptr && fn_AtkMapGetTargetForCollider != nullptr) {
+        if (fn_AtkMapGetTargetForCollider != nullptr) {
             void *map = fn_GameGetAttackableColliderMap ? fn_GameGetAttackableColliderMap() : nullptr;
             if (A_FireObjectAlive(map)) {
-                void *target = fn_AtkMapGetTargetForCollider(map, collider);
+                void *target = fn_AtkMapGetTargetForCollider(map, hitTransform);
                 if (A_FireObjectAlive(target) && target != (void *)pawn)
                     return false;
             }
@@ -1877,7 +1875,6 @@ namespace NewFeatures
     struct AF_NamedHit
     {
         void *transform = nullptr;
-        void *collider  = nullptr;   // the registry is keyed by Collider, not Transform
         float distance  = -1.0f;
         bool  isTarget  = false;
     };
@@ -1923,9 +1920,8 @@ namespace NewFeatures
             void *collider = A_FireHitCollider(elem);            // null when unusable
             void *hitT     = A_FireColliderTransform(collider);  // named when readable
 
-            if (hitT != nullptr && target != nullptr && A_FireHitIsTarget(hitT, target, nullptr, collider)) {
+            if (hitT != nullptr && target != nullptr && A_FireHitIsTarget(hitT, target)) {
                 out.transform = hitT;
-                out.collider  = collider;
                 out.distance  = bestDist;
                 out.isTarget  = true;
                 return true;                                     // the enemy himself
@@ -1944,7 +1940,6 @@ namespace NewFeatures
             // Named solid blocker, or a hit that could not be named at all
             // (transform null): either way this is the deciding record.
             out.transform = hitT;
-            out.collider  = collider;
             out.distance  = bestDist;
             return true;
         }
@@ -2021,11 +2016,11 @@ namespace NewFeatures
             void *collider   = A_FireHitCollider(hitBuf);
             void *hitTransform = A_FireColliderTransform(collider);
             if (Tools::IsPtrValid(hitTransform)) {
-                if (A_FireHitIsTarget(hitTransform, target, nullptr, collider)) {
+                if (A_FireHitIsTarget(hitTransform, target)) {
                     if (identified != nullptr) *identified = true;
                     return AF_Ray::Clear;                    // the enemy himself
                 }
-                if (localPawn != nullptr && A_FireHitIsTarget(hitTransform, localPawn, nullptr, collider)) {
+                if (localPawn != nullptr && A_FireHitIsTarget(hitTransform, localPawn)) {
                     // OUR body/weapon is first on the line: the ray learned
                     // nothing about the target. Hand the verdict to the game.
                     g_triggerDiag.selfHitsSkipped++;
@@ -2094,19 +2089,18 @@ namespace NewFeatures
     // Returns 0 = the registry has no record (or is missing, no opinion),
     // 1 = the game says the collider IS this pawn's shootable body,
     // -1 = the game says it is NOT this pawn's body (another target's volume).
-    inline int A_FireRegistryOwnerIs(void *collider, Pawn *pawn)
+    inline int A_FireRegistryOwnerIs(void *hitTransform, Pawn *pawn)
     {
-        if (collider == nullptr || fn_AtkMapGetTargetForCollider == nullptr) return 0;
+        if (fn_AtkMapGetTargetForCollider == nullptr) return 0;
         void *map = fn_GameGetAttackableColliderMap ? fn_GameGetAttackableColliderMap() : nullptr;
         if (!A_FireObjectAlive(map)) return 0;                     // no record -> no opinion
-        void *target = fn_AtkMapGetTargetForCollider(map, collider);
+        void *target = fn_AtkMapGetTargetForCollider(map, hitTransform);
         if (!A_FireObjectAlive(target)) return 0;                  // no record -> no opinion
         return target == (void *)pawn ? 1 : -1;
     }
 
     inline Pawn *A_FirePawnFromHitTransform(void *hitTransform, Pawn **items, int count,
-                                            int *depthOut = nullptr,
-                                            void *collider = nullptr)
+                                            int *depthOut = nullptr)
     {
         if (depthOut != nullptr) *depthOut = -1;
         if (!A_FireObjectAlive(hitTransform) || !Tools::IsPtrValid((void *)items)) return nullptr;
@@ -2130,10 +2124,10 @@ namespace NewFeatures
         // when that target is not on this list. Bones / body meshes usually
         // carry no registry record of their own, so a "no record" passes
         // through to the parent-chain walk below.
-        if (collider != nullptr && fn_AtkMapGetTargetForCollider != nullptr) {
+        if (fn_AtkMapGetTargetForCollider != nullptr) {
             void *map = fn_GameGetAttackableColliderMap ? fn_GameGetAttackableColliderMap() : nullptr;
             if (A_FireObjectAlive(map)) {
-                void *target = fn_AtkMapGetTargetForCollider(map, collider);
+                void *target = fn_AtkMapGetTargetForCollider(map, hitTransform);
                 if (A_FireObjectAlive(target) && A_FireObjectAlive(target)) {
                     for (int i = 0; i < count; i++) {
                         Pawn *p = items[i];
@@ -2214,8 +2208,7 @@ namespace NewFeatures
                 if (h.distance < 0.0f) return nullptr;   // the crosshair is on the sky
                 if (hitDistOut != nullptr) *hitDistOut = h.distance;
                 if (h.transform == nullptr) return nullptr;  // cannot name the hit
-                return A_FirePawnFromHitTransform(h.transform, items, count, nullptr,
-                                                  h.collider);
+                return A_FirePawnFromHitTransform(h.transform, items, count);
             }
             // RaycastAll unusable -> single-ray path below.
         }
@@ -2233,15 +2226,13 @@ namespace NewFeatures
         const float hd = *(const float *)(hitBuf + AF_RAYHIT_DISTOFF);
         if (hitDistOut != nullptr && hd >= 0.0f) *hitDistOut = hd;
 
-        void *hitCollider  = A_FireHitCollider(hitBuf);
-        void *hitTransform = A_FireColliderTransform(hitCollider);
+        void *hitTransform = A_FireColliderTransform(A_FireHitCollider(hitBuf));
         if (A_FireObjectAlive(hitTransform) && localPawn != nullptr &&
-            A_FireHitIsTarget(hitTransform, localPawn, nullptr, hitCollider)) {
+            A_FireHitIsTarget(hitTransform, localPawn)) {
             g_triggerDiag.selfHitsSkipped++;   // first thing on the line is US
             return nullptr;
         }
-        return A_FirePawnFromHitTransform(hitTransform, items, count, nullptr,
-                                          hitCollider);
+        return A_FirePawnFromHitTransform(hitTransform, items, count);
     }
 
     // =====================================================================
@@ -2423,43 +2414,21 @@ namespace NewFeatures
                     }
                 }
 
-                // The pixel bound the dot is held to, and the px^2 it is
-                // compared against: A_FireFitToBody - the model's own
-                // silhouette, read at the dot's height. A negative limit means
-                // his body could not be measured at all.
-                //
-                // What this replaced, and why it must not come back:
-                //   * ONE width (kBodyHalfWidthM, the 0.32 m shoulder width)
-                //     applied from boots to head, so a dot beside his head or
-                //     his shins sat "within the width" and fired at nothing;
-                //   * distance measured to the feet->head SEGMENT, so a dot
-                //     above his head or below his feet was clamped onto the
-                //     endpoint and still counted.
-                // Now the dot's height fraction picks the profile's own half
-                // width (0.09 m boots, 0.27 m shoulders, 0.13 m head) and any
-                // dot outside his height span is refused outright.
+                // The pixel limit the dot is held to, and the px^2 it is compared
+                // against. A negative limit means his body could not be measured.
                 float limitPx = -1.0f;
                 float testSq  = bestSq;
                 if (ap.valid && ap.headOk && ap.feetOk && focalPx > 0.0f) {
                     Vector3 scHead = Vector3::zero(), scFeet = Vector3::zero();
                     if (w2s(ap.head, scHead) && w2s(ap.feet, scFeet) &&
                         scHead.z > 0.0f && scFeet.z > 0.0f) {
-                        const AF_BodyProbe probe =
-                            A_FireFitToBody(ap.head, ap.feet, scHead, scFeet, cx, cy);
-                        if (probe.fit != AF_BodyUnmeasurable) {
-                            limitPx        = probe.limitPx;
-                            d.modelT       = probe.t;
-                            d.modelLimitPx = probe.limitPx;
-                            d.modelAxisPx  = probe.axisPx;
-                            if (probe.fit == AF_BodyOutside) {
-                                // above his head / below his feet, or beside him
-                                if (probe.t < 0.0f || probe.t > 1.0f) d.modelSpanMiss++;
-                                else                                     d.modelOffBody++;
-                                testSq = limitPx * limitPx + 1.0f;
-                            } else {
-                                testSq       = probe.latPx * probe.latPx;
-                                d.modelLatPx = probe.latPx;
-                            }
+                        const float axisPx = sqrtf((scHead.x - scFeet.x) * (scHead.x - scFeet.x) +
+                                                   (scHead.y - scFeet.y) * (scHead.y - scFeet.y));
+                        const float axisM  = Vector3::Distance(ap.head, ap.feet);
+                        if (axisPx > 0.5f && axisM > 0.3f) {
+                            limitPx = A_FireTune::kBodyHalfWidthM * (axisPx / axisM) + 2.0f;
+                            testSq  = A_FirePointSegDistSq(cx, cy, scHead.x, scHead.y,
+                                                           scFeet.x, scFeet.y);
                         }
                     }
                 }
@@ -2548,59 +2517,29 @@ namespace NewFeatures
             // replaces the whole hitbox-priority walk: no bone field offset, no
             // user pick, and a body that fills the screen at 2 m is handled exactly
             // like one a few px tall at 150 m.
-            // ---- THE MODEL DECIDES, the radius only covers the rest ---------
-            // This path runs when the dot's own ray cannot decide (an
-            // off-centre dot, no projection symbol), and it used to accept any
-            // enemy whose chest - or whose whole feet->head SEGMENT - projected
-            // within the aim zone radius. A radius is round: at the head and at
-            // the boots the body is a fraction of the shoulder width, so a zone
-            // that matched his shoulders also fired at the air beside his head.
-            // That is the "it shoots even though I am not on his body" report.
-            //
-            // Now his OWN silhouette answers first (A_FireFitToBody, the same
-            // measurement path A uses): a dot beside him, above his head or
-            // below his feet is refused no matter how big the zone is - and a dot
-            // ON him fires even when the zone is smaller than his body, because
-            // the body is the model, not the circle. Only when his body cannot be
-            // projected at all (prone, seen end-on, no feet bone) does the drawn
-            // dot's zone decide, as before.
-            AF_BodyProbe probe{};
-            probe.fit = AF_BodyUnmeasurable;
-            if (ap.headOk && ap.feetOk) {
+            float d2 = -1.0f;
+            Vector3 scChest = Vector3::zero();
+            if (w2s(ap.pos, scChest) && scChest.z > 0.0f) {
+                const float dx = scChest.x - cx;
+                const float dy = scChest.y - cy;
+                d2 = dx * dx + dy * dy;
+            }
+            // The chest already answers it (and is the case that fires): do not
+            // pay two more WorldToScreenPoint calls for the body span.
+            if (d2 >= 0.0f && d2 > radiusSq && ap.headOk && ap.feetOk) {
                 Vector3 scHead = Vector3::zero();
                 Vector3 scFeet = Vector3::zero();
                 if (w2s(ap.head, scHead) && w2s(ap.feet, scFeet) &&
-                    scHead.z > 0.0f && scFeet.z > 0.0f)
-                    probe = A_FireFitToBody(ap.head, ap.feet, scHead, scFeet, cx, cy);
-            }
-
-            float chestSq = -1.0f;                                // for the diagnostics only
-            {
-                Vector3 scChest = Vector3::zero();
-                if (w2s(ap.pos, scChest) && scChest.z > 0.0f) {
-                    const float dx = scChest.x - cx;
-                    const float dy = scChest.y - cy;
-                    chestSq = dx * dx + dy * dy;
+                    scHead.z > 0.0f && scFeet.z > 0.0f) {
+                    const float body = A_FirePointSegDistSq(cx, cy,
+                                                            scHead.x, scHead.y,
+                                                            scFeet.x, scFeet.y);
+                    if (d2 < 0.0f || body < d2) d2 = body;
                 }
             }
-            if (probe.fit == AF_BodyOutside) {
-                if (probe.t < 0.0f || probe.t > 1.0f) d.modelSpanMiss++;
-                else                                  d.modelOffBody++;
-                if (chestSq >= 0.0f &&
-                    (d.closestPx < 0.0f || chestSq < d.closestPx * d.closestPx))
-                    d.closestPx = sqrtf(chestSq);
-                continue;                                         // the dot is NOT on him
-            }
-
-            float d2 = -1.0f;
-            if (probe.fit == AF_BodyInside) {
-                d2 = probe.latPx * probe.latPx;                   // on him: rank by how centred
-            } else {
-                if (chestSq < 0.0f) continue;                     // his body is not on screen
-                if (chestSq > radiusSq) continue;                 // nothing measurable near the dot
-                d2 = chestSq;
-            }
+            if (d2 < 0.0f) continue;                              // his body is not on screen
             if (d.closestPx < 0.0f || d2 < d.closestPx) d.closestPx = d2;   // "how close did anything get"
+            if (d2 > radiusSq) continue;                          // not under the crosshair
             const float pxOffset = sqrtf(d2);
             if (n >= MAX_CANDIDATES) continue;
 
@@ -2838,10 +2777,6 @@ namespace NewFeatures
         Weapon *held = localPawn->get_CurrentWeapon();
         d.heldWeapon = (void *)held;
         if (!A_FireObjectAlive((void *)held)) return FireBlock::NoWeapon;
-        // The class this slot has RIGHT NOW. The scan below takes milliseconds
-        // (rays, team reads, projections) and the weapon can die inside it, so
-        // every later native call on `held` re-asks what is behind the pointer.
-        g_afireHeldKind = A_FireObjectKind((void *)held);
 
         // ADVISORY: a weapon that is mid-switch, mid-reload or between shots does
         // not need to stop the trigger - Weapon.StartFire itself refuses an illegal
@@ -2882,16 +2817,6 @@ namespace NewFeatures
             d.adsFcAim   = ads.fcAim;
             if (!ads.aiming)
                 return FireBlock::ModeNotAds;
-            // "ADS only isn't working" is only ever this, and it is now printed:
-            // nobody could answer. The gate was left OPEN because refusing to fire
-            // forever was the misfire "Doesn't work at all", but open means it
-            // cannot hold the mode. A symbol that did not resolve turns all three
-            // counters off for the whole session, so adsUnknown=1 with ads 1/0 0/0
-            // says exactly which getter to re-check (logcat has the resolve error).
-            if (ads.unknown && !ads.pawnOk && !ads.fcOk)
-                LOGE("[NewFeatures] triggerbot: ADS only has NO source this build"
-                     " (pawn=%d fc=%d) - the mode cannot hold, shots are fail-open",
-                     ads.pawnOk ? 1 : 0, ads.fcOk ? 1 : 0);
         } else if (Config.NewFeaturesMenu.TriggerbotMode == 2) {
             if (fn_PawnGetIsFiring == nullptr || !fn_PawnGetIsFiring(localPawn))
                 return FireBlock::ModeNotFiring;
@@ -2915,71 +2840,11 @@ namespace NewFeatures
     {
         if (!g_afireHoldingFire) return;
         if (instance == nullptr || instance == g_afireFiringOn) {
-            // The weapon we pressed may be gone (death, weapon swap, round end)
-            // by the time the trigger is let go; StopFire is a native call and a
-            // destroyed weapon has a cleared m_CachedPtr - the same check every
-            // other native call on this path already makes.
-            //
-            // And it may no longer BE A WEAPON. A slot freed and recycled for
-            // another managed type keeps a live m_CachedPtr, so the liveness
-            // test passes while the class behind it does not: StopFire then runs
-            // weapon code on an object that has none. This is the crash class
-            // that needs TIME to appear - a sustained session presses hundreds
-            // of times and every kill/respawn/match end frees objects, so the
-            // same build is fine in a short test and dies in a long one. The
-            // class the slot had at press time is recorded with the pointer and
-            // a slot that answers with a different class is never called.
-            CrashBreadcrumb_NoteStage(3);
-            const bool kindOk = (g_afireFiringOnKind == nullptr) ||
-                                (A_FireObjectKind(g_afireFiringOn) == g_afireFiringOnKind);
-            if (fn_Weapon_StopFire != nullptr && A_FireObjectAlive(g_afireFiringOn) && kindOk)
+            if (fn_Weapon_StopFire != nullptr && g_afireFiringOn != nullptr)
                 fn_Weapon_StopFire(g_afireFiringOn, false);
-            else if (fn_Weapon_StopFire != nullptr && g_afireFiringOn != nullptr &&
-                     A_FireObjectAlive(g_afireFiringOn))
-                g_triggerDiag.kindSkips++;              // alive, but not our class
             g_afireHoldingFire = false;
             g_afireFiringOn = nullptr;
-            g_afireFiringOnKind = nullptr;
         }
-    }
-
-    // ---- The same-frame fire guard ---------------------------------------
-    // WHAT CRASHED ("works for a bit, then dies"): the held weapon's own tick is
-    // a trigger heartbeat. The press on one scan calls Weapon.StartFire, the
-    // game's write completes, StartFire RETURNS for that frame, and the very
-    // next hook call through the SAME weapon tick arrives with the 4 ms
-    // per-frame gate already open (a new frame). Nothing on this side tracked
-    // what our last press had set, so the trigger re-answered every fresh decisor
-    // StartFire had not yet consumed - pressing an already-armed weapon on every
-    // scan, inside the weapon's own fire state machine, frame after frame. The
-    // crash was the game-side counterpart of the old fire spam: not on the press
-    // edge any more, but on the oblivious re-press.
-    //
-    // THE ANSWER IS ALREADY ON THE WEAPON: Weapon.set_IsFiring is the write
-    // StartFire ends with (dump 739309/739310 pair), and Weapon::Tick's own body
-    // consumes it. So after pressing, the weapon's get_IsFiring reads back TRUE
-    // until the weapon consumes / clears the request. While it does, and while
-    // the press is recent (a start that truly failed clears the flag within a
-    // frame or two - a deadlock is impossible), the trigger stays OUT of the
-    // weapon's fire logic completely, exactly the withdrawal a human finger
-    // does between shots.
-    //
-    // GUARD-SAFETY: get_IsFiring here is only reached for the weapon that is
-    // inside this very Weapon::Tick call (d.heldWeapon, already liveness-checked
-    // by A_FireObjectAlive one block above), so the call is exactly as safe as
-    // the tick that contains it. A weapon whose getter never resolved answers
-    // false and merely turns the guard off - the trigger, never the crash class,
-    // is what changes.
-    inline bool A_FireSameFramePressActive(void *held)
-    {
-        if (!g_afireHoldingFire || g_afireFiringOn != (void *)held) return false;
-        if (!(fn_WeaponIsFiring != nullptr && fn_WeaponIsFiring(held))) return false;
-        // A true that outlives a whole pace without a press is NOT ours - it is
-        // the weapon genuinely firing (or a getter that always says true). The
-        // press-time bound keeps the guard from ever suppressing a trigger that
-        // needs to re-answer.
-        const double since = A_FireNow() - g_afireLastPressTime;
-        return since >= 0.0 && since < A_FireTune::kMaxRepressPace;
     }
 
     // The menu's "Test Fire" button only queues the request: the menu runs on
@@ -2995,7 +2860,7 @@ namespace NewFeatures
 
         Weapon *held = local->get_CurrentWeapon();
         d.heldWeapon = (void *)held;
-        if (!A_FireObjectAlive((void *)held)) { d.testFireStatus = 3; return; }
+        if (!Tools::IsPtrValid((void *)held)) { d.testFireStatus = 3; return; }
 
         if (fn_Weapon_StartFire == nullptr) { d.testFireStatus = 4; return; }
 
@@ -3095,8 +2960,6 @@ namespace NewFeatures
         TriggerTarget target{};
         const FireBlock block = A_FireShouldFire(target);
         A_FireReportBlock(block);
-        CrashBreadcrumb_NoteObjects(d.localPawn, d.heldWeapon, g_afireFiringOn,
-                                    (void *)target.pawn);
 
         if (block != FireBlock::Fired || !Tools::IsPtrValid((void *)target.pawn)) {
             A_FireReleaseTrigger(nullptr);
@@ -3109,11 +2972,7 @@ namespace NewFeatures
         s_dbgTriggerState = 1;
 
         Weapon *held = (Weapon *)d.heldWeapon;
-        if (!A_FireObjectAlive((void *)held) ||
-            (g_afireHeldKind != nullptr && A_FireObjectKind((void *)held) != g_afireHeldKind)) {
-            // Dead, or the slot was recycled as another class while the scan
-            // ran: pressing through it would run weapon code on a non-weapon.
-            if (A_FireObjectAlive((void *)held)) d.kindSkips++;
+        if (!A_FireObjectAlive((void *)held)) {
             A_FireReleaseTrigger(nullptr);
             g_afireInTick = false;
             return;
@@ -3122,21 +2981,6 @@ namespace NewFeatures
         // Weapon swapped while the trigger was down - let the old one go.
         if (g_afireHoldingFire && g_afireFiringOn != (void *)held)
             A_FireReleaseTrigger(nullptr);
-
-        // ---- SAME-FRAME FIRE GUARD (the "works for a bit, then crashes" fix) --
-        // Our last press put the fire request on THIS weapon and the weapon's own
-        // get_IsFiring still says it has not consumed it: sit this scan out
-        // entirely. No fire-mode read, no interval read, no press, and no release
-        // either - A_FireShouldFire already validated the target, and StartFire's
-        // request is simply on its way. One state for the panel, no counter spins,
-        // and the guard is bounded by the press time so it can never replace a
-        // trigger that genuinely needs to re-answer (see the helper).
-        if (A_FireSameFramePressActive((void *)held)) {
-            d.sameFrameSkips++;
-            s_dbgTriggerState = 2;
-            g_afireInTick = false;
-            return;
-        }
 
         const FireMode mode     = GetWeaponFireMode(held);
         const float    interval = A_FireWeaponInterval(held);
@@ -3226,10 +3070,8 @@ namespace NewFeatures
             return;
         }
 
-        CrashBreadcrumb_NoteStage(2);
         g_afireHoldingFire    = true;
         g_afireFiringOn       = (void *)held;
-        g_afireFiringOnKind   = g_afireHeldKind;
         g_afireTargetPawn     = (void *)target.pawn;
         g_afireLastPressWeapon = (void *)held;
         g_afireLastPressTime  = now;
@@ -3256,8 +3098,6 @@ namespace NewFeatures
         g_afireHoldingFire = false;
         g_afireTargetPawn  = nullptr;
         g_afireFiringOn    = nullptr;
-        g_afireFiringOnKind = nullptr;
-        g_afireHeldKind    = nullptr;
         g_afireLastPressTime = -1000.0;
         g_afireLastPressWeapon = nullptr;
         g_afireCanFireLast   = false;
@@ -3517,16 +3357,6 @@ namespace NewFeatures
         auto fcAimAddr = UnityRva(RVA::GetIsAiming);
         if (Tools::IsPtrValid(fcAimAddr))
             fn_FireComponentGetIsAiming = (bool (*)(void *))fcAimAddr;
-
-        // Weapon.get_IsFiring 0x50EB644 (dump 739309). A missing symbol must NOT
-        // disable the trigger - it only disables the same-frame guard below -
-        // which is why a failed resolve here logs and carries on.
-        auto wFireAddr = UnityRva(RVA::Weapon_get_IsFiring);
-        if (Tools::IsPtrValid(wFireAddr))
-            fn_WeaponIsFiring = (bool (*)(void *))wFireAddr;
-        else
-            LOGE("[NewFeatures] triggerbot: Weapon.get_IsFiring 0x%llX did not resolve -"
-                 " the same-frame fire guard is off", (unsigned long long)RVA::Weapon_get_IsFiring);
 
         auto firingAddr = UnityRva(RVA::Pawn_get_IsFiring);
         if (Tools::IsPtrValid(firingAddr))

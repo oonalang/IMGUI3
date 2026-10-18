@@ -44,6 +44,7 @@
 #include "IL2CppSDKGenerator/IL2Cpp/Il2Cpp.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Tools.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
+#include "foxcheats/include/ScanEngine.hpp"
 #include "Hacks/StructGame/StructGame.h"
 #include "Hacks/Feature/Init_Hacks.h"   // sConfig Config - referenced by NewFeatures.h
 #include "Hacks/Feature/NewFeatures.h"
@@ -975,22 +976,12 @@ static void testCrosshairAim()
               "X3 near the dot but NOT under its ray -> NO fire (the over-fire fix)");
     }
     resetWorld();
-    // The dot has to be ON the body for this to fire, and "on" is now the
-    // model's own silhouette at the dot's height (A_FireBodyHalfWidthM), not one
-    // shoulder-width cylinder for the whole body: at (840,425) the dot sits at
-    // the top of his head 40 px off the axis, which the profile refuses at
-    // 31.7 px. Moving the dot onto his chest (820,450 - the enemy's own pixel in
-    // this world) keeps the intent of the check: the decision follows the dot.
-    setCrosshair(20.0f, 0.0f, 100.0f);
+    setCrosshair(40.0f, -25.0f, 100.0f);
     {
         TriggerTarget out{};
         FireBlock b = runScanOnCrosshairSetup(out, /*dotSeesPawn=*/true);
-        CHECK(g_triggerDiag.crosshairCx == 820.0f && g_triggerDiag.crosshairCy == 450.0f,
-              "X3 the moved dot is on his chest pixel (820,450)");
         CHECK(b == FireBlock::Fired && out.path == 0,
-              "X3 a dot ON his body still fires (the decision follows the dot)");
-        CHECK(g_triggerDiag.projKeepFrac >= 0.0f && g_triggerDiag.projKeepFrac <= 1.0f,
-              "X3 ... and it is measured inside the model's silhouette (keep <= 1)");
+              "X3 the same dot ON him still fires (the decision follows the dot)");
     }
 
     // --- X4: a far-away dot stops firing what is under the old centre ------
@@ -1115,7 +1106,7 @@ static void testCrosshairAim()
     // it tightens with distance instead of being a fixed pixel slack.
     resetWorld();
     objTargetUnderDot(3.3f);
-    setCrosshair(20.0f, 0.0f, 80.0f);
+    setCrosshair(40.0f, 0.0f, 80.0f);
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
     g_w2sImpl = w2sTrueProjection;
     g_centreHits = { {0.02f, &g_selfCol}, {5.0f, &g_targetCol} };
@@ -1126,7 +1117,7 @@ static void testCrosshairAim()
         setEnemyList(enemies, 1);
         FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
         CHECK(b == FireBlock::Fired && out.path == 0,
-              "X9b 20 px off his neck at 3 m is still ON him -> fires");
+              "X9b 40 px off a body 3 m away is still ON him -> fires");
     }
     resetWorld();
     objTargetUnderDot(40.0f);
@@ -1601,8 +1592,6 @@ static float g_realInterval   = 0.20f;
 static void  fake_startFire(void *)       { g_startFireCalls++; }
 static void  fake_stopFire(void *, bool)  { g_stopFireCalls++; }
 static bool  fake_canFire(void *)         { return g_canFireValue; }
-static bool  g_weaponIsFiringValue = false;
-static bool  fake_weaponIsFiring(void *)  { return g_weaponIsFiringValue; }
 static float fake_realInterval(void *)    { return g_realInterval; }
 static bool  fake_autoFire(void *)        { return true; }
 
@@ -1626,7 +1615,6 @@ static void testRepressPacing()
     fn_WeaponIsAutoFire              = nullptr;      // unresolved -> edge press
     fn_WeaponRealFireInterval        = fake_realInterval;
     fn_WeaponCanFire                 = fake_canFire;
-    fn_WeaponIsFiring                = fake_weaponIsFiring;   // the same-frame guard's source
     fn_Weapon_StartFire              = fake_startFire;
     fn_Weapon_StopFire               = fake_stopFire;
     Config.NewFeaturesMenu.Triggerbot = true;
@@ -1641,7 +1629,6 @@ static void testRepressPacing()
     g_startFireCalls = g_stopFireCalls = 0;
     g_afireLastPressTime   = -1000.0;
     g_afireLastPressWeapon = nullptr;
-    g_weaponIsFiringValue  = false;      // the weapon has nothing pending from us
 
     // --- P0: the pure helper's clamps --------------------------------------
     CHECK(std::fabs(A_FireRepressPaceSeconds(0.20f) - 0.18f) < 1e-5f,
@@ -1763,394 +1750,6 @@ static void testRepressPacing()
     resetWorld();
 }
 
-// ---------------------------------------------------------------------------
-// 6b. THE MODEL BOUND ON THE ZONE PATH
-//
-// "It still shoots even though I am not exactly looking at his body" was half
-// answered in path A (the dot's own ray) and left untouched here, on the path
-// that runs whenever the dot's ray cannot decide - an off-centre dot, a
-// missing projection symbol. That path accepted any enemy whose chest, or the
-// whole feet->head SEGMENT, projected inside the aim zone RADIUS, and a radius
-// is round while a body is not: the zone that matched his shoulders also fired
-// at the air 35 px above his head or beside it.
-//
-// These checks place a REAL projected body (w2sTrueProjection, the inverse of
-// the camera fake) and measure the dot against HIS silhouette, so each case is
-// a screen-space fact rather than a mock:
-//   M1 a dot on his chest fires (the model accepts what the eye sees);
-//   M2 a dot 35 px ABOVE his head is refused (inside the old 40 px slack);
-//   M3 a dot 35 px BESIDE his head at head height is refused (same slack);
-//   M4 a dot on him still fires when the zone is TINY (the model, not the
-//      circle, is the measurement);
-//   M5 a body that cannot be projected at all keeps the old zone rule.
-// ---------------------------------------------------------------------------
-static float testFocalPx()
-{
-    return (900.0f * 0.5f) /
-           tanf(NewFeatures::A_FireTune::kFallbackFov * 0.5f *
-                NewFeatures::A_FireTune::kDegToRad);
-}
-
-static void placeBody(float x, float headY, float feetY, float z)
-{
-    objPos(g_targetHead, x, headY, z);
-    objPos(g_targetMesh, x, feetY, z);
-    objPos(g_targetRoot, x, feetY, z);
-}
-
-// The zone path's world: no honest dot ray (killHonestDotRay moves the dot to
-// (830,450)), a REAL projection, and a clear line of sight - so every verdict
-// below is the model bound's, not the ray's.
-static void armZoneWorld()
-{
-    resetWorld();
-    Pawn *enemies[1] = { (Pawn *)g_targetPawn.b };
-    setEnemyList(enemies, 1);
-    killHonestDotRay();
-    fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
-    g_w2sImpl = w2sTrueProjection;
-    g_centreHits = { {0.02f, &g_selfCol} };
-    g_losHits    = { {0.0f, &g_selfCol}, {3.3f, &g_targetCol} };
-    Config.Crosshair.Size = 80.0f;        // 40 px radius: the old rule's slack
-}
-
-static void testModelBound()
-{
-    const float z    = 3.3f;
-    const float ppm  = testFocalPx() / z;   // px per metre at that distance
-
-    // --- M1: the dot is on his body -> fires ------------------------------
-    armZoneWorld();
-    placeBody(0.0f, 1.7f, 0.0f, z);
-    {
-        TriggerTarget out{};
-        const FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
-        CHECK(b == FireBlock::Fired, "M1 a dot ON the model fires");
-        CHECK(out.path == 1, "M1 ... through the zone path (no honest dot ray)");
-    }
-
-    // --- M2: 35 px above his head -> refused (the old 40 px slack fired) --
-    armZoneWorld();
-    {
-        const float headY = 1.6f - (35.0f / ppm);         // head 35 px BELOW the dot
-        placeBody(0.0f, headY, headY - 1.7f, z);
-        const int before = g_triggerDiag.modelSpanMiss;
-        TriggerTarget out{};
-        const FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
-        CHECK(b == FireBlock::NoEnemyInZone,
-              "M2 a dot 35 px above his head is refused (it was inside the old zone slack)");
-        CHECK(g_triggerDiag.modelSpanMiss > before,
-              "M2 ... and the panel counts it as a model miss");
-        // The old rule's measurement, spelled out: the dot was 35 px from the
-        // head end of the segment, i.e. INSIDE the 40 px zone it used to accept.
-        CHECK(35.0f <= Config.Crosshair.Size * 0.5f,
-              "M2 ... which the old radius rule would have accepted");
-    }
-
-    // --- M3: 35 px beside his head, at head height -> refused -------------
-    armZoneWorld();
-    {
-        const float x = 65.0f / ppm;                      // his axis 35 px right of the dot
-        placeBody(x, 1.6f, 1.6f - 1.7f, z);
-        const int before = g_triggerDiag.modelOffBody;
-        TriggerTarget out{};
-        const FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
-        CHECK(b == FireBlock::NoEnemyInZone,
-              "M3 a dot 35 px beside his head is refused (the head is only ~31 px half wide there)");
-        CHECK(g_triggerDiag.modelOffBody > before,
-              "M3 ... and the panel counts it as off-body");
-    }
-
-    // --- M4: the zone is tiny, the dot is on him -> still fires -----------
-    // The zone used to be the measurement; now the body is. A 20 px dot (10 px
-    // radius) cannot see past his shoulder, so only the model can.
-    armZoneWorld();
-    Config.Crosshair.Size = 20.0f;
-    placeBody(0.0f, 1.7f, 0.0f, z);
-    {
-        TriggerTarget out{};
-        const FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
-        CHECK(b == FireBlock::Fired,
-              "M4 a dot on him fires even when the aim zone is smaller than his body");
-    }
-
-    // --- M5: unprojectable body keeps the old zone rule -------------------
-    // Constant-point projection (what the other suite's fakes answer) makes the
-    // axis 0 px long: unmeasurable, so the drawn dot's zone still decides.
-    armZoneWorld();
-    g_w2sImpl = w2sOnCrosshair;                            // every point -> (820,450)
-    {
-        TriggerTarget out{};
-        const FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
-        CHECK(b == FireBlock::Fired,
-              "M5 a body that cannot be measured keeps the drawn dot's zone");
-    }
-
-    Config.Crosshair.Size = 80.0f;
-    restoreHonestDotRay();
-    g_w2sImpl = nullptr;
-}
-
-// ---------------------------------------------------------------------------
-// 7b. THE SAME-FRAME FIRE GUARD
-//
-// The report: "the triggerbot ... only works for a bit then crashes." The held
-// weapon's own Tick is a trigger heartbeat, and both sides of the press live on
-// it: the trigger presses through the weapon's Tick hook and the game runs the
-// press in the Tick that is still executing. The 4 ms per-frame gate is open
-// again by the game's NEXT frame, but nothing checked what the LAST press had
-// set - so the trigger re-answered every fresh fire decisor the weapon body had
-// not reached yet, pressing an armed weapon on every scan, frame after frame.
-// The crash is that re-answer, not a guard bug.
-//
-// The fix reads ONE field the weapon itself owns: Weapon.get_IsFiring
-// 0x50EB644 (dump 739309). StartFire's last write is set_IsFiring(true), and
-// the Tick body consumes/clears it - so while it still answers true, the
-// request from our press is on its way and the trigger SITS OUT. Bounded by
-// the press time so a stuck-true getter can never silence the trigger, and a
-// getter that never resolved only turns the guard off.
-// ---------------------------------------------------------------------------
-static void testSameFrameGuard()
-{
-    // Same world as the pacing tests: edge-press weapon, everything resolved.
-    api12 = (uintptr_t)&fake_localPawnCounted;
-    api22 = (uintptr_t)&fake_currentWeapon;
-    fn_PawnIsAiming                  = nullptr;
-    fn_WeaponGetCurrentFireComponent = nullptr;
-    fn_FireComponentGetIsAiming      = nullptr;
-    fn_PawnGetIsFiring               = nullptr;
-    fn_WeaponIsAutoFire              = nullptr;
-    fn_WeaponRealFireInterval        = fake_realInterval;
-    fn_WeaponCanFire                 = fake_canFire;
-    fn_WeaponIsFiring                = fake_weaponIsFiring;
-    fn_Weapon_StartFire              = fake_startFire;
-    fn_Weapon_StopFire               = fake_stopFire;
-    Config.NewFeaturesMenu.Triggerbot   = true;
-    Config.NewFeaturesMenu.TriggerbotMode = 0;
-    g_realInterval        = 0.20f;
-    g_canFireValue        = false;
-    g_weaponIsFiringValue = false;
-
-    resetWorld();
-    armFiringWorld();
-    resetLocalPawnCache();
-    g_triggerDiag = TriggerbotDiag{};
-    g_startFireCalls = g_stopFireCalls = 0;
-    g_afireHoldingFire = false;
-    g_afireFiringOn    = nullptr;
-    g_afireTargetPawn     = nullptr;
-    g_afireLastPressWeapon = nullptr;
-    g_afireLastPressTime   = -1000.0;
-
-    // --- G1: press -> weapon reports the request -> the NEXT scan sits out ---
-    openTickWindow();
-    A_FireTick(nullptr);
-    CHECK(g_startFireCalls == 1, "G1 the press went out");
-    g_weaponIsFiringValue = true;                       // StartFire's request is live
-    const int skips0 = g_triggerDiag.sameFrameSkips;
-    const int fires0  = g_triggerDiag.fires;
-    openTickWindow();                                   // the very next heartbeat
-    A_FireTick(nullptr);
-    CHECK(g_triggerDiag.sameFrameSkips == skips0 + 1,
-          "G1 the scan right after our press SITS OUT (the weapon still holds our request)");
-    CHECK(g_triggerDiag.fires == fires0 && g_startFireCalls == 1,
-          "G1 ... and it pressed and released NOTHING behind the weapon's back");
-    CHECK(!g_afireHoldingFire || g_afireFiringOn == (void *)g_weaponObj.b,
-          "G1 ... and our own press record is untouched (no Release, no re-press)");
-
-    // An edge-press weapon RELEASES on its first post-press scan (one press =
-    // one shot) and re-presses on the next, so every case below is measured
-    // over two heartbeats: the release scan, then the answer scan.
-    g_weaponIsFiringValue = false;                      // the weapon ran the shot
-    g_afireLastPressTime = A_FireNow() - 0.20;          // past the 0.18 s pace
-    openTickWindow(); A_FireTick(nullptr);              // the release scan
-    openTickWindow(); A_FireTick(nullptr);              // the answer scan
-    CHECK(g_startFireCalls == 2,
-          "G2 once the weapon consumed the request the trigger answers again (release scan, then press)");
-
-    // --- G3: a getter stuck at true can never silence the trigger -----------
-    // The press below is 0.30 s old - older than the kMaxRepressPace bound -
-    // so even a get_IsFiring that answers TRUE forever must not suppress it.
-    g_startFireCalls = 1;                               // measure the delta from here
-    g_weaponIsFiringValue = true;                       // a getter that always says true
-    g_afireHoldingFire    = true;
-    g_afireFiringOn       = (void *)g_weaponObj.b;
-    g_afireTargetPawn     = (void *)g_targetPawn.b;
-    g_afireLastPressTime  = A_FireNow() - 0.30;
-    openTickWindow(); A_FireTick(nullptr);              // release scan
-    openTickWindow(); A_FireTick(nullptr);              // press scan
-    CHECK(g_startFireCalls == 2,
-          "G3 a stuck-true get_IsFiring does NOT suppress the trigger (the press is out of the guard's time window)");
-
-    // --- G4: no getter resolved -> the guard is OFF, the trigger still works -
-    // With the getter gone the weapon looks unfired forever, so the press
-    // cadence falls back to the re-press pace exactly as before the guard.
-    fn_WeaponIsFiring = nullptr;
-    const int skipsBefore = g_triggerDiag.sameFrameSkips;
-    g_startFireCalls = 0;
-    g_afireLastPressTime = A_FireNow() - 0.30;
-    openTickWindow(); A_FireTick(nullptr);              // release scan
-    openTickWindow(); A_FireTick(nullptr);              // press scan
-    CHECK(g_startFireCalls == 1 && g_triggerDiag.sameFrameSkips == skipsBefore,
-          "G4 with no getter the guard is off and the trigger still fires");
-
-    // --- G5: the guard is keyed on the weapon WE pressed --------------------
-    // A press record pointing at a different object (swapped mid-hold) never
-    // sits out scans for the held weapon - and the swap itself still releases.
-    fn_WeaponIsFiring = fake_weaponIsFiring;
-    g_weaponIsFiringValue = true;                       // even "the weapon is firing"
-    g_startFireCalls = 0;
-    g_afireHoldingFire   = true;
-    g_afireFiringOn      = (void *)g_otherPawn.b;       // pressed somebody else
-    g_afireTargetPawn    = (void *)g_targetPawn.b;
-    g_afireLastPressTime = A_FireNow() - 0.30;          // past the pace: no pacing noise
-    openTickWindow(); A_FireTick(nullptr);
-    CHECK(g_triggerDiag.sameFrameSkips == skipsBefore,
-          "G5 the guard does not sit out a weapon we never pressed");
-    CHECK(g_startFireCalls == 1,
-          "G5 ... and the held weapon is serviced on the very first scan (swap released, then pressed)");
-    openTickWindow(); A_FireTick(nullptr);              // now the pending press is OURS
-    CHECK(g_startFireCalls == 1,
-          "G5 ... and only THAT fresh press sits out afterwards (the guard is ours-by-weapon, not any-weapon)");
-
-    // Leave the suite as it was found.
-    A_FireReleaseTrigger(nullptr);
-    g_afireHoldingFire = false;
-    g_afireFiringOn    = nullptr;
-    g_afireTargetPawn  = nullptr;
-    g_afireLastPressTime   = -1000.0;
-    g_afireLastPressWeapon = nullptr;
-    g_weaponIsFiringValue  = false;
-    fn_WeaponIsFiring = nullptr;
-    Config.NewFeaturesMenu.Triggerbot = false;
-    resetWorld();
-}
-
-// ---------------------------------------------------------------------------
-// 13. Letting go of the trigger on a weapon that no longer exists
-//
-// The report: "after the trigger detects an enemy it crashes". Pressing is one
-// native call and releasing is another; the release used to hand StopFire
-// whatever pointer it had recorded at press time, and a weapon that died in
-// between (death, weapon swap, round end - all of which happen right after a
-// kill) has a cleared m_CachedPtr. This is the same liveness rule every other
-// native call on the path already had, and it is the release that was missing.
-// ---------------------------------------------------------------------------
-static void testReleaseGuard()
-{
-    fn_Weapon_StopFire = fake_stopFire;
-
-    // A live weapon: the release still tells the game we let go.
-    objInit(g_weaponObj);
-    g_stopFireCalls = 0;
-    g_afireHoldingFire = true;
-    g_afireFiringOn    = g_weaponObj.b;
-    A_FireReleaseTrigger(nullptr);
-    CHECK(g_stopFireCalls == 1, "R1 a live weapon is still released");
-    CHECK(!g_afireHoldingFire && g_afireFiringOn == nullptr,
-          "R1 ... and the trigger record is cleared");
-
-    // The same weapon, Destroy()ed while the trigger was down: no native call.
-    objInit(g_weaponObj);
-    *(void **)(g_weaponObj.b + 0x10) = nullptr;      // m_CachedPtr cleared
-    g_stopFireCalls = 0;
-    g_afireHoldingFire = true;
-    g_afireFiringOn    = g_weaponObj.b;
-    A_FireReleaseTrigger(nullptr);
-    CHECK(g_stopFireCalls == 0, "R2 a destroyed weapon is never handed to StopFire");
-    CHECK(!g_afireHoldingFire && g_afireFiringOn == nullptr,
-          "R2 ... and the stale record is dropped instead of retried");
-
-    // A release with nothing pressed stays a no-op.
-    objInit(g_weaponObj);
-    g_stopFireCalls = 0;
-    g_afireHoldingFire = false;
-    g_afireFiringOn    = nullptr;
-    A_FireReleaseTrigger(nullptr);
-    CHECK(g_stopFireCalls == 0, "R3 releasing an idle trigger calls nothing");
-
-    fn_Weapon_StopFire = nullptr;
-}
-
-// ---------------------------------------------------------------------------
-// 13b. The slot is ALIVE but no longer a weapon
-//
-// The report: "I use the triggerbot for 15 s then it crashes." m_CachedPtr (the
-// liveness check every native call makes) answers "this slot is a live managed
-// object" - it does NOT answer "this slot is still a Weapon". A weapon freed by
-// a death / weapon swap / round end and then reused for another managed type
-// keeps a live m_CachedPtr, so StopFire used to run weapon code on an object
-// that has none. That needs a long session to happen at all (hundreds of
-// presses, many frees), which is exactly the shape of the report.
-//
-// The fix records the object's Il2CppClass* with the pointer at press time and
-// refuses the call when the slot now answers with a different class.
-// ---------------------------------------------------------------------------
-static void testReleaseKindGuard()
-{
-    fn_Weapon_StopFire = fake_stopFire;
-
-    // Two stand-ins for the Il2CppClass* words (an object's first 8 bytes).
-    static FakeObj kindWeapon, kindOther;
-    objInit(kindWeapon);
-    objInit(kindOther);
-
-    auto setKind = [](FakeObj &obj, FakeObj *kind) {
-        *(void **)(obj.b + 0x00) = kind ? kind->b : nullptr;
-    };
-
-    // (a) the same class as at press time: the release still goes out.
-    objInit(g_weaponObj);
-    setKind(g_weaponObj, &kindWeapon);
-    g_stopFireCalls = 0;
-    g_afireHoldingFire   = true;
-    g_afireFiringOn      = g_weaponObj.b;
-    g_afireFiringOnKind  = kindWeapon.b;
-    A_FireReleaseTrigger(nullptr);
-    CHECK(g_stopFireCalls == 1, "K1 a live slot of the recorded class is still released");
-    CHECK(g_afireFiringOnKind == nullptr, "K1 ... and the recorded class is dropped with the pointer");
-
-    // (b) the slot is alive but now names another class: no native call.
-    objInit(g_weaponObj);
-    setKind(g_weaponObj, &kindOther);            // recycled as something else
-    const int kindSkipsBefore = g_triggerDiag.kindSkips;
-    g_stopFireCalls = 0;
-    g_afireHoldingFire  = true;
-    g_afireFiringOn     = g_weaponObj.b;
-    g_afireFiringOnKind = kindWeapon.b;
-    A_FireReleaseTrigger(nullptr);
-    CHECK(g_stopFireCalls == 0, "K2 a recycled slot is never handed to StopFire");
-    CHECK(g_triggerDiag.kindSkips == kindSkipsBefore + 1,
-          "K2 ... and the refusal is counted for the panel");
-    CHECK(!g_afireHoldingFire && g_afireFiringOn == nullptr,
-          "K2 ... and the trigger record is cleared, not retried");
-
-    // (c) no class was recorded (unreadable header): the old liveness rule
-    //     stands, so a device where the class word is unreadable keeps working.
-    objInit(g_weaponObj);
-    setKind(g_weaponObj, nullptr);
-    g_stopFireCalls = 0;
-    g_afireHoldingFire  = true;
-    g_afireFiringOn     = g_weaponObj.b;
-    g_afireFiringOnKind = nullptr;
-    A_FireReleaseTrigger(nullptr);
-    CHECK(g_stopFireCalls == 1, "K3 with no recorded class the liveness rule still fires");
-
-    // (d) A_FireObjectKind itself: the class word, or nothing.
-    objInit(g_weaponObj);
-    setKind(g_weaponObj, &kindWeapon);
-    CHECK(A_FireObjectKind(g_weaponObj.b) == (void *)kindWeapon.b,
-          "K4 A_FireObjectKind reads the object header's class word");
-    CHECK(A_FireObjectKind(nullptr) == nullptr, "K4 ... and answers null for null");
-
-    fn_Weapon_StopFire = nullptr;
-    g_triggerDiag = TriggerbotDiag{};
-}
-
-
-// Host-only link stub: the include graph references the A64 hook engine.
-void A64HookFunction(void *const symbol, void *const replace, void **result)
-{ (void)symbol; if (result) *result = replace; }
 int main()
 {
     installFns();
@@ -2160,16 +1759,12 @@ int main()
     testArrayGuards();
     testCentreRay();
     testScan();
-    testModelBound();
     testNoTargetFilter();
     testCrosshairAim();
     testTickHookCost();
     testCrashFixes();
     testAdsGate();
     testRepressPacing();
-    testSameFrameGuard();
-    testReleaseGuard();
-    testReleaseKindGuard();
 
     if (g_failures == 0) {
         printf("\nOK: all LOS gate checks passed\n");

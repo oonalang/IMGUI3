@@ -11,7 +11,7 @@
 // Skin/tests/stubs, __fastcall is elided like the real build):
 //   g++ -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -D'__fastcall=' \
 //       -I src/main/jni/Skin/tests/stubs -I src/main/jni -I src/main/jni/ImGui \
-//       -I src/main/jni/Includes \
+//       -I src/main/jni/Includes -I src/main/jni/foxcheats/include \
 //       src/main/jni/Hacks/Feature/tests/config_defaults_check.cpp -o /tmp/config_defaults_check \
 //       && /tmp/config_defaults_check
 // Exits 0 and prints "OK: ..." on success. Android.mk's wildcards do not cover
@@ -38,6 +38,7 @@
 #include "IL2CppSDKGenerator/IL2Cpp/Il2Cpp.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Tools.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
+#include "foxcheats/include/ScanEngine.hpp"
 #include "Hacks/Feature/Init_Hacks.h"
 
 // Macros.h pulls in the Substrate headers; nothing here hooks anything.
@@ -59,10 +60,6 @@ static int g_failures = 0;
             printf("FAIL: %s\n", msg);                                         \
         }                                                                      \
     } while (0)
-
-// Host-only link stub: the include graph references the A64 hook engine.
-extern "C" void A64HookFunction(void *const symbol, void *const replace, void **result)
-{ (void)symbol; if (result) *result = replace; }
 
 int main()
 {

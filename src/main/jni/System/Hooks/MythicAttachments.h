@@ -1,69 +1,85 @@
 #pragma once
 
+// ============================================================================
 //  MythicAttachments.h  -  "Mythic Attachments": an applied weapon skin behaves
-//  as if it were really owned, so the weapon's attachments (the mythic's own
+//  as if it were REALLY OWNED, so the weapon's attachments (the mythic's own
 //  ones included) are unlocked instead of shown locked.
 //
-//  The mod already applies the skin itself (the Skin loaders write
-//  WeaponConfExtraConfig.DefaultMythicArmor / DefaultMythicSig, the skin id and
-//  the camo records). What is left of "as if I owned it" are the client-side
-//  unlock answers and the field writes below. All RVAs are dump.cs RVAs
-//  (dump (GR .57).cs), i.e. what getAbsoluteAddress() wants.
+//  The mod already applies the skin itself - the Skin tab writes the weapon's
+//  config rows (WeaponConfExtraConfig.DefaultMythicArmor / DefaultMythicSig,
+//  the skin id, the camo / kill-decoration records). What is left of "as if I
+//  owned it" are the four CLIENT-SIDE unlock answers the loadout asks:
 //
-//  ANSWERS (layer 1)
-//    1. GameBase.WeaponPromotionInfo.IsWeaponAttachmentUnlock(int) RVA 0xA61AA00
-//       (dump.cs 1390332, WeaponAttachmentUnlockMap @0x18) - the weapon's own
-//       promotion-level map.
-//    2. GameBase.WeaponPromotionInfo.IsWeaponSkinUnlock(uint) RVA 0xA61AD54
-//       (dump.cs 1390344) - owning the skin is what makes the applied mythic
-//       count as owned here.
-//    3. LoadoutWeaponsUIHelper.IsThisAttachmentUnlock(uint, uint, bool)
-//       RVA 0x5D40528 (dump.cs 2072765) - the loadout's own gate; it decides
-//       which attachment rows are drawn with a lock.
-//    4. WeaponAttr.IsAttachUnlock(uint, uint) RVA 0xA188634 (dump.cs 2045791) -
-//       the confirm-time validator of the attachment popup, the last client gate
-//       before the equip request is sent.
+//   1. GameBase.WeaponPromotionInfo.IsWeaponAttachmentUnlock(int attachment)
+//        RVA 0xA61AA00  (dump.cs 1390332, field WeaponAttachmentUnlockMap 0x18)
+//        "is this attachment unlocked at this weapon's own level" - the map the
+//        weapon's promotion level fills in. Also the address this repo already
+//        hooked for the old Config.ExtraMenu.Attachment flag.
+//   2. GameBase.WeaponPromotionInfo.IsWeaponSkinUnlock(uint skinId)
+//        RVA 0xA61AD54  (dump.cs 1390344)
+//        "is this weapon skin unlocked for this weapon" - the very question
+//        owning the skin answers, which is what makes the applied mythic count
+//        as owned here.
+//   3. LoadoutWeaponsUIHelper.IsThisAttachmentUnlock(uint blueprintWeaponId,
+//      uint attachID, bool isCheckWeaponUnlock)
+//        RVA 0x5D40528  (dump.cs 2072765)
+//        the LOADOUT's own gate: an attachment it says is not unlocked is drawn
+//        with the lock. This is the one that greys out / locks the attachment
+//        list for a weapon the skin was applied to.
+//   4. WeaponAttr.IsAttachUnlock(uint weaponID, uint attachID)
+//        RVA 0xA188634  (dump.cs 2045791)
+//        the confirm-time validator of the attachment popup (WeaponAttr.
+//        OnConfirm -> SetData/EquipWeaponSyncAttch), i.e. the last client gate
+//        before the equip request is sent.
 //
-//  DATA WRITES (layer 2) - on a phone layer 1 reported asked/granted 0/0 (those
-//  four are small enough to be inlined into their callers), so the objects the
-//  very screen reads are rewritten instead:
-//    5. LoadoutWeaponsAttachmentController.GetAttachmentList(int) RVA 0xB6323C0
-//       (dump.cs 1163747) - the List<AttachmentGroupNew> of rows the popup
-//       draws; every ELock row is rewritten to EUnlock.
-//    6. LoadoutWeaponsAttachmentItemController.SetData(AttachmentGroupNew, out
-//       object) RVA 0xB83F1C0 (dump.cs 1164290) - owns the row before its view.
-//    7. LoadoutWeaponsAttachmentCell.SetData(...) RVA 0xB83D5E0
-//       (dump.cs 1319236) - gunsmith slots: EAttachmentCellState.ELocked (3)
-//       becomes ENone (0), so a slot is not treated as locked either.
+//  LAYER 2 - the part that behaves like the skin: dump-driven WRITES into the
+//  client's own objects, so no "is it unlocked?" answer has to be asked for the
+//  lock to disappear.
 //
-//  LAYERS 3/4 - the per-row questions the gunsmith re-asks on every refresh:
-//    8. LoadoutWeaponsAttachmentController.IsAttachDisabledForCurrentWeapon(uint)
-//       RVA 0xB6371C0 (dump.cs 1163786) - a row that is "disabled on this
-//       weapon" cannot be equipped even when OwnState says unlocked.
-//    9. LoadoutWeaponsAttachmentController.UpdateEquipLockView(AttachmentGroupNew)
-//       RVA 0xB63532C (dump.cs 1163768) - repaints the lock after every click.
-//   10. WeaponIniAttachBaseController.IsPreConditionSatisfied(ref string, bool)
-//       RVA 0xBB636D8 (dump.cs 1170281, slot 50) - the Signature Attachment's
-//       own gate, plus AttachmentGroupNew.m_IsPreConditionSatisfied @0x19
-//       (dump.cs 2073145) forced in the same write pass, because that field is
-//       what the row view reads to show its lock object.
+//   5. LoadoutWeaponsAttachmentController.GetAttachmentList(int)
+//        RVA 0xB6323C0  (dump.cs 1163747)
+//        BUILDS the attachment rows the popup draws. The returned
+//        List<AttachmentGroupNew> is walked and every row whose EAttachmentOwnState
+//        is ELock (0) is rewritten to EUnlock (1) - the same kind of field write
+//        the Skin tab performs when it applies a mythic.
+//   6. LoadoutWeaponsAttachmentItemController.SetData(AttachmentGroupNew,
+//      out object panel)
+//        RVA 0xB83F1C0  (dump.cs 1164290)
+//        the row is handed to its view here, so AttachmentGroupNew.OwnState
+//        (0x3C) is forced BEFORE the game reads it.
+//   7. LoadoutWeaponsAttachmentCell.SetData(..., int cellState, ...)
+//        RVA 0xB83D5E0  (dump.cs 1319236)
+//        the gunsmith's own slots (Muzzle / Barrel / Optic / ...) are cells with
+//        an EAttachmentCellState: ELocked (3) is rewritten to ENone (0), so the
+//        slot draws unlocked and its click is not treated as a locked slot
+//        (dump.cs 2076253 for the enum).
 //
-//  Every gate answers the honest value while the toggle is off and always falls
-//  back to the original (never a hard-coded false).
+//  Why layer 2 exists: on a phone layer 1 reported asked/granted 0/0 - this
+//  build never asks those four (they are tiny and get inlined into their
+//  callers). The three below are multi-kilobyte functions ON the render path of
+//  the very screen that draws the lock, so they cannot be skipped that way.
 //
-//  WHAT THIS IS NOT: a client answer, not a server grant - the loadout still has
-//  to survive the server's inventory check, so a genuinely unowned attachment
-//  can be rejected there. The mythic's own *look* per attachment
-//  (AttachItem.m_mythicSkinID 0x18 / AttachmentGroupOld.MythicSkinID 0x18,
-//  dump.cs 2073122 / 2287685) is deliberately NOT faked: inventing an
-//  attachment-skin id would put the wrong object on the gun.
+//  All four answer the honest value while the toggle is off, and the original
+//  game function is always the fallback (never a hard-coded false), so turning
+//  the option off restores stock behaviour exactly.
 //
-//  Config: Config.ExtraMenu.MythicAttachments (default ON); the older
-//  Config.ExtraMenu.Attachment flag is ORed in, so old config files keep working.
+//  WHAT THIS IS NOT: it is a CLIENT answer, not a server grant. The loadout
+//  still has to survive the server's own inventory check when it is saved, so
+//  an attachment that is genuinely not unlocked can be rejected there. The
+//  mythic's *look* for each attachment (AttachItem.m_mythicSkinID 0x18 /
+//  AttachmentGroupOld.MythicSkinID 0x18, dump.cs 2073122 / 2287685) is data
+//  resolved from the weapon's mythic armor and is deliberately NOT faked here -
+//  inventing an attachment-skin id would put the wrong object on the gun.
 //
-//  Include contract: uses sConfig Config, so it is included after the game
-//  structs (Hacks/Hacks.h -> Feature/Feature.h -> Init_Hacks.h). It includes
-//  Init_Hacks.h itself so a test TU can pull just this file after the structs.
+//  Config: Config.ExtraMenu.MythicAttachments (Hacks/Feature/Init_Hacks.h),
+//  default ON. The pre-existing Config.ExtraMenu.Attachment flag is ORed into
+//  the attachment half, so an existing config that set it keeps working.
+//
+//  Include contract: this header uses sConfig Config, so it is included after
+//  the game structs (Hacks/Hacks.h -> Feature/Feature.h -> Init_Hacks.h), the
+//  same contract Feats.h itself has. It includes Init_Hacks.h so a test TU can
+//  pull just this file after the structs.
+// ============================================================================
 
 #include "Hacks/Feature/Init_Hacks.h"
 
@@ -85,35 +101,6 @@ namespace mythic_attachments
         constexpr uintptr_t AttachmentList_GetAttachmentList         = 0xB6323C0;
         constexpr uintptr_t AttachmentItem_SetData                   = 0xB83F1C0;
         constexpr uintptr_t AttachmentCell_SetData                   = 0xB83D5E0;
-
-        // Layer 3 - the two ANSWERS the gunsmith still consults per row, and the
-        // reason the lock survived layer 2 on device:
-        //   LoadoutWeaponsAttachmentController.IsAttachDisabledForCurrentWeapon
-        //     (uint attachId) -> bool      dump.cs 1163786   RVA 0xB6371C0
-        //     "this attachment cannot be used on this weapon" - a locked row is
-        //     also DISABLED, and a disabled row cannot be equipped even when its
-        //     OwnState says unlocked.
-        //   LoadoutWeaponsAttachmentController.UpdateEquipLockView
-        //     (AttachmentGroupNew) -> void  dump.cs 1163768   RVA 0xB63532C
-        //     the view that DRAWS the lock, run on every refresh of the row.
-        constexpr uintptr_t Loadout_IsAttachDisabled                  = 0xB6371C0;
-        constexpr uintptr_t Loadout_UpdateEquipLockView               = 0xB63532C;
-
-        // Layer 4 - the PRECONDITION, which is the *Signature Attachment* in the
-        // user's screenshot: a mythic-only row whose "can this be used here"
-        // answer is separate from its OwnState. That row keeps its grey card and
-        // its lock while OwnState already says unlocked, and the EQUIP button
-        // stays disabled.
-        //   WeaponIniAttachBaseController.IsPreConditionSatisfied
-        //     (ref string conflictDesc, bool bTip) -> bool
-        //     dump.cs 1170281   RVA 0xBB636D8   Slot 50
-        //     the gunsmith panel's own check, run when the row is selected and
-        //     when the equip button is refreshed (UpdateBtnState).
-        //   AttachmentGroupNew.m_IsPreConditionSatisfied
-        //     bool @0x19, dump.cs 2073145 - the field the ROW view reads to show
-        //     its ObjPreNoSatisfied (lock) object. Forced in the same writes that
-        //     force OwnState, because a field write cannot be inlined away.
-        constexpr uintptr_t WeaponIni_PreConditionSatisfied           = 0xBB636D8;
     }
 
     // The attachment half: the new toggle, plus the flag this repo shipped
@@ -141,9 +128,6 @@ namespace mythic_attachments
         GateList,             // LoadoutWeaponsAttachmentController.GetAttachmentList
         GateItem,             // LoadoutWeaponsAttachmentItemController.SetData
         GateCell,             // LoadoutWeaponsAttachmentCell.SetData
-        GateDisabled,         // LoadoutWeaponsAttachmentController.IsAttachDisabledForCurrentWeapon
-        GateLockView,         // LoadoutWeaponsAttachmentController.UpdateEquipLockView
-        GatePrecondition,     // WeaponIniAttachBaseController.IsPreConditionSatisfied
         GateCount
     };
 
@@ -185,7 +169,6 @@ namespace mythic_attachments
     // ABSOLUTE offset from the object pointer - the same convention the Skin tab
     // already uses when it casts a config instance to its field struct.
     constexpr uintptr_t kAttachGroupNew_OwnState = 0x3C;   // int, dump.cs 2073151
-    constexpr uintptr_t kAttachGroupNew_PreCondition = 0x19; // bool, dump.cs 2073145
     constexpr int       kOwnStateELock   = 0;              // EAttachmentOwnState
     constexpr int       kOwnStateEUnlock = 1;
     constexpr int       kCellStateELocked = 3;             // EAttachmentCellState
@@ -218,10 +201,6 @@ namespace mythic_attachments
             if (group == nullptr) continue;
             int *own = (int *)((char *)group + kAttachGroupNew_OwnState);
             if (*own == kOwnStateELock) { *own = kOwnStateEUnlock; forced++; }
-            if (!*(bool *)((char *)group + kAttachGroupNew_PreCondition)) {
-                *(bool *)((char *)group + kAttachGroupNew_PreCondition) = true;
-                forced++;
-            }
         }
         return forced;
     }
@@ -235,20 +214,6 @@ namespace mythic_attachments
         int *own = (int *)((char *)group + kAttachGroupNew_OwnState);
         if (*own != kOwnStateELock) return false;
         *own = kOwnStateEUnlock;
-        return true;
-    }
-
-    // The PRECONDITION of one row (dump.cs 2073145): "this row may be used on
-    // this weapon". A Signature Attachment - the mythic's own slot, the one the
-    // user's screenshot still shows with a padlock - is exactly a row whose
-    // OwnState can be unlocked while this stays false, which is why layer 2/3
-    // alone left it locked. Returns true only when it actually flipped.
-    inline bool UnlockPreConditionGroup(void *group)
-    {
-        if (group == nullptr) return false;
-        bool *ok = (bool *)((char *)group + kAttachGroupNew_PreCondition);
-        if (*ok) return false;
-        *ok = true;
         return true;
     }
 }
@@ -349,10 +314,9 @@ inline void (*orig_AttachmentItemSetData)(void *instance, void *group, void *pan
 inline void AttachmentItemSetData(void *instance, void *group, void *panel)
 {
     mythic_attachments::NoteAsk(mythic_attachments::GateItem);
-    if (mythic_attachments::AttachmentsUnlocked()) {
-        const bool own = mythic_attachments::UnlockOwnStateGroup(group);
-        const bool pre = mythic_attachments::UnlockPreConditionGroup(group);
-        if (own || pre) mythic_attachments::NoteGrant(mythic_attachments::GateItem);
+    if (mythic_attachments::AttachmentsUnlocked() &&
+        mythic_attachments::UnlockOwnStateGroup(group)) {
+        mythic_attachments::NoteGrant(mythic_attachments::GateItem);
     }
     if (orig_AttachmentItemSetData != nullptr)
         orig_AttachmentItemSetData(instance, group, panel);
@@ -390,66 +354,4 @@ inline void AttachmentCellSetData(void *instance, uint32_t weaponID,
         orig_AttachmentCellSetData(instance, weaponID, attachmentType, attachItem, callback,
                                    cellState, conflictAttachmentStr, posName,
                                    isTransmogrification, enableReddot, isGuarActiveTipVisible);
-}
-
-// ---- 8. "is this attachment disabled on this weapon?" ---------------------
-// dump.cs 1163878: private bool IsAttachDisabledForCurrentWeapon(uint attachId).
-// A disabled row is not clickable even when it is unlocked, so this answer has
-// to match the OwnState writes above or the row shows unlocked and does nothing.
-inline bool (*orig_IsAttachDisabledForCurrentWeapon)(void *instance, uint32_t attachId) = nullptr;
-inline bool IsAttachDisabledForCurrentWeapon(void *instance, uint32_t attachId)
-{
-    mythic_attachments::NoteAsk(mythic_attachments::GateDisabled);
-    if (instance != nullptr && mythic_attachments::AttachmentsUnlocked()) {
-        mythic_attachments::NoteGrant(mythic_attachments::GateDisabled);
-        return false;                       // never disabled while the option is on
-    }
-    return orig_IsAttachDisabledForCurrentWeapon != nullptr
-         ? orig_IsAttachDisabledForCurrentWeapon(instance, attachId)
-         : false;
-}
-
-// ---- 9. the view that draws the lock -------------------------------------
-// dump.cs 1163778: private void UpdateEquipLockView(AttachmentGroupNew
-// attachmentGroup). The row is refreshed here outside the list build (after a
-// click, after the server answers, after a data-store update), which is why a
-// lock can come back on a row that layer 2 had already rewritten: the view is
-// handed the group again. OwnState is forced to EUnlock BEFORE the original
-// runs, so the view it paints is the unlocked one.
-inline void (*orig_UpdateEquipLockView)(void *instance, void *group) = nullptr;
-inline void UpdateEquipLockView(void *instance, void *group)
-{
-    mythic_attachments::NoteAsk(mythic_attachments::GateLockView);
-    if (mythic_attachments::AttachmentsUnlocked()) {
-        const bool own = mythic_attachments::UnlockOwnStateGroup(group);
-        const bool pre = mythic_attachments::UnlockPreConditionGroup(group);
-        if (own || pre) mythic_attachments::NoteGrant(mythic_attachments::GateLockView);
-    }
-    if (orig_UpdateEquipLockView != nullptr)
-        orig_UpdateEquipLockView(instance, group);
-}
-
-// ---- 10. the gunsmith's own precondition answer ---------------------------
-// dump.cs 1170281: protected virtual bool IsPreConditionSatisfied(ref string
-// conflictDesc, bool bTip), slot 50 of WeaponIniAttachBaseController (the
-// gunsmith panel: it owns SetEquipAttachDotsView, UpdateBtnState and
-// OnBtnEquipClick). The override at dump.cs 1171475 belongs to the weapon
-// COMPARE screen, which asks the same question of its own rows.
-//
-// This is the answer behind the Signature Attachment's padlock that layers 2/3
-// could not move: its OwnState is already EUnlock (the row is in the list) but
-// the panel still refuses it, greys the card and leaves EQUIP disabled. The
-// `ref string` conflict description is only ever filled in on the failure path,
-// so answering true deliberately leaves it untouched - nothing reads it then.
-inline bool (*orig_IsPreConditionSatisfied)(void *instance, void *conflictDesc, bool bTip) = nullptr;
-inline bool IsPreConditionSatisfied(void *instance, void *conflictDesc, bool bTip)
-{
-    mythic_attachments::NoteAsk(mythic_attachments::GatePrecondition);
-    if (instance != nullptr && mythic_attachments::AttachmentsUnlocked()) {
-        mythic_attachments::NoteGrant(mythic_attachments::GatePrecondition);
-        return true;
-    }
-    return orig_IsPreConditionSatisfied != nullptr
-         ? orig_IsPreConditionSatisfied(instance, conflictDesc, bTip)
-         : false;
 }

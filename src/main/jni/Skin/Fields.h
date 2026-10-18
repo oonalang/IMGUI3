@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <cctype>
-#include <mutex>
 #include <map>
 #include <string>
 #include <array>
@@ -45,13 +44,6 @@ extern std::vector<void *> itemInventoryInstance;
 extern std::vector<void *> weaponExtraInstance;
 extern std::vector<void *> weaponFireEffectInstance;
 extern std::vector<void *> weaponConfInstance;
-// The conf tables are FILLED on the game thread: every WeaponConfConfig ctor
-// (Skin/Thread.h) appends under this mutex. A reader on the render thread that
-// walks `weaponConfInstance` without it is racing a push_back, and the realloc
-// that lands mid-walk is a SIGSEGV - exactly "it crashes when I join a game",
-// because a match builds hundreds of confs at once. Every reader takes a copy
-// under the lock and walks the copy.
-extern std::mutex g_dataMutex;
 extern std::vector<void *> weaponAssetGroupInstance;
 extern std::vector<void *> mythicArmorInstance;
 extern std::vector<void *> mythicSightInstance;
@@ -528,8 +520,8 @@ extern ItemResourceFields *itemFields;
 // ---------------------------------------------------------------------------
 // Character skin application - one place the UI and the host test both drive.
 //
-// The character list used to be rendered inline by the UI, which is how the
-// two bugs below stayed invisible. It is now a plain function over the
+// The character list used to carry this inline in System/UI/SkinTab.h, which is
+// how the two bugs below stayed invisible. It is now a plain function over the
 // character structs, so Skin/tests/character_apply_check.cpp can build fake
 // config rows and assert what gets written.
 // ---------------------------------------------------------------------------
@@ -579,9 +571,9 @@ inline bool CharacterApplyReady(const std::vector<void *> &charModels,
 // character still wrote Charly's config - "I picked Ghost - Stealth and it
 // applied on Charly".
 //
-// Every write is guarded with != 0, the same discipline the weapon-skin path
-// uses: these records belong to the game, and writing the zero of an unmatched
-// value is what blanks a card in the loadout.
+// Every write is guarded with != 0, the same discipline the weapon-skin path in
+// SkinTab.h uses: these records belong to the game, and writing the zero of an
+// unmatched value is what blanks a card in the loadout.
 //
 // The four UI sprite indices come from ItemRes2 - the uint16_t[4] Skin/Thread.h
 // fills from this character's own ItemResourceConfig. charRes carries the three

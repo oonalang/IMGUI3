@@ -371,35 +371,7 @@ bool loadskinhack = false;
 bool loadCharacter = false;
 bool loadWatch = false;
 bool loadDeadbox = false;
-bool loadPlane = false;
-bool loadSnowboard = false;
-bool loadCamos = false;
 bool isLoad = false;
-
-// ── Why the loader thread is gated ───────────────────────────────────────────
-//
-// Every Load*() below walks objects captured by the ctor hooks (raw pointers
-// into the game's own config tables) and calls NATIVE getters on them
-// (GetNameString -> String::CString, Array::getLength, ...). That used to run
-// on this background thread every 1.5 s for the whole life of the process.
-//
-// In a match the game reloads / releases the lobby config tables, so a pointer
-// captured in the lobby can be freed while the loop is still dereferencing it.
-// Tools::IsPtrValid() only proves the PAGE is mapped - a freed IL2CPP object in
-// a still-mapped heap passes it - so the next native getter ran on garbage and
-// the process died. That is the "crash when the skins loaded while I was in the
-// middle of the game" report.
-//
-// Two rules now:
-//   1. the catalogues are built only while NO match is running;
-//   2. each catalogue is built once (the flags above), so a session does not
-//      re-dereference the tables every 1.5 s at all.
-inline bool SkinsMatchActive()
-{
-    if (m_unity == 0) return true;              // game not mapped yet
-    Pawn *local = GamePlay::get_LocalPawn();    // same call the menu makes
-    return local != nullptr;
-}
 
 std::string lastKnownName = "";
 int emptyNameCount = 0;
@@ -1535,8 +1507,6 @@ void LoadWeaponSkins() {
 }
 
 void LoadPlaneSkins() {
-    if (loadPlane) return;      // built once - see the note at SkinsMatchActive
-
     std::vector<void*> dropPlaneSkins;
     {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -1558,8 +1528,6 @@ void LoadPlaneSkins() {
                 break;
         }
     }
-
-    loadPlane = true;           // every BRDropPlaneSkin row was walked once
 }
 
 // ── VehicleSkis / VehicleSkinHelper forward declarations ─────────────────────
@@ -1720,8 +1688,6 @@ inline void hook_VehicleSkis_LoadModelComplete(void* instance, int assetID, void
 // ─────────────────────────────────────────────────────────────────────────────
 
 void LoadSnowboardSkins() {
-    if (loadSnowboard) return;  // built once - see the note at SkinsMatchActive
-
     std::vector<void*> skinConfs;
     {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -1748,8 +1714,6 @@ void LoadSnowboardSkins() {
             : prefix + skinName;
         snowboardData.push_back({name, skinId});
     }
-
-    loadSnowboard = true;       // every VehicleSkinConf row was walked once
 }
 
 // ── Camo catalogue ────────────────────────────────────────────────────────
@@ -1761,13 +1725,6 @@ void LoadSnowboardSkins() {
 // row supplies the entry and a later one upgrades the fields it could not
 // answer, which also covers rows whose name table was not ready yet.
 void LoadCamos() {
-    // Runs until the catalogue stops growing (a row can only be named once the
-    // localisation table is up, so the first pass may insert placeholders that a
-    // later pass upgrades), then never again. Without the stop the table was
-    // re-walked every 1.5 s for the whole session, dereferencing lobby config
-    // objects that a match transition can free - see SkinsMatchActive.
-    if (loadCamos) return;
-
     std::vector<void *> camoConfs;
     {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -1794,14 +1751,6 @@ void LoadCamos() {
 
         InsertCamo((int)camoItemID, name, fields->TextureAssetID, fields->BelongWeaponID);
     }
-
-    // A pass that added nothing is the stable catalogue: stop re-reading the
-    // table. A pass that grew it keeps the loader alive so the next one can
-    // resolve names that were placeholders.
-    static size_t lastCamoCount = 0;
-    if (camoData.size() == lastCamoCount)
-        loadCamos = true;
-    lastCamoCount = camoData.size();
 }
 
 void Skins_Thread()
@@ -1899,21 +1848,14 @@ void Skins_Thread()
     
     while (true)
     {
-        // ONLY build the catalogues outside a match. The lists feed the menu and
-        // are built once each, so pausing in-match loses nothing - and it keeps
-        // this thread off the game's config tables exactly when the game may be
-        // releasing them (the mid-match skin crash; see SkinsMatchActive).
-        if (!SkinsMatchActive())
-        {
-            LoadCharacterSkins();
-            LoadWeaponSkins();
-            LoadPlaneSkins();
-            LoadSnowboardSkins();
-            LoadCamos();
-            LoadKillIcons();
-            g_killDecorationDiag.killEffectWeapons = (int)killEffectByWeapon.size();
-            g_killDecorationDiag.killEffectItemIDs = (int)killEffectItemByAssetId.size();
-        }
+        LoadCharacterSkins();
+        LoadWeaponSkins();
+        LoadPlaneSkins();
+        LoadSnowboardSkins();
+        LoadCamos();
+        LoadKillIcons();
+        g_killDecorationDiag.killEffectWeapons = (int)killEffectByWeapon.size();
+        g_killDecorationDiag.killEffectItemIDs = (int)killEffectItemByAssetId.size();
         std::this_thread::sleep_for(std::chrono::milliseconds(1500));
     }
 }

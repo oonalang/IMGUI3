@@ -108,40 +108,6 @@ static inline void ApplySpeedhack() {
     lastAppliedScale = targetScale;
 }
 
-// ---------------------------------------------------------------------------
-// Tools::IsPtrValid() only answers "is this memory mapped and readable". A
-// UnityEngine.Object the game has already Destroyed keeps its MANAGED wrapper
-// sitting in readable heap - so every pointer guard passes - while the native
-// object behind it is gone: Object.m_CachedPtr (dump.cs 169503) is cleared the
-// moment the native side dies. The enemy pawn list keeps such an entry for a
-// few frames (death, respawn, match end), which is the window the report
-// describes: "~10 s after joining a match that has bots in it". Asking a
-// destroyed Pawn / Transform / Camera for anything then walks a null native
-// pointer and takes the client down.
-//
-// Same liveness rule the triggerbot uses (NewFeatures::A_FireObjectAlive); it
-// lives here too because DrawESP.h is parsed before NewFeatures.h.
-// Pawn, Transform and Camera all derive from UnityEngine.Object, so one offset
-// covers them.
-// ---------------------------------------------------------------------------
-static inline bool EspObjectAlive(const void *obj) {
-    if (!Tools::IsPtrValid((void *)obj))
-        return false;
-    return *(const void **)((const uintptr_t)obj + 0x10) != nullptr;
-}
-
-// Nothing in this file draws unless an ESP overlay option is on. With the whole
-// page off the frame must not walk a pawn, a camera or a transform at all: that
-// walk is what dereferenced a half-destroyed object ~10 s into a match even
-// when every feature was off.
-static inline bool EspAnythingToDraw() {
-    const auto &e = Config.ESPMenu;
-    return e.Signal || e.Alert || e.Count || e.Name || e.isPlayerLine || e.Armor ||
-           e.GrenadeWarn || e.BRClass || e.Vehicle || e.VehicleHealth || e.Box ||
-           e.Health || e.Distance || e.Skeleton || e.ShowFov || e.Crosshair ||
-           e.Aimline || e.EspStyle != EspStyleNone;
-}
-
 uintptr_t GetClosestTarget() {
     uintptr_t result = 0;
     float MaxDist = std::numeric_limits<float>::infinity();
@@ -153,21 +119,20 @@ uintptr_t GetClosestTarget() {
         if (LocalPawn) {
             Vector3 MyPos{0, 0, 0};
             auto local_m_Mesh = *(Transform **) (LocalPawn + Class_Pawn_m_Mesh);
-            if (EspObjectAlive((void *) local_m_Mesh)) {
+            if (local_m_Mesh) {
                 MyPos = local_m_Mesh->get_position();
             }
             auto EnemyPawns = *(List<uintptr_t> **) (get_MatchGame + Class_BaseGame_EnemyPawns);
-            if (Tools::IsPtrValid((void *) EnemyPawns)) {
+            if (EnemyPawns) {
                 auto Items = EnemyPawns->getItems();
-                const int pawnCount = EnemyPawns->getSize();
-                if (Tools::IsPtrValid((void *) Items) && pawnCount > 0 && pawnCount <= 1024) {
-                    for (int i = 0; i < pawnCount; i++) {
+                if (Items) {
+                    for (int i = 0; i < EnemyPawns->getSize(); i++) {
                         auto Pawn = Items[i];
-                        if (EspObjectAlive((void *) Pawn)) {
+                        if (Pawn) {
                             if (!*(bool *) (Pawn + Class_Pawn_m_IsAlive))
                                 continue;
                             auto m_Mesh = *(Transform **) (Pawn + Class_Pawn_m_Mesh);
-                            if (!EspObjectAlive((void *) m_Mesh))
+                            if (!m_Mesh)
                                 continue;
                             auto RootPos = m_Mesh->get_position();
                             float Distance = Vector3::Distance(MyPos, RootPos);
@@ -182,41 +147,6 @@ uintptr_t GetClosestTarget() {
         }
     }
     return result;
-}
-
-// ---------------------------------------------------------------------------
-// The two per-pawn field reads the ESP loop used to do bare, every frame, for
-// every pawn. Both go null in exactly the window the report describes ("~10 s
-// after joining a match that has bots in it"): a pawn that just died or is
-// respawning keeps its managed wrapper readable - so Tools::IsPtrValid() on the
-// pawn still passes - while the game has already cleared m_AttackableInfo and
-// the name string hanging off its PlayerInfo. Reading `m_AttackableInfo +
-// m_Health` then dereferenced null, which is a SIGSEGV inside the render loop
-// with no user action.
-// ---------------------------------------------------------------------------
-static inline bool EspPawnHealth(uintptr_t pawn, int &curHp, int &maxHp) {
-    if (!EspObjectAlive((void *)pawn))
-        return false;
-    auto attackableInfo = *(uintptr_t *)(pawn + Class_AttackableTarget_m_AttackableInfo);
-    if (!Tools::IsPtrValid((void *)attackableInfo))
-        return false;
-    curHp = (int)*(float *)(attackableInfo + Class_AttackableTarget_m_Health);
-    maxHp = (int)*(float *)(attackableInfo + Class_AttackableTarget_m_MaxHealth);
-    return true;
-}
-
-// The name string needs the same treatment: Pawn.get_PlayerName() is a native
-// call that answers null for a pawn whose PlayerInfo is gone (bots, respawns),
-// and the old call site ran String::CString() on that null.
-static inline std::string EspPawnName(Pawn *pawn) {
-    if (!EspObjectAlive(pawn))
-        return std::string();
-    if (pawn->m_IsBot())
-        return std::string("BOT");
-    String *playerName = pawn->get_PlayerName();
-    if (!Tools::IsPtrValid((void *)playerName))
-        return std::string();
-    return std::string(playerName->CString());
 }
 
 bool isInsideFOV(int x, int y) {
@@ -239,26 +169,23 @@ uintptr_t GetInsideFOVTarget() {
         if (LocalPawn) {
             Vector3 MyPos{0, 0, 0};
             auto local_m_Mesh = *(Transform **) (LocalPawn + Class_Pawn_m_Mesh);
-            if (EspObjectAlive((void *) local_m_Mesh)) {
+            if (local_m_Mesh) {
                 MyPos = local_m_Mesh->get_position();
             }
             auto EnemyPawns = *(List<uintptr_t> **) (get_MatchGame + Class_BaseGame_EnemyPawns);
-            Camera *fovCam = Camera::get_main();
-            if (!EspObjectAlive((void *) fovCam)) return 0;
-            if (Tools::IsPtrValid((void *) EnemyPawns)) {
+            if (EnemyPawns) {
                 auto Items = EnemyPawns->getItems();
-                const int pawnCount = EnemyPawns->getSize();
-                if (Tools::IsPtrValid((void *) Items) && pawnCount > 0 && pawnCount <= 1024) {
-                    for (int i = 0; i < pawnCount; i++) {
+                if (Items) {
+                    for (int i = 0; i < EnemyPawns->getSize(); i++) {
                         auto Pawn = Items[i];
-                        if (EspObjectAlive((void *) Pawn)) {
+                        if (Pawn) {
                             auto isAlive = *(bool*) ((uintptr_t)Pawn + Class_Pawn_m_IsAlive);
                             if (!isAlive)
                                 continue;
                             auto m_HeadBone = *(Transform **) (Pawn + Class_Pawn_m_HeadBone);
-                            if (!EspObjectAlive((void *) m_HeadBone))
+                            if (!m_HeadBone)
                                 continue;
-                            auto HeadSc = fovCam->WorldToScreenPoint(m_HeadBone->get_position());
+                            auto HeadSc = Camera::get_main()->WorldToScreenPoint(m_HeadBone->get_position());
                             Vector2 v2Middle = Vector2((float) (get_width() / 2), (float) (get_height() / 2));
                             Vector2 v2Loc = Vector2(HeadSc.x, HeadSc.y);
                             if (isInsideFOV((int) HeadSc.x, (int) HeadSc.y)) {
@@ -287,9 +214,7 @@ void DrawAimLine(ImDrawList* draw, int sWidth, int sHeight) {
     if (Target) {
         Vector3 targetPos;
         auto m_HeadBone = *(Transform**)(Target + Class_Pawn_m_HeadBone);
-        if (!EspObjectAlive((void *) m_HeadBone)) return;
-        Camera *aimCam = Camera::get_main();
-        if (!EspObjectAlive((void *) aimCam)) return;
+        if (!m_HeadBone) return;
         if (Config.Aim.Target == EAimTarget::Heads) {
             targetPos = m_HeadBone->get_position();
         } else if (Config.Aim.Target == EAimTarget::Chests) {
@@ -299,7 +224,7 @@ void DrawAimLine(ImDrawList* draw, int sWidth, int sHeight) {
             targetPos = m_HeadBone->get_position();
             targetPos.y -= 0.4f;
         }
-        auto HeadSc = aimCam->WorldToScreenPoint(targetPos);
+        auto HeadSc = Camera::get_main()->WorldToScreenPoint(targetPos);
         if (HeadSc.z > 0) {
             ImVec2 center(sWidth / 2, sHeight / 2);
             draw->AddLine(center, ImVec2(HeadSc.x, sHeight - HeadSc.y), ToColor(Config.sColorsESPPLAYER.LinePLAYER), Config.sESPMenuLineScale.lineSize);
@@ -375,7 +300,7 @@ ImColor outlinecolor = IM_COL32(10, 10, 10, 255);
 void HandleEnemyInfo(ImDrawList *draw) {
     Vector3 pLocalPawn_rootPos = Vector3::zero();
     Pawn *get_LocalPawn = GamePlay::get_LocalPawn();
-    if (EspObjectAlive(get_LocalPawn)) {
+    if (get_LocalPawn != nullptr) {
         pLocalPawn_rootPos = get_LocalPawn->get_LastPawnPos();
     }
     
@@ -383,16 +308,13 @@ void HandleEnemyInfo(ImDrawList *draw) {
     int enenyEnemies = 0;
     
     BaseGame *get_MatchGame = GamePlay::get_MatchGame();
-    if (Tools::IsPtrValid((void *) get_MatchGame)) {
+    if (get_MatchGame != nullptr) {
         List<Pawn *> *EnemyPawns = get_MatchGame->EnemyPawns();
-        if (Tools::IsPtrValid((void *) EnemyPawns)) {
+        if (EnemyPawns != nullptr) {
             Pawn **pawns = (Pawn **) EnemyPawns->getItems();
-            const bool pawnsValid = Tools::IsPtrValid((void *) pawns);
-            const int pawnCount = pawnsValid ? EnemyPawns->getSize() : 0;
-            if (pawnsValid && pawnCount > 0 && pawnCount <= 1024) {
-            for (int i = 0; i < pawnCount; i++) {
+            for (int i = 0; i < EnemyPawns->getSize(); i++) {
                 Pawn *pawn = pawns[i];
-                if (EspObjectAlive(pawn)) {
+                if (pawn != nullptr) {
                     Vector3 pEnemyPawn_headPos = pawn->get_HeadPosition();
                     Vector3 pEnemyPawn_rootPos = pawn->get_LastPawnPos();
                     
@@ -456,7 +378,6 @@ void HandleEnemyInfo(ImDrawList *draw) {
                     }
                 }
             }
-            }
         }
     }
 }
@@ -502,7 +423,7 @@ static inline void DrawEspVerticalHealthBar(ImDrawList *draw, float x, float y, 
 
 static inline void DrawEsp3DBox(ImDrawList *draw, Vector3 rootPos, int glHeight, ImU32 color, float thickness) {
     Camera* mainCamera = Camera::get_main();
-    if (!EspObjectAlive(mainCamera)) return;
+    if (!mainCamera) return;
 
     Vector3 minBounds(-0.5f, 0.0f, -0.5f);
     Vector3 maxBounds(0.5f, 1.8f, 0.5f);
@@ -535,7 +456,7 @@ static inline void DrawEsp3DBox(ImDrawList *draw, Vector3 rootPos, int glHeight,
 
 static inline void DrawEspCylinder(ImDrawList* draw, Vector3 rootPos, int glHeight, ImU32 color) {
     Camera* mainCamera = Camera::get_main();
-    if (!EspObjectAlive(mainCamera)) return;
+    if (!mainCamera) return;
 
     ImVec4 c = ImGui::ColorConvertU32ToFloat4(color);
     ImU32 edgeColor = ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, 0.72f));
@@ -575,7 +496,7 @@ static inline void DrawEspCylinder(ImDrawList* draw, Vector3 rootPos, int glHeig
 
 static inline void DrawEspSignal(ImDrawList* draw, Vector3 rootPos, int glHeight, ImU32 color) {
     Camera* mainCamera = Camera::get_main();
-    if (!EspObjectAlive(mainCamera)) return;
+    if (!mainCamera) return;
 
     ImVec4 c = ImGui::ColorConvertU32ToFloat4(color);
     ImU32 outerColor = ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, 0.65f));
@@ -615,7 +536,7 @@ static inline void TeleportToEnemy() {
     if (!Tools::IsPtrValid(get_MatchGame)) return;
     
     Pawn *get_LocalPawn = GamePlay::get_LocalPawn();
-    if (!EspObjectAlive(get_LocalPawn)) return;
+    if (!Tools::IsPtrValid(get_LocalPawn)) return;
     
     Vector3 localPos = get_LocalPawn->get_LastPawnPos();
     
@@ -626,11 +547,9 @@ static inline void TeleportToEnemy() {
     float minDistance = 100.0f;
     
     Pawn **pawns = (Pawn **)EnemyPawns->getItems();
-    if (!Tools::IsPtrValid(pawns)) return;
-    const int pawnCount = EnemyPawns->getSize();
-    for (int i = 0; i < pawnCount; i++) {
+    for (int i = 0; i < EnemyPawns->getSize(); i++) {
         Pawn *pawn = pawns[i];
-        if (!EspObjectAlive(pawn)) continue;
+        if (!Tools::IsPtrValid(pawn)) continue;
         
         bool isAlive = *(bool *)((uintptr_t)pawn + Class_Pawn_m_IsAlive);
         if (!isAlive) continue;
@@ -671,7 +590,7 @@ static inline void DrawVehicleESP(ImDrawList *draw, int sWidth, int sHeight) {
     
     Pawn *get_LocalPawn = GamePlay::get_LocalPawn();
     Vector3 pLocalPawn_rootPos = Vector3::zero();
-    if (EspObjectAlive(get_LocalPawn)) {
+    if (Tools::IsPtrValid(get_LocalPawn)) {
         pLocalPawn_rootPos = get_LocalPawn->get_LastPawnPos();
     }
     
@@ -686,15 +605,15 @@ static inline void DrawVehicleESP(ImDrawList *draw, int sWidth, int sHeight) {
     
     for (int i = 0; i < m_AllVehicles->getSize(); i++) {
         PhysicsVehicle *vehicle = vehicles[i];
-        if (!EspObjectAlive(vehicle)) continue;
+        if (!Tools::IsPtrValid(vehicle)) continue;
         
         Transform *vehicleTransform = vehicle->get_transform();
-        if (!EspObjectAlive(vehicleTransform)) continue;
+        if (!Tools::IsPtrValid(vehicleTransform)) continue;
         
         Vector3 vehiclePos = vehicleTransform->get_position();
         
         auto mainCamera = Camera::get_main();
-        if (!EspObjectAlive(mainCamera)) continue;
+        if (!mainCamera) continue;
         
         Vector3 screenPos = mainCamera->WorldToScreenPoint(vehiclePos);
         if (screenPos.z <= 0) continue;
@@ -774,11 +693,8 @@ static inline void DrawVehicleESP(ImDrawList *draw, int sWidth, int sHeight) {
 }
 
 void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
-    // These two are not ESP overlays; they must keep running with the page off.
     ApplySpeedhack();
     ApplyNoGravityRuntime();
-
-    if (!EspAnythingToDraw()) return;
 
     BaseGame *get_MatchGame = GamePlay::get_MatchGame();
     if (!Tools::IsPtrValid(get_MatchGame)) return;
@@ -789,7 +705,7 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
 
     Vector3 pLocalPawn_rootPos = Vector3::zero();
     Pawn *get_LocalPawn = GamePlay::get_LocalPawn();
-    if (EspObjectAlive(get_LocalPawn)) {
+    if (Tools::IsPtrValid(get_LocalPawn)) {
         pLocalPawn_rootPos = get_LocalPawn->get_LastPawnPos();
     }
 
@@ -798,7 +714,6 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
     // internally, i.e. two extra native calls per enemy just to project two
     // points - at 10 pawns x 60 fps that was ~1200 pointless native calls/s.
     Camera *espCam = Camera::get_main();
-    if (!EspObjectAlive(espCam)) return;   // the camera dies with the match, too
     auto espW2s = (Vector3 (*)(Camera *, Vector3))Class_Camera_WorldToScreenPoint;
     
     DrawThrowableAlert(draw, sWidth, sHeight, pLocalPawn_rootPos);
@@ -812,32 +727,21 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
     List<Pawn *> *EnemyPawns = get_MatchGame->EnemyPawns();
     if (!Tools::IsPtrValid(EnemyPawns) || !EnemyPawns->getSize()) return;
 
-    // Snapshot the list ONCE: the game mutates EnemyPawns from its own thread
-    // while this frame walks it (a player seen mid-loop grows the list and
-    // rebuilds its element array), so getSize() must not be re-read in the
-    // loop condition and the count is clamped to the array's own capacity.
     Pawn **pawns = (Pawn **)EnemyPawns->getItems();
-    if (!Tools::IsPtrValid(pawns)) return;
-    const int listCap = Tools::IsPtrValid(EnemyPawns->items) ? EnemyPawns->items->getLength() : 0;
-    int pawnCount = EnemyPawns->getSize();
-    if (pawnCount < 0) pawnCount = 0;
-    if (listCap > 0 && pawnCount > listCap) pawnCount = listCap;
-
-    for (int i = 0; i < pawnCount; i++) {
+    for (int i = 0; i < EnemyPawns->getSize(); i++) {
         Pawn *pawn = pawns[i];
-        if (!EspObjectAlive(pawn)) continue;
+        if (!Tools::IsPtrValid(pawn)) continue;
 
         auto m_PlayerInfo = *(uintptr_t *)(pawn + Class_Pawn_m_PlayerInfo);
         if (!Tools::IsPtrValid((void *)m_PlayerInfo)) continue;
 
-        // A dead / mid-respawn pawn may carry no attackable record yet; that
-        // is not a reason to drop it - just draw it without health numbers.
-        int CurHP = 0, MaxHP = 0;
-        EspPawnHealth((uintptr_t)pawn, CurHP, MaxHP);
+        auto m_AttackableInfo = *(uintptr_t *)(pawn + Class_AttackableTarget_m_AttackableInfo);
+        int CurHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_Health);
+        int MaxHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_MaxHealth);
 
         auto m_HeadBone = *(Transform **)(pawn + Class_Pawn_m_HeadBone);
         auto m_Mesh = *(Transform **)(pawn + Class_Pawn_m_Mesh);
-        if (!EspObjectAlive(m_HeadBone) || !EspObjectAlive(m_Mesh) || !*(bool *)(pawn + Class_Pawn_m_IsAlive)) continue;
+        if (!Tools::IsPtrValid(m_HeadBone) || !m_Mesh || !*(bool *)(pawn + Class_Pawn_m_IsAlive)) continue;
 
         bool isBot = *(bool *)((uintptr_t)pawn + Class_Pawn_m_IsBot);
         
@@ -998,7 +902,7 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
                     float infoContainerWidth = boxWidth * 1.6f * scaleFactor;
                     float infoContainerX = HeadSc.x - (infoContainerWidth / 2);
                     float infoCurrentY = sHeight - HeadSc.y - (50.0f * scaleFactor);
-                    float centerX = sWidth / 2.0f;
+                    float centerX = ImGui::GetIO().DisplaySize.x / 2.0f;
                     float headY = HeadSc.y; 
                     float fontSize = 18.0f * scaleFactor;
                     float infoTotalHeight = 0.0f;
@@ -1008,13 +912,11 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
                     draw->AddRectFilled(ImVec2(infoContainerX, infoCurrentY), ImVec2(infoContainerX + infoContainerWidth, infoCurrentY + infoTotalHeight), IM_COL32(0, 0, 0, 120));
                     
                     if (Config.ESPMenu.Name) {
-                        const std::string displayText = EspPawnName(pawn);
-                        if (!displayText.empty()) {
-                            ImVec2 infoTextSize = ImGui::CalcTextSize(displayText.c_str());
-                            infoTextSize.x *= (fontSize / ImGui::GetFontSize());
-                            float infoTextX = infoContainerX + (infoContainerWidth - infoTextSize.x) / 2;
-                            draw->AddText(nullptr, fontSize, ImVec2(infoTextX, infoCurrentY + 3.0f * scaleFactor), IM_COL32(255, 255, 255, 255), displayText.c_str());
-                        }
+                        std::string displayText = pawn->m_IsBot() ? "BOT" : pawn->get_PlayerName()->CString();
+                        ImVec2 infoTextSize = ImGui::CalcTextSize(displayText.c_str());
+                        infoTextSize.x *= (fontSize / ImGui::GetFontSize());
+                        float infoTextX = infoContainerX + (infoContainerWidth - infoTextSize.x) / 2;
+                        draw->AddText(nullptr, fontSize, ImVec2(infoTextX, infoCurrentY + 3.0f * scaleFactor), IM_COL32(255, 255, 255, 255), displayText.c_str());
                         infoCurrentY += 24.0f * scaleFactor;
                     }
                     
@@ -1090,40 +992,112 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
         }
     }
 
-    // Bots / players counter. Drawn straight onto the background draw list so
-    // it never creates an ImGui window next to the menu canvas.
+// ================= BAGONG HUDRON DESIGN (EKSAMININ MULA SA PILL THEME) =================
     if (Config.ESPMenu.Count) {
-        const int totalEnemyCount = totalBots + totalEnemies;
-        ImFont* hudFont = ImGui::GetFont();
-        const float hudWidth = 240.0f, hudHeight = 62.0f;
-        const ImVec2 tl(sWidth * 0.5f - hudWidth * 0.5f, 32.0f);
-        const ImVec2 br(tl.x + hudWidth, tl.y + hudHeight);
-        draw->AddRectFilled(tl, br, IM_COL32(15, 23, 33, 242), hudHeight * 0.5f);
-        draw->AddRect(tl, br, IM_COL32(51, 102, 153, 102), hudHeight * 0.5f, 0, 1.0f);
-        draw->AddLine(ImVec2(tl.x + 30.0f, br.y - 9.0f), ImVec2(br.x - 30.0f, br.y - 9.0f),
-                      IM_COL32(51, 102, 153, 77), 1.5f);
-
-        auto centered = [&](float centerX, float y, float size, ImU32 col, const char* text) {
-            const ImVec2 ts = hudFont->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
-            draw->AddText(hudFont, size, ImVec2(centerX - ts.x * 0.5f, y), col, text);
-        };
-
+        int totalEnemyCount = totalBots + totalEnemies;
+        
         if (totalEnemyCount > 0) {
-            char botStr[16], plrStr[16];
-            snprintf(botStr, sizeof(botStr), "%d", totalBots);
-            snprintf(plrStr, sizeof(plrStr), "%d", totalEnemies);
-
-            const float leftX = tl.x + hudWidth * 0.25f;
-            const float rightX = tl.x + hudWidth * 0.75f;
-            centered(leftX, tl.y + 9.0f, 10.0f, IM_COL32(140, 153, 166, 204), "BOTS");
-            centered(leftX, tl.y + 22.0f, 20.0f, IM_COL32(51, 217, 77, 255), botStr);
-            centered(rightX, tl.y + 9.0f, 10.0f, IM_COL32(140, 153, 166, 204), "PLAYERS");
-            centered(rightX, tl.y + 22.0f, 20.0f, IM_COL32(255, 166, 38, 255), plrStr);
-            draw->AddCircleFilled(ImVec2(tl.x + hudWidth * 0.5f, tl.y + hudHeight * 0.5f - 4.0f),
-                                  3.0f, IM_COL32(77, 166, 255, 255));
+            float windowWidth = 240.0f; 
+            float windowHeight = 85.0f;
+            
+            ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, 45.0f), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+            ImGui::SetNextWindowSize(ImVec2(windowWidth, windowHeight), ImGuiCond_Always);
+            
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, windowHeight * 0.5f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 8));
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 2));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 15.0f);
+            
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.09f, 0.13f, 0.95f)); 
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.2f, 0.4f, 0.6f, 0.4f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+            
+            if (ImGui::Begin("EnemyCounterHUD", nullptr, 
+                            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | 
+                            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoTitleBar | 
+                            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs | 
+                            ImGuiWindowFlags_NoBringToFrontOnFocus)) {
+                
+                float colWidth = windowWidth * 0.45f;
+                
+                // --- LEFT: BOTS (Gumagamit ng ICON_FA_ROBOT mula sa Icon.h) ---
+                ImGui::BeginGroup();
+                ImGui::SetWindowFontScale(1.2f);
+                float iconBotWidth = ImGui::CalcTextSize(ICON_FA_ROBOT).x;
+                ImGui::SetCursorPosX((colWidth - iconBotWidth) * 0.5f);
+                ImGui::TextColored(ImVec4(0.2f, 0.85f, 0.3f, 1.0f), ICON_FA_ROBOT);
+                
+                ImGui::SetWindowFontScale(0.85f);
+                float textBotWidth = ImGui::CalcTextSize("Bots").x;
+                ImGui::SetCursorPosX((colWidth - textBotWidth) * 0.5f);
+                ImGui::TextColored(ImVec4(0.55f, 0.6f, 0.65f, 0.8f), "Bots");
+                
+                ImGui::SetWindowFontScale(1.3f);
+                char botStr[16]; sprintf(botStr, "%d", totalBots);
+                float numBotWidth = ImGui::CalcTextSize(botStr).x;
+                ImGui::SetCursorPosX((colWidth - numBotWidth) * 0.5f);
+                ImGui::Text(botStr);
+                ImGui::EndGroup();
+                
+                // --- CENTER DOT ---
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(windowWidth * 0.5f - 4.0f);
+                ImGui::SetCursorPosY(windowHeight * 0.5f - 10.0f);
+                ImGui::SetWindowFontScale(1.1f);
+                ImGui::TextColored(ImVec4(0.3f, 0.65f, 1.0f, 1.0f), "•");
+                
+                // --- RIGHT: PLAYERS (Gumagamit ng ICON_FA_USER mula sa Icon.h) ---
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(windowWidth * 0.55f);
+                ImGui::SetCursorPosY(8.0f);
+                
+                ImGui::BeginGroup();
+                ImGui::SetWindowFontScale(1.2f);
+                float iconPlrWidth = ImGui::CalcTextSize(ICON_FA_USER).x;
+                ImGui::SetCursorPosX(windowWidth * 0.55f + (colWidth - iconPlrWidth) * 0.5f);
+                ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.15f, 1.0f), ICON_FA_USER);
+                
+                ImGui::SetWindowFontScale(0.85f);
+                float textPlrWidth = ImGui::CalcTextSize("Players").x;
+                ImGui::SetCursorPosX(windowWidth * 0.55f + (colWidth - textPlrWidth) * 0.5f);
+                ImGui::TextColored(ImVec4(0.55f, 0.6f, 0.65f, 0.8f), "Players");
+                
+                ImGui::SetWindowFontScale(1.3f);
+                char plrStr[16]; sprintf(plrStr, "%d", totalEnemies);
+                float numPlrWidth = ImGui::CalcTextSize(plrStr).x;
+                ImGui::SetCursorPosX(windowWidth * 0.55f + (colWidth - numPlrWidth) * 0.5f);
+                ImGui::Text(plrStr);
+                ImGui::EndGroup();
+                
+                ImGui::SetWindowFontScale(1.0f);
+                
+                ImDrawList* window_draw_list = ImGui::GetWindowDrawList();
+                ImVec2 window_pos = ImGui::GetWindowPos();
+                window_draw_list->AddLine(
+                    ImVec2(window_pos.x + 30, window_pos.y + windowHeight - 8),
+                    ImVec2(window_pos.x + windowWidth - 30, window_pos.y + windowHeight - 8),
+                    ImGui::GetColorU32(ImVec4(0.2f, 0.4f, 0.6f, 0.3f)), 
+                    1.5f
+                );
+            }
+            ImGui::End();
+            ImGui::PopStyleColor(3);
+            ImGui::PopStyleVar(4);
         } else {
-            centered(tl.x + hudWidth * 0.5f, tl.y + 16.0f, 22.0f,
-                     IM_COL32(0, 255, 0, 255), "[ SAFE ]");
+            auto drawFG = ImGui::GetForegroundDrawList();
+            const char* safeText = "[ SAFE ]";
+            float fontSize = 25.0f;
+            
+            ImVec2 textSize = ImGui::CalcTextSize(safeText);
+            float currentScreenWidth = ImGui::GetIO().DisplaySize.x;
+            float textPosX = (currentScreenWidth - textSize.x) / 2;
+            float textPosY = 80.0f - textSize.y - 10.0f;
+            
+            drawFG->AddText(NULL, fontSize, ImVec2(textPosX - 1, textPosY - 1), IM_COL32(0, 0, 0, 255), safeText);
+            drawFG->AddText(NULL, fontSize, ImVec2(textPosX + 1, textPosY - 1), IM_COL32(0, 0, 0, 255), safeText);
+            drawFG->AddText(NULL, fontSize, ImVec2(textPosX - 1, textPosY + 1), IM_COL32(0, 0, 0, 255), safeText);
+            drawFG->AddText(NULL, fontSize, ImVec2(textPosX + 1, textPosY + 1), IM_COL32(0, 0, 0, 255), safeText);
+            drawFG->AddText(NULL, fontSize, ImVec2(textPosX, textPosY), IM_COL32(0, 255, 0, 255), safeText);
         }
     }
 }
@@ -1143,12 +1117,7 @@ void WeaponHandlerByAstral(ThisType thiz, Vector3 startPos, Vector3& dir, Args..
     if (Config.Aim.Trigger == EAimTrigger::Shooting) {
         triggerReady = ((bool(*)(uintptr_t))(Class_Pawn_get_IsFiring))(LocalPawn);
     } else if (Config.Aim.Trigger == EAimTrigger::Scoping) {
-        // "Scoping" is answered by the pawn's own held weapon, read as two
-        // FIELDS (Pawn::get_IsAimingSafe -> Weapon::m_IsAiming). The old call
-        // was Pawn.IsAiming() 0x519BB10, a native method that walks the pawn's
-        // weapon / fire-component chain - the call that crashed every "ADS
-        // only" gate in this repo.
-        triggerReady = ((Pawn *)LocalPawn)->get_IsAimingSafe();
+        triggerReady = ((bool(*)(uintptr_t))(Class_Pawn_IsAiming))(LocalPawn);
     }
 
     if (!triggerReady) return;
@@ -1168,9 +1137,9 @@ void WeaponHandlerByAstral(ThisType thiz, Vector3 startPos, Vector3& dir, Args..
     }
 
     auto main = Camera::get_main();
-    if (EspObjectAlive(main)) {
+    if (main) {
         auto mainView = ((Component *) main)->get_transform();
-        if (EspObjectAlive(mainView)) {
+        if (mainView) {
             if (Config.Aim.AimSilent) {
                 dir = targetPos - mainView->get_position();
             }

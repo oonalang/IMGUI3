@@ -3,7 +3,7 @@
 // Host test, not a syntax check: it builds fake config objects with sentinel
 // values at the offsets read out of the il2cpp dump (dump.cs, XOR-mask decoded
 // where the dumper masked them), then applies the exact casts/reads that
-// Skin/Thread.h and the weapon-skin path use and asserts they return the
+// Skin/Thread.h and System/UI/SkinTab.h use and asserts they return the
 // sentinels. The pre-fix bases (+0x18) are exercised too, to show they read a
 // neighbouring field.
 //
@@ -49,7 +49,7 @@ extern "C" void MSHookFunction(void *symbol, void *replace, void **result)
     if (result) *result = nullptr;
 }
 
-struct Skin_ExtraMenuStub { bool CamoTest; int CamoTestMode; bool AutoSkin; };
+struct Skin_ExtraMenuStub { bool CamoTest; int CamoTestMode; };
 struct Skin_ConfigStub { Skin_ExtraMenuStub ExtraMenu; };
 static Skin_ConfigStub Config;
 
@@ -337,7 +337,7 @@ static void check_runtime()
         CHECK_EQ(locid == nullptr ? 0 : 1, 1, "WeaponConfFields.LOCID_Name @0x68 sees the pointer");
     }
 
-    // --- WeaponFireEffectConfigConfig: raw reads used by Thread.h / the weapon-skin path
+    // --- WeaponFireEffectConfigConfig: raw reads used by Thread.h / SkinTab.h
     poke_int(0x80, 0xCCCC01);   // Id
     poke_int(0x1C, 0xDDDD01);   // AssetIdForBulletSmoke1P
     const float delaySentinel = 0.1f;
@@ -516,10 +516,6 @@ static void check_runtime()
                  "pre-fix VehicleId != 31707110 -> every snowboard filtered out");
     }
 }
-
-// Host-only link stub: the include graph references the A64 hook engine.
-extern "C" void A64HookFunction(void *const symbol, void *const replace, void **result)
-{ (void)symbol; if (result) *result = replace; }
 
 int main()
 {

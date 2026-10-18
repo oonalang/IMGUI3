@@ -1,7 +1,6 @@
 #pragma once
 
-#include "../../ImGui/imgui.h"
-#include "../../ImGui/imgui_internal.h"
+#include "../../ImGui/imgui_settings.h"
 
 #include <chrono>
 #include <cctype>
@@ -15,10 +14,6 @@ namespace font {
 }
 
 extern std::chrono::steady_clock::time_point appStartTime;
-
-// Overlay scale for this HUD (was the old theme's ui_scale; 1.0 = screen density
-// at authoring resolution).
-inline float hud_scale = 1.0f;
 
 namespace floating_info {
 
@@ -99,22 +94,22 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
     slideY = (1.0f - popIn) * 30.0f; // Slide up from bottom
 
     // --- PREMIUM BOX RENDER ---
-    const float boxW = 245.0f * hud_scale;
-    const float boxH = 152.0f * hud_scale; 
-    const float padding = 24.0f * hud_scale;
+    const float boxW = 245.0f * c::scale;
+    const float boxH = 152.0f * c::scale; 
+    const float padding = 24.0f * c::scale;
     
     const float boxX = padding;
     const float boxY = (screenHeight - padding - boxH) + slideY; // Add slideY here
     
-    const float lineSpacing = 19.0f * hud_scale;
-    const float textStartX = boxX + 18.0f * hud_scale;
-    const float textEndX = boxX + boxW - 18.0f * hud_scale; 
-    const float startY = boxY + 16.0f * hud_scale;
+    const float lineSpacing = 19.0f * c::scale;
+    const float textStartX = boxX + 18.0f * c::scale;
+    const float textEndX = boxX + boxW - 18.0f * c::scale; 
+    const float startY = boxY + 16.0f * c::scale;
 
     // --- CYBERPUNK BACKGROUND EFFECTS ---
-    draw->AddRectFilled(ImVec2(boxX - 4.0f, boxY - 4.0f), ImVec2(boxX + boxW + 4.0f, boxY + boxH + 4.0f), ImColor(0, 255, 255, 15), 12.0f * hud_scale);
+    draw->AddRectFilled(ImVec2(boxX - 4.0f, boxY - 4.0f), ImVec2(boxX + boxW + 4.0f, boxY + boxH + 4.0f), ImColor(0, 255, 255, 15), 12.0f * c::scale);
     
-    draw->AddRectFilled(ImVec2(boxX, boxY), ImVec2(boxX + boxW, boxY + boxH), ImColor(8, 8, 12, 245), 10.0f * hud_scale);
+    draw->AddRectFilled(ImVec2(boxX, boxY), ImVec2(boxX + boxW, boxY + boxH), ImColor(8, 8, 12, 245), 10.0f * c::scale);
 
     static float scanY = 0.0f;
     scanY += ImGui::GetIO().DeltaTime * 80.0f;
@@ -128,14 +123,14 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
     }
 
     ImColor borderColor = GetNeonColor(animTime, 2.0f, 0.0f);
-    draw->AddRect(ImVec2(boxX, boxY), ImVec2(boxX + boxW, boxY + boxH), borderColor, 10.0f * hud_scale, 0, 1.8f * hud_scale);
-    draw->AddRect(ImVec2(boxX - 2.0f, boxY - 2.0f), ImVec2(boxX + boxW + 2.0f, boxY + boxH + 2.0f), ImColor(borderColor.Value.x, borderColor.Value.y, borderColor.Value.z, 60.0f / 255.0f), 12.0f * hud_scale, 0, 1.0f);
+    draw->AddRect(ImVec2(boxX, boxY), ImVec2(boxX + boxW, boxY + boxH), borderColor, 10.0f * c::scale, 0, 1.8f * c::scale);
+    draw->AddRect(ImVec2(boxX - 2.0f, boxY - 2.0f), ImVec2(boxX + boxW + 2.0f, boxY + boxH + 2.0f), ImColor(borderColor.Value.x, borderColor.Value.y, borderColor.Value.z, 60.0f / 255.0f), 12.0f * c::scale, 0, 1.0f);
 
     // --- TEXT RENDERING ---
     auto drawTextWithSpacing = [&](const char* text, ImVec2 pos, ImColor color, float customTracking = 1.1f, bool rightAlign = false) {
         float xOffset = 0.0f;
-        const float charSpacing = customTracking * hud_scale;
-        float fontSize = 11.5f * hud_scale;
+        const float charSpacing = customTracking * c::scale;
+        float fontSize = 11.5f * c::scale;
 
         if (rightAlign) {
             float totalWidth = 0.0f;
@@ -161,19 +156,19 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
 
     drawTextWithSpacing("ETHNIR NOIR", ImVec2(textStartX, startY), neonPurple, 1.4f);
     
-    float dotRadius = 3.0f * hud_scale;
-    float premiumTextWidth = font::inter_semibold->CalcTextSizeA(11.5f * hud_scale, FLT_MAX, 0.0f, "PREMIUM").x + (1.4f * 6);
-    ImVec2 dotPos = ImVec2(textEndX - premiumTextWidth - (8.0f * hud_scale), startY + (6.0f * hud_scale));
+    float dotRadius = 3.0f * c::scale;
+    float premiumTextWidth = font::inter_semibold->CalcTextSizeA(11.5f * c::scale, FLT_MAX, 0.0f, "PREMIUM").x + (1.4f * 6);
+    ImVec2 dotPos = ImVec2(textEndX - premiumTextWidth - (8.0f * c::scale), startY + (6.0f * c::scale));
     
     draw->AddCircleFilled(dotPos, dotRadius, neonCyan);
-    draw->AddCircle(dotPos, dotRadius + (1.5f * hud_scale), ImColor(0, 255, 255, 50), 0, 1.0f);
+    draw->AddCircle(dotPos, dotRadius + (1.5f * c::scale), ImColor(0, 255, 255, 50), 0, 1.0f);
 
     drawTextWithSpacing("PREMIUM", ImVec2(textEndX, startY), neonCyan, 1.4f, true);
     
-    float dividerY = startY + 18.0f * hud_scale;
+    float dividerY = startY + 18.0f * c::scale;
     draw->AddLine(ImVec2(textStartX, dividerY), ImVec2(textEndX, dividerY), borderColor, 1.0f);
 
-    float currentY = dividerY + 10.0f * hud_scale;
+    float currentY = dividerY + 10.0f * c::scale;
 
     drawTextWithSpacing("DATE", ImVec2(textStartX, currentY), neonPink, 1.0f);
     drawTextWithSpacing(dateStr, ImVec2(textEndX, currentY), pureWhite, 1.1f, true);
@@ -190,9 +185,9 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
     drawTextWithSpacing("MATCHES", ImVec2(textStartX, currentY), neonPink, 1.0f);
     drawTextWithSpacing(totalMatchesStr, ImVec2(textEndX, currentY), pureWhite, 1.1f, true);
 
-    currentY += lineSpacing + 8.0f * hud_scale;
+    currentY += lineSpacing + 8.0f * c::scale;
     
-    draw->AddLine(ImVec2(textStartX, currentY - 3.0f * hud_scale), ImVec2(textStartX + 20.0f * hud_scale, currentY - 3.0f * hud_scale), borderColor, 2.0f);
+    draw->AddLine(ImVec2(textStartX, currentY - 3.0f * c::scale), ImVec2(textStartX + 20.0f * c::scale, currentY - 3.0f * c::scale), borderColor, 2.0f);
     drawTextWithSpacing("DEVELOPER @Shaiaintshyy", ImVec2(textStartX, currentY), neonPurple, 2.0f);
 }
 
