@@ -888,6 +888,44 @@ inline void hook_GameObjectSetActive(void *instance, bool value)
     return orig_GameObjectSetActive(instance, value);
 }
 
+// ============================================================================
+//  Block Report Evidence - block the client from sending report evidence when
+//  someone reports you. gated by Config.ExtraMenu.BlockReportEvidence (on by
+//  default). When the flag is off, every hook falls straight through to the
+//  original.
+// ============================================================================
+inline void (*orig_DoReport)(void *ins) = nullptr;
+inline void hook_DoReport(void *ins) {
+    if (Config.ExtraMenu.BlockReportEvidence) {
+        return;
+    }
+    return orig_DoReport(ins);
+}
+
+inline int (*orig_DoReportPlayer)(void *ins, void *openids) = nullptr;
+inline int hook_DoReportPlayer(void *ins, void *openids) {
+    if (Config.ExtraMenu.BlockReportEvidence) {
+        return 0;
+    }
+    return orig_DoReportPlayer(ins, openids);
+}
+
+inline void *(*orig_BeginReport)(int pullType, uint8_t moveState, void *clientPos, void *serverPos, int hitCount, uint8_t lineHitCount, void *hitPosition) = nullptr;
+inline void *hook_BeginReport(int pullType, uint8_t moveState, void *clientPos, void *serverPos, int hitCount, uint8_t lineHitCount, void *hitPosition) {
+    if (Config.ExtraMenu.BlockReportEvidence) {
+        return nullptr;
+    }
+    return orig_BeginReport(pullType, moveState, clientPos, serverPos, hitCount, lineHitCount, hitPosition);
+}
+
+inline void (*orig_EndReport)(void *request) = nullptr;
+inline void hook_EndReport(void *request) {
+    if (Config.ExtraMenu.BlockReportEvidence) {
+        return;
+    }
+    return orig_EndReport(request);
+}
+
 inline void InitializeAllHooks() {
 
     //-- Smart Reload
@@ -1038,6 +1076,13 @@ inline void InitializeAllHooks() {
     blueprint_equip::NoteLanded(blueprint_equip::GateSimilar,  orig_GetOwnedMostSimilarWeaponID != nullptr);
     blueprint_equip::NoteLanded(blueprint_equip::GateSiWeapon, orig_GetSiWeaponByBluePrintWeaponId != nullptr);
     blueprint_equip::NoteLanded(blueprint_equip::GateClick,    orig_OnEasyListItemClick_Weapon != nullptr);
+
+    //-- Block Report Evidence (libunity.so): stop the client from sending
+    //   report evidence when someone reports you. Default ON.
+    HOOK_LIB("libunity.so", "0xB23D358", hook_DoReport, orig_DoReport);
+    HOOK_LIB("libunity.so", "0x8FB4B60", hook_DoReportPlayer, orig_DoReportPlayer);
+    HOOK_LIB("libunity.so", "0x5620BAC", hook_BeginReport, orig_BeginReport);
+    HOOK_LIB("libunity.so", "0x5620F9C", hook_EndReport, orig_EndReport);
 
     //-- Unlock Attachments / Mythic Attachments (see MythicAttachments.h). The
     //   RVAs are the dump's, same convention as every hook above.

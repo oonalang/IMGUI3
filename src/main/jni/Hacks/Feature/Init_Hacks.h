@@ -201,8 +201,11 @@ sColorsESPBOT sColorsESPBOT{0};
         // YES to the skin's own unlock question and to every attachment unlock
         // question (see System/Hooks/MythicAttachments.h). ON by default - this
         // is what makes an applied mythic behave as if it were really owned.
-        bool MythicAttachments = true;
+		bool MythicAttachments = true;
 		bool Blueprints;
+		// Block Report Evidence: never let the client send report evidence
+		// when someone reports you. On by default.
+		bool BlockReportEvidence = true;
 		bool ClearDisplay;
 		bool ResetGuest;
 		bool RedWallhack;
