@@ -718,6 +718,7 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
     auto espW2s = (Vector3 (*)(Camera *, Vector3))Class_Camera_WorldToScreenPoint;
     
     DrawThrowableAlert(draw, sWidth, sHeight, pLocalPawn_rootPos);
+    DrawPlacableESP(draw, sWidth, sHeight, pLocalPawn_rootPos);
 
     totalBots = 0, totalEnemies = 0;
     // Pawn-INDEPENDENT overlays used to run once per ENEMY inside the loop
@@ -737,8 +738,21 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
         if (!Tools::IsPtrValid((void *)m_PlayerInfo)) continue;
 
         auto m_AttackableInfo = *(uintptr_t *)(pawn + Class_AttackableTarget_m_AttackableInfo);
+        // Crash fix: m_AttackableInfo is released when a pawn dies / despawns
+        // while it is still listed in EnemyPawns (this read also runs BEFORE
+        // the m_IsAlive check below). The old code dereferenced the pointer
+        // unchecked, so the first stale pawn segfaulted the frame loop as
+        // soon as ESP Box / ESP Health was toggled on in a live match.
+        // GetInsideFOVTarget in this same file already null-checks it.
+        if (!Tools::IsPtrValid((void *)m_AttackableInfo)) continue;
+
         int CurHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_Health);
         int MaxHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_MaxHealth);
+        // Sanitize: a half-initialized AttackableTargetInfo can carry 0 /
+        // garbage HP, which fed NaN ratios into the health bar math.
+        if (MaxHP <= 0) { CurHP = 0; MaxHP = 1; }
+        if (CurHP < 0) CurHP = 0;
+        if (CurHP > MaxHP) CurHP = MaxHP;
 
         auto m_HeadBone = *(Transform **)(pawn + Class_Pawn_m_HeadBone);
         auto m_Mesh = *(Transform **)(pawn + Class_Pawn_m_Mesh);
@@ -1166,18 +1180,6 @@ void WeaponFireComponent_Instant_CreateBulletProjectile(void* thiz, Vector3 star
 
 // NOTE: The NewFeatures_Hook_ChangePunchAngleByGetHit and NewFeatures_Hook_Tick
 // Dobby hooks were removed entirely. Their targets (libunity.so+0xC9C0EDC /
-// +0xC9C0B64) are correct per the GR .57 dump, but Dobby's inline trampoline on
-// these tiny shared callers corrupted game state (screen flicker, native
-// crash). The safe equivalents are memory patches in Main.cpp that toggle
-// per-frame: Patches.NoHitFlinch (@0xC9C0EDC, mov w0,#0 + ret) and
-// Patches.NoDrift (@0xC9BE4C0 UpdateBreatheTrembling, ret) - every address
-// verified against dump.cs and dump (GR .57).cs from the jeudhehs/dump
-// dataset. Reference addresses from that dump:
-//   Tick:                    0xC9C0B64 (Slot 51)
-//   ChangePunchAngleByGetHit: 0xC9C0EDC (Slot 57)
-//   UpdateBreatheTrembling:   0xC9BE4C0
-//   m_AimmingBreatheCountDown: field @ 0x774 on WeaponFireComponent_Instant
-y. Their targets (libunity.so+0xC9C0EDC /
 // +0xC9C0B64) are correct per the GR .57 dump, but Dobby's inline trampoline on
 // these tiny shared callers corrupted game state (screen flicker, native
 // crash). The safe equivalents are memory patches in Main.cpp that toggle
