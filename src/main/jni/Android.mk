@@ -92,7 +92,18 @@ LOCAL_SRC_FILES        := $(FILE_LIST:$(LOCAL_PATH)/%=%) \
 FILE_LIST := $(wildcard $(LOCAL_PATH)/libzip/*.c)
 LOCAL_SRC_FILES += $(FILE_LIST:$(LOCAL_PATH)/%=%)
 
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/curl/curl-android-$(TARGET_ARCH_ABI)/include
+# Our own headers are included by bare name from a different folder, so the
+# three roots have to be on the search path: the patched ImGui core pulls
+# "gui.hpp" / "blur.hpp" / "hashes.hpp" out of menu/ (imgui.cpp:985 is the
+# first one), menu/nl_ui.cpp pulls "backends/imgui_impl_opengl3.h" out of
+# ImGui/, and menu/nl_bindings.cpp pulls "ImGui/imgui.h" and
+# "Includes/obfuscate.h" from the jni root. Dropping these makes ndk-build stop
+# at "fatal error: 'blur.hpp' file not found".
+LOCAL_C_INCLUDES := $(LOCAL_PATH)
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/ImGui
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/menu
+
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/curl/curl-android-$(TARGET_ARCH_ABI)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/curl/openssl-android-$(TARGET_ARCH_ABI)/include
 
 LOCAL_LDLIBS           := -llog -landroid -lz -lEGL -lGLESv2 -lGLESv3
