@@ -154,16 +154,16 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
     ImColor neonPink = GetNeonColor(animTime, 1.5f, 4.0f);
     ImColor pureWhite = ImColor(255, 255, 255, 255);
 
-    drawTextWithSpacing("ETHNIR NOIR", ImVec2(textStartX, startY), neonPurple, 1.4f);
+    drawTextWithSpacing("ETHNIR FREEMIUM", ImVec2(textStartX, startY), neonPurple, 1.4f);
     
     float dotRadius = 3.0f * c::scale;
-    float premiumTextWidth = font::inter_semibold->CalcTextSizeA(11.5f * c::scale, FLT_MAX, 0.0f, "PREMIUM").x + (1.4f * 6);
-    ImVec2 dotPos = ImVec2(textEndX - premiumTextWidth - (8.0f * c::scale), startY + (6.0f * c::scale));
+    float statusTextWidth = font::inter_semibold->CalcTextSizeA(11.5f * c::scale, FLT_MAX, 0.0f, "ACTIVE").x + (1.4f * 6);
+    ImVec2 dotPos = ImVec2(textEndX - statusTextWidth - (8.0f * c::scale), startY + (6.0f * c::scale));
     
     draw->AddCircleFilled(dotPos, dotRadius, neonCyan);
     draw->AddCircle(dotPos, dotRadius + (1.5f * c::scale), ImColor(0, 255, 255, 50), 0, 1.0f);
 
-    drawTextWithSpacing("PREMIUM", ImVec2(textEndX, startY), neonCyan, 1.4f, true);
+    drawTextWithSpacing("ACTIVE", ImVec2(textEndX, startY), neonCyan, 1.4f, true);
     
     float dividerY = startY + 18.0f * c::scale;
     draw->AddLine(ImVec2(textStartX, dividerY), ImVec2(textEndX, dividerY), borderColor, 1.0f);

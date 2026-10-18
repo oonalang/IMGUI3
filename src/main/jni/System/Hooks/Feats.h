@@ -920,11 +920,27 @@ inline void InitializeAllHooks() {
           (void *)&hook_GameObjectSetActive,
           (void **)&orig_GameObjectSetActive);
           
-    //-- Throwable Alert      
+    //-- Throwable Alert
     DobbyHook((void *)getAbsoluteAddress("libunity.so", ThrowAlertCfg::TickRva),
           (void *)&hook_WeaponProjectileTick,
           (void **)&orig_WeaponProjectileTick);
-          
+
+    //-- Placed Items ESP (tripmines / C4 / trophy / trip sensors: the
+    //   Stick base Tick catches every Stick subclass, the three class Ticks
+    //   cover the placables that override Tick themselves - see PlacableEsp.h)
+    DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::StickTickRva),
+          (void *)&hook_StickTick,
+          (void **)&orig_StickTick);
+    DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::TripMineTickRva),
+          (void *)&hook_TripMineTick,
+          (void **)&orig_TripMineTick);
+    DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::TrapChipTickRva),
+          (void *)&hook_TrapChipTick,
+          (void **)&orig_TrapChipTick);
+    DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::TripWireTickRva),
+          (void *)&hook_TripWireTick,
+          (void **)&orig_TripWireTick);
+
     //-- Clear Terrain
     DobbyHook((void *)getAbsoluteAddress("libunity.so", 0xAE2E1B0),
           (void *)&hook_SetGrassShowState,
