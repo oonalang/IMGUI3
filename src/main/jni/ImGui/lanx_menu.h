@@ -561,10 +561,10 @@ namespace lanx
 
             PushFont(font::bold_font);
             draw_list->AddText(utils::center_text(pos, pos + ImVec2(70, 70), ICON_FIRE_FILL) + ImVec2(0, 4.5f), c::main_color, ICON_FIRE_FILL);
-            draw_list->AddText(ImVec2(pos.x + 60, utils::center_text(pos, pos + ImVec2(70, 70), "LineFlow").y), c::label::active, "LineFlow");
+            draw_list->AddText(ImVec2(pos.x + 60, utils::center_text(pos, pos + ImVec2(70, 70), "ETHNIR FREEMIUM").y), c::label::active, "ETHNIR FREEMIUM");
             PopFont();
 
-            draw_list->AddText(pos + ImVec2(c::bg::size.x - 106 - CalcTextSize("Lyapos").x, 18), c::label::active, "Lyapos");
+            draw_list->AddText(pos + ImVec2(c::bg::size.x - 106 - CalcTextSize("Shaiaintshyy").x, 18), c::label::active, "Shaiaintshyy");
 
             PushFont(font::esp_font);
             draw_list->AddText(pos + ImVec2(c::bg::size.x - 106 - CalcTextSize("Administrator").x, 37), c::label::def, "Administrator");
@@ -771,6 +771,7 @@ namespace lanx
                 Child("Awareness##L4", ImVec2(col_w, full_h), true);
                 Checkbox("Armor ESP", &Config.ESPMenu.Armor);
                 Checkbox("Grenade Warning", &Config.ESPMenu.GrenadeWarn);
+                Checkbox("Placed Items ESP", &Config.ESPMenu.Placables);
                 Checkbox("BR Class", &Config.ESPMenu.BRClass);
                 Checkbox("Vehicle ESP", &Config.ESPMenu.Vehicle);
                 Checkbox("Vehicle Health", &Config.ESPMenu.VehicleHealth);
