@@ -923,6 +923,23 @@ uintptr_t g_il2cpp;
 
 EGLBoolean (*old_eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
 
+// Modify()/Restore() both write unconditionally, so a patch may only be touched
+// when the wanted state differs from the applied one. The flags below flip only
+// after a successful write, so a failed one is retried on the next frame.
+static void ApplyPatch(MemoryPatch &patch, bool &applied, bool want)
+{
+    if (want == applied) return;
+    if (want ? patch.Modify() : patch.Restore()) applied = want;
+}
+
+// Two patches that make up one feature (both must land, both must revert).
+static void ApplyPatchPair(MemoryPatch &a, MemoryPatch &b, bool &applied, bool want)
+{
+    if (want == applied) return;
+    const bool ok = want ? (a.Modify() && b.Modify()) : (a.Restore() && b.Restore());
+    if (ok) applied = want;
+}
+
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 {
     if (!old_eglSwapBuffers) return EGL_FALSE;
@@ -1033,76 +1050,25 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
     }
 
-    // Feature flags -> memory patches, every frame and independent of the
-    // menu being on screen: closing the menu must not leave a patch applied.
-    if (Config.ExtraMenu.WallHack) Patches.A1.Modify();
-    else Patches.A1.Restore();
-
-
-    if (Config.NewFeaturesMenu.NoCrouch) Patches.NoCrouch.Modify();
-    else Patches.NoCrouch.Restore();
-
-    // The two NewFeatures patches are EDGE-TRIGGERED: write once on
-    // state change, never while idle. Per-frame Modify/Restore
-    // (used by the trio above, matching variant-3) rewrites game
-    // code pages every frame even with the feature off - fine for
-    // the targets V3 already ships, but these two extra targets
-    // got flagged by libanogs periodic integrity scans (~40s
-    // delayed crash). Idle = zero memory writes.
-    static bool s_appliedNoHitFlinch = false;
-    static bool s_appliedNoDrift = false;
-    // The applied-flags only flip when the memory write actually
-    // succeeded - otherwise a failed Restore() left the patch live
-    // forever with the UI claiming it was off (the old "No Drift
-    // won't stop" bug, together with the removed Stable Scope
-    // always-zero breathe hook). Running every frame is safe:
-    // KittyMemory skips the write while patched state matches.
-    if (Config.NewFeaturesMenu.NoHitFlinch && !s_appliedNoHitFlinch) {
-        if (Patches.NoHitFlinch.Modify()) s_appliedNoHitFlinch = true;
-    } else if (!Config.NewFeaturesMenu.NoHitFlinch && s_appliedNoHitFlinch) {
-        if (Patches.NoHitFlinch.Restore()) s_appliedNoHitFlinch = false;
-    }
-    if (Config.NewFeaturesMenu.NoDrift && !s_appliedNoDrift) {
-        if (Patches.NoDrift.Modify()) s_appliedNoDrift = true;
-    } else if (!Config.NewFeaturesMenu.NoDrift && s_appliedNoDrift) {
-        if (Patches.NoDrift.Restore()) s_appliedNoDrift = false;
-    }
-    static bool s_appliedNoSlideFatigue = false;
-    if (Config.NewFeaturesMenu.NoSlideFatigue && !s_appliedNoSlideFatigue) {
-        const bool ok = Patches.NoSlideFatigue.Modify()
-                     && Patches.NoSlideFatiguePve.Modify();
-        if (ok) s_appliedNoSlideFatigue = true;
-    } else if (!Config.NewFeaturesMenu.NoSlideFatigue && s_appliedNoSlideFatigue) {
-        const bool ok = Patches.NoSlideFatigue.Restore()
-                     && Patches.NoSlideFatiguePve.Restore();
-        if (ok) s_appliedNoSlideFatigue = false;
-    }
-
-    // Same edge-triggered pattern for the four 8-byte getters that
-    // used to be inline hooks (they are patches now, see the
-    // Patches.* creation in Init_Thread / the Feats.h comments).
-    static bool s_appliedEm3Eye = false;
-    if (Config.ExtraMenu.RedWallhack && !s_appliedEm3Eye) {
-        if (Patches.Em3Eye.Modify()) s_appliedEm3Eye = true;
-    } else if (!Config.ExtraMenu.RedWallhack && s_appliedEm3Eye) {
-        if (Patches.Em3Eye.Restore()) s_appliedEm3Eye = false;
-    }
-    static bool s_appliedKineticArmor = false;
-    if (Config.ExtraMenu.Kinetic && !s_appliedKineticArmor) {
-        if (Patches.KineticArmor.Modify()) s_appliedKineticArmor = true;
-    } else if (!Config.ExtraMenu.Kinetic && s_appliedKineticArmor) {
-        if (Patches.KineticArmor.Restore()) s_appliedKineticArmor = false;
-    }
-    static bool s_appliedNoHipfireDelay = false;
-    if (Config.NewFeaturesMenu.NoHipfireDelay && !s_appliedNoHipfireDelay) {
-        const bool ok = Patches.NoHipfireUseGetReadyTime.Modify()
-                     && Patches.NoHipfireSpringFireGetReady.Modify();
-        if (ok) s_appliedNoHipfireDelay = true;
-    } else if (!Config.NewFeaturesMenu.NoHipfireDelay && s_appliedNoHipfireDelay) {
-        const bool ok = Patches.NoHipfireUseGetReadyTime.Restore()
-                     && Patches.NoHipfireSpringFireGetReady.Restore();
-        if (ok) s_appliedNoHipfireDelay = false;
-    }
+    // Feature flags -> memory patches. Every one of them is EDGE-TRIGGERED:
+    // Modify() and Restore() always write, and Restore() does not look at the
+    // current bytes, so a per-frame Restore() of ten disabled patches rewrote
+    // libunity.so's code pages thousands of times a second - which is exactly
+    // what libanogs' periodic integrity scan catches a few seconds into a
+    // match, with no feature even enabled. One write per toggle change, zero
+    // writes while it stays put.
+    static bool s_wallhack = false, s_noCrouch = false, s_noHitFlinch = false, s_noDrift = false;
+    static bool s_slideFatigue = false, s_em3Eye = false, s_kineticArmor = false, s_noHipfire = false;
+    ApplyPatch(Patches.A1, s_wallhack, Config.ExtraMenu.WallHack);
+    ApplyPatch(Patches.NoCrouch, s_noCrouch, Config.NewFeaturesMenu.NoCrouch);
+    ApplyPatch(Patches.NoHitFlinch, s_noHitFlinch, Config.NewFeaturesMenu.NoHitFlinch);
+    ApplyPatch(Patches.NoDrift, s_noDrift, Config.NewFeaturesMenu.NoDrift);
+    ApplyPatchPair(Patches.NoSlideFatigue, Patches.NoSlideFatiguePve, s_slideFatigue,
+                   Config.NewFeaturesMenu.NoSlideFatigue);
+    ApplyPatch(Patches.Em3Eye, s_em3Eye, Config.ExtraMenu.RedWallhack);
+    ApplyPatch(Patches.KineticArmor, s_kineticArmor, Config.ExtraMenu.Kinetic);
+    ApplyPatchPair(Patches.NoHipfireUseGetReadyTime, Patches.NoHipfireSpringFireGetReady, s_noHipfire,
+                   Config.NewFeaturesMenu.NoHipfireDelay);
 
     // Touch -> nl_ui (REPLACE_EVERYTHING.md): the game's own touch becomes
     // screen-pixel OnTouch events; the adapter converts them to the canvas.

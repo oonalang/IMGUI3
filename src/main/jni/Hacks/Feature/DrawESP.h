@@ -130,6 +130,18 @@ static inline bool EspObjectAlive(const void *obj) {
     return *(const void **)((const uintptr_t)obj + 0x10) != nullptr;
 }
 
+// Nothing in this file draws unless an ESP overlay option is on. With the whole
+// page off the frame must not walk a pawn, a camera or a transform at all: that
+// walk is what dereferenced a half-destroyed object ~10 s into a match even
+// when every feature was off.
+static inline bool EspAnythingToDraw() {
+    const auto &e = Config.ESPMenu;
+    return e.Signal || e.Alert || e.Count || e.Name || e.isPlayerLine || e.Armor ||
+           e.GrenadeWarn || e.BRClass || e.Vehicle || e.VehicleHealth || e.Box ||
+           e.Health || e.Distance || e.Skeleton || e.ShowFov || e.Crosshair ||
+           e.Aimline || e.EspStyle != EspStyleNone;
+}
+
 uintptr_t GetClosestTarget() {
     uintptr_t result = 0;
     float MaxDist = std::numeric_limits<float>::infinity();
@@ -183,7 +195,7 @@ uintptr_t GetClosestTarget() {
 // with no user action.
 // ---------------------------------------------------------------------------
 static inline bool EspPawnHealth(uintptr_t pawn, int &curHp, int &maxHp) {
-    if (!Tools::IsPtrValid((void *)pawn))
+    if (!EspObjectAlive((void *)pawn))
         return false;
     auto attackableInfo = *(uintptr_t *)(pawn + Class_AttackableTarget_m_AttackableInfo);
     if (!Tools::IsPtrValid((void *)attackableInfo))
@@ -197,7 +209,7 @@ static inline bool EspPawnHealth(uintptr_t pawn, int &curHp, int &maxHp) {
 // call that answers null for a pawn whose PlayerInfo is gone (bots, respawns),
 // and the old call site ran String::CString() on that null.
 static inline std::string EspPawnName(Pawn *pawn) {
-    if (!Tools::IsPtrValid((void *)pawn))
+    if (!EspObjectAlive(pawn))
         return std::string();
     if (pawn->m_IsBot())
         return std::string("BOT");
@@ -490,7 +502,7 @@ static inline void DrawEspVerticalHealthBar(ImDrawList *draw, float x, float y, 
 
 static inline void DrawEsp3DBox(ImDrawList *draw, Vector3 rootPos, int glHeight, ImU32 color, float thickness) {
     Camera* mainCamera = Camera::get_main();
-    if (!mainCamera) return;
+    if (!EspObjectAlive(mainCamera)) return;
 
     Vector3 minBounds(-0.5f, 0.0f, -0.5f);
     Vector3 maxBounds(0.5f, 1.8f, 0.5f);
@@ -523,7 +535,7 @@ static inline void DrawEsp3DBox(ImDrawList *draw, Vector3 rootPos, int glHeight,
 
 static inline void DrawEspCylinder(ImDrawList* draw, Vector3 rootPos, int glHeight, ImU32 color) {
     Camera* mainCamera = Camera::get_main();
-    if (!mainCamera) return;
+    if (!EspObjectAlive(mainCamera)) return;
 
     ImVec4 c = ImGui::ColorConvertU32ToFloat4(color);
     ImU32 edgeColor = ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, 0.72f));
@@ -563,7 +575,7 @@ static inline void DrawEspCylinder(ImDrawList* draw, Vector3 rootPos, int glHeig
 
 static inline void DrawEspSignal(ImDrawList* draw, Vector3 rootPos, int glHeight, ImU32 color) {
     Camera* mainCamera = Camera::get_main();
-    if (!mainCamera) return;
+    if (!EspObjectAlive(mainCamera)) return;
 
     ImVec4 c = ImGui::ColorConvertU32ToFloat4(color);
     ImU32 outerColor = ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, 0.65f));
@@ -674,15 +686,15 @@ static inline void DrawVehicleESP(ImDrawList *draw, int sWidth, int sHeight) {
     
     for (int i = 0; i < m_AllVehicles->getSize(); i++) {
         PhysicsVehicle *vehicle = vehicles[i];
-        if (!Tools::IsPtrValid(vehicle)) continue;
+        if (!EspObjectAlive(vehicle)) continue;
         
         Transform *vehicleTransform = vehicle->get_transform();
-        if (!Tools::IsPtrValid(vehicleTransform)) continue;
+        if (!EspObjectAlive(vehicleTransform)) continue;
         
         Vector3 vehiclePos = vehicleTransform->get_position();
         
         auto mainCamera = Camera::get_main();
-        if (!mainCamera) continue;
+        if (!EspObjectAlive(mainCamera)) continue;
         
         Vector3 screenPos = mainCamera->WorldToScreenPoint(vehiclePos);
         if (screenPos.z <= 0) continue;
@@ -762,8 +774,11 @@ static inline void DrawVehicleESP(ImDrawList *draw, int sWidth, int sHeight) {
 }
 
 void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
+    // These two are not ESP overlays; they must keep running with the page off.
     ApplySpeedhack();
     ApplyNoGravityRuntime();
+
+    if (!EspAnythingToDraw()) return;
 
     BaseGame *get_MatchGame = GamePlay::get_MatchGame();
     if (!Tools::IsPtrValid(get_MatchGame)) return;
@@ -783,6 +798,7 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
     // internally, i.e. two extra native calls per enemy just to project two
     // points - at 10 pawns x 60 fps that was ~1200 pointless native calls/s.
     Camera *espCam = Camera::get_main();
+    if (!EspObjectAlive(espCam)) return;   // the camera dies with the match, too
     auto espW2s = (Vector3 (*)(Camera *, Vector3))Class_Camera_WorldToScreenPoint;
     
     DrawThrowableAlert(draw, sWidth, sHeight, pLocalPawn_rootPos);
@@ -1152,9 +1168,9 @@ void WeaponHandlerByAstral(ThisType thiz, Vector3 startPos, Vector3& dir, Args..
     }
 
     auto main = Camera::get_main();
-    if (main) {
+    if (EspObjectAlive(main)) {
         auto mainView = ((Component *) main)->get_transform();
-        if (mainView) {
+        if (EspObjectAlive(mainView)) {
             if (Config.Aim.AimSilent) {
                 dir = targetPos - mainView->get_position();
             }

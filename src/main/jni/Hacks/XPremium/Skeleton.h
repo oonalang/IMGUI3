@@ -19,6 +19,17 @@ namespace BoneMapOffsets {
     static constexpr uintptr_t m_Body = 0x98;
 }
 
+// Bones, their Transforms and the Camera are all UnityEngine.Objects: a
+// destroyed one keeps its managed wrapper readable (so Tools::IsPtrValid still
+// passes) while m_CachedPtr (@0x10) is already cleared. Same rule as
+// DrawESP.h's EspObjectAlive, repeated here because this header is included
+// before that helper is declared.
+static inline bool BoneObjectAlive(const void *obj) {
+    if (!Tools::IsPtrValid((void *)obj))
+        return false;
+    return *(const void **)((const uintptr_t)obj + 0x10) != nullptr;
+}
+
 static inline bool IsZeroVec3(const Vector3 &v) {
     return (v.x == 0.0f && v.y == 0.0f && v.z == 0.0f);
 }
@@ -76,7 +87,7 @@ static inline Vector3 GetBoneMapPos(uintptr_t boneMap, uintptr_t boneSlotOffset)
     }
 
     Transform *boneTransform = reinterpret_cast<Transform *>(transformPtr);
-    if (!Tools::IsPtrValid(boneTransform)) {
+    if (!BoneObjectAlive(boneTransform)) {
         return Vector3::zero();
     }
 
@@ -85,7 +96,7 @@ static inline Vector3 GetBoneMapPos(uintptr_t boneMap, uintptr_t boneSlotOffset)
 
 static inline void DrawSkeletonLine(ImDrawList* draw, Vector3 from, Vector3 to, ImU32 color, float thickness, int sHeight) {
     auto mainCamera = Camera::get_main();
-    if (!mainCamera) return;
+    if (!BoneObjectAlive(mainCamera)) return;
 
     Vector3 fromScreen = mainCamera->WorldToScreenPoint(from);
     Vector3 toScreen = mainCamera->WorldToScreenPoint(to);
@@ -130,7 +141,7 @@ static bool DrawBoneMapSkeleton(ImDrawList *draw, Pawn *pawn, ImU32 color, float
     }
 
     auto mainCamera = Camera::get_main();
-    if (!mainCamera) {
+    if (!BoneObjectAlive(mainCamera)) {
         return false;
     }
 
