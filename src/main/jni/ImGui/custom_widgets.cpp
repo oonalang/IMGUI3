@@ -1,5 +1,6 @@
 #include "custom_widgets.hpp"
 #include "imgui_settings.h"
+#include "nl_style.h"
 #include "Icon.h"
 extern ImFont* F50;
 extern ImFont* F107;
@@ -50,20 +51,11 @@ namespace custom
             if (drawList == nullptr)
                 return;
 
-            drawList->AddRectFilled(
-                min,
-                max,
-                ImGui::GetColorU32(highlighted ? main_runtime_theme::GetActiveTabBackgroundColor() : main_runtime_theme::GetSidebarShellBackgroundColor()),
-                rounding
-            );
-            drawList->AddRectFilledMultiColor(
-                min,
-                ImVec2(max.x, min.y + (max.y - min.y) * 0.48f),
-                main_runtime_theme::GetAccentTintU32(0.22f, highlighted ? 0.12f : 0.08f),
-                main_runtime_theme::GetAccentTintU32(0.16f, highlighted ? 0.07f : 0.04f),
-                IM_COL32(0, 0, 0, 0),
-                IM_COL32(0, 0, 0, 0)
-            );
+            // IMGUI5 panel: flat C(17,19,27,224) with the C(31,34,44) hairline,
+            // and the C(39,43,54) selected fill for the active card. The accent
+            // gradient this used to wash over the top half is gone.
+            drawList->AddRectFilled(min, max, highlighted ? nl5::NavFill : nl5::CardBg, rounding);
+            drawList->AddRect(min, max, nl5::CardEdge, rounding, 0, 1.0f);
         }
 
         bool DrawSidebarButton(const char* id, const char* icon, bool active, const ImVec2& min, const ImVec2& size)
@@ -82,8 +74,8 @@ namespace custom
                 drawList->AddRectFilled(
                     slotMin,
                     slotMax,
-                    active ? ImGui::GetColorU32(main_runtime_theme::GetActiveTabBackgroundColor()) : IM_COL32(18, 20, 29, 150),
-                    9.0f
+                    active ? nl5::NavFill : IM_COL32(25, 28, 38, 200),
+                    10.0f
                 );
             }
 
@@ -94,7 +86,7 @@ namespace custom
                 iconFont,
                 iconSize,
                 ImVec2(slotMin.x + (slotSide - iconTextSize.x) * 0.5f, slotMin.y + (slotSide - iconTextSize.y) * 0.5f),
-                active ? main_runtime_theme::GetAccentTintU32(0.98f, 1.0f) : IM_COL32(154, 160, 182, hovered ? 245 : 220),
+                active ? nl5::AccentIcon() : (hovered ? nl5::RowText : nl5::Ghost),
                 icon
             );
 
@@ -122,11 +114,12 @@ namespace custom
                 const float startX = min.x + 14.0f;
                 const float textY   = min.y + (size.y - leftSize.y) * 0.5f - 1.0f;
 
-                // "Zenx" — static warm white
+                // The static half is the IMGUI5 bright label; the suffix keeps
+                // the accent. No glow any more - IMGUI5 text is flat.
                 drawList->AddText(
                     titleFont, titleFontSize,
                     ImVec2(startX, textY),
-                    IM_COL32(228, 213, 185, 255),
+                    nl5::TextBright,
                     title, pipe
                 );
 
@@ -134,38 +127,15 @@ namespace custom
                 const char* accentPart = pipe + 1;
                 const ImVec2 accentTextSize = titleFont->CalcTextSizeA(titleFontSize, FLT_MAX, 0.0f, accentPart);
                 const float accentX = startX + leftSize.x;
-                const ImVec4 acc = c::accent;
-                const ImU32 accentCol = IM_COL32(
-                    (int)(acc.x * 255), (int)(acc.y * 255),
-                    (int)(acc.z * 255), 255
-                );
-                // Soft glow: two blurred shadow layers behind the accent text
-                const ImU32 glowCol1 = IM_COL32(
-                    (int)(acc.x * 255), (int)(acc.y * 255),
-                    (int)(acc.z * 255), 55
-                );
-                const ImU32 glowCol2 = IM_COL32(
-                    (int)(acc.x * 255), (int)(acc.y * 255),
-                    (int)(acc.z * 255), 28
-                );
-                for (int dx = -2; dx <= 2; ++dx) {
-                    for (int dy = -2; dy <= 2; ++dy) {
-                        if (dx == 0 && dy == 0) continue;
-                        const float dist = (float)(dx * dx + dy * dy);
-                        const ImU32 c = dist <= 2 ? glowCol1 : glowCol2;
-                        drawList->AddText(titleFont, titleFontSize,
-                            ImVec2(accentX + dx * 1.0f, textY + dy * 1.0f), c, accentPart);
-                    }
-                }
                 drawList->AddText(titleFont, titleFontSize,
-                    ImVec2(accentX, textY), accentCol, accentPart);
+                    ImVec2(accentX, textY), nl5::AccentIcon(), accentPart);
             } else {
                 // Fallback: plain single-color title
                 const ImVec2 titleSize = titleFont->CalcTextSizeA(titleFontSize, FLT_MAX, 0.0f, title);
                 drawList->AddText(
                     titleFont, titleFontSize,
                     ImVec2(min.x + 14.0f, min.y + (size.y - titleSize.y) * 0.5f - 1.0f),
-                    IM_COL32(228, 213, 185, 255),
+                    nl5::TextBright,
                     title
                 );
             }
@@ -197,8 +167,8 @@ namespace custom
             drawList->AddRectFilled(
                 ImVec2(trackMin.x - 4.0f, trackMin.y - 4.0f),
                 ImVec2(trackMax.x + 4.0f, trackMax.y + 4.0f),
-                IM_COL32(8, 9, 14, 220),
-                5.0f
+                nl5::TrackBg,
+                3.0f
             );
 
             for (int i = 0; i < (int)segments; ++i)
@@ -220,25 +190,11 @@ namespace custom
             }
             drawList->AddRect(trackMin, trackMax, IM_COL32(64, 67, 79, 220), 4.0f, 0, 1.0f);
 
+            // IMGUI5 slider knob: a plain white circle, r5.5, that grows a
+            // little while it is being dragged.
             const float knobX = ImLerp(trackMin.x, trackMax.x, main_runtime_theme::g_menuHue);
-            const float knobHalfWidth = active ? 4.0f : 3.5f;
-            const float knobHalfHeight = active ? 8.0f : 7.0f;
             const ImVec2 knobCenter(knobX, (trackMin.y + trackMax.y) * 0.5f);
-            const ImVec2 knobMin(knobCenter.x - knobHalfWidth, knobCenter.y - knobHalfHeight);
-            const ImVec2 knobMax(knobCenter.x + knobHalfWidth, knobCenter.y + knobHalfHeight);
-            drawList->AddRectFilled(
-                knobMin - ImVec2(2.0f, 2.0f),
-                knobMax + ImVec2(2.0f, 2.0f),
-                main_runtime_theme::GetAccentTintU32(0.18f, active ? 0.26f : 0.18f),
-                6.0f
-            );
-            drawList->AddRectFilled(knobMin, knobMax, main_runtime_theme::GetAccentU32(), 4.0f);
-            drawList->AddRectFilled(
-                ImVec2(knobCenter.x - 1.0f, knobMin.y + 2.0f),
-                ImVec2(knobCenter.x + 1.0f, knobMax.y - 2.0f),
-                IM_COL32(246, 247, 251, 235),
-                1.0f
-            );
+            drawList->AddCircleFilled(knobCenter, active ? 6.5f : 5.5f, nl5::SliderKnob);
 
             return changed;
         }
@@ -272,7 +228,7 @@ namespace custom
                 iconFont,
                 iconFontSize,
                 ImVec2(min.x + (size.x - iconSize.x) * 0.5f, min.y + (size.y - iconSize.y) * 0.5f - 1.0f),
-                hovered ? main_runtime_theme::GetAccentU32() : IM_COL32(238, 241, 249, 255),
+                hovered ? nl5::AccentIcon() : nl5::TextBright,
                 powerIcon
             );
 
@@ -663,7 +619,7 @@ namespace custom
         if (size.x <= 0.0f) size.x = ImMax(content_avail.x + size.x, 4.0f * c::scale);
         if (size.y <= 0.0f) size.y = ImMax(content_avail.y + size.y, 4.0f * c::scale);
 
-        const float rounding = 7.0f * c::scale;
+        const float rounding = 14.0f * c::scale;    // IMGUI5 card rounding
         const float cap_height = cap ? 34.0f * c::scale : 0.0f;
         const ImVec2 panel_min = parent_window->DC.CursorPos;
         const ImVec2 panel_max = panel_min + size;
@@ -671,7 +627,8 @@ namespace custom
         SetNextWindowSize(size - ImVec2(0.0f, cap_height));
 
         ImDrawList* draw = GetWindowDrawList();
-        draw->AddRectFilled(panel_min, panel_max, GetColorU32(c::child::background), rounding);
+        // IMGUI5 card: C(17,19,27,224) fill plus the C(31,34,44) edge.
+        nl5::Card(draw, panel_min, panel_max, c::scale);
 
         if (cap) {
             const ImVec2 cap_max(panel_max.x, panel_min.y + cap_height);
@@ -696,9 +653,10 @@ namespace custom
                         text_x += icon_text_size.x + 7.0f * c::scale;
                     }
                 }
+                // IMGUI5 titles are quiet grey; the icon keeps the accent.
                 draw->AddText(
                     panel_min + ImVec2(text_x, ImMax(6.0f * c::scale, (cap_height - title_size.y) * 0.5f - 2.0f * c::scale)),
-                    GetColorU32(c::accent),
+                    nl5::RowText,
                     name,
                     name_end
                 );
@@ -1042,9 +1000,11 @@ namespace custom
         const ImVec4 target_background = held
             ? c::button::background_active
             : hovered ? c::button::background_hovered : c::button::background;
+        // IMGUI5 frames keep their text light and let the border/fill carry the
+        // hover, so the label goes from dim to bright instead of turning accent.
         const ImVec4 target_text = held
             ? c::text::text_active
-            : hovered ? c::accent : c::text::text_active;
+            : hovered ? c::text::text_active : c::text::text_hov;
 
         it_anim->second.background = ImLerp(it_anim->second.background, target_background, g.IO.DeltaTime * 10.0f);
         it_anim->second.text = ImLerp(it_anim->second.text, target_text, g.IO.DeltaTime * 10.0f);
@@ -1125,17 +1085,20 @@ namespace custom
         }
 
         it_anim->second.background = ImLerp(it_anim->second.background, selected || hovered ? c::page::background_active : c::page::background, g.IO.DeltaTime * 6.f);
-        it_anim->second.text = ImLerp(it_anim->second.text, selected ? c::accent : hovered ? c::page::text_hov : c::page::text, g.IO.DeltaTime * 14.f);
+        // Selected and hovered rows share the bright label; the fill is what
+        // marks the selection.
+        it_anim->second.text = ImLerp(it_anim->second.text, selected || hovered ? c::page::text_hov : c::page::text, g.IO.DeltaTime * 14.f);
 
         it_anim->second.alpha_line = ImLerp(it_anim->second.alpha_line, selected ? 1.f : 0.f, g.IO.DeltaTime * 6.f);
         it_anim->second.line_size = ImLerp(it_anim->second.line_size, selected ? (size.x / 4) : (size.x / 2), g.IO.DeltaTime * 6.f);
 
         it_anim->second.smooth_swap = ImLerp(it_anim->second.smooth_swap, selected ? 26.f * c::scale : 0, g.IO.DeltaTime * 12.f);
 
+        // IMGUI5 sidebar row (neverlose_menu.cpp nav()): flat until it is
+        // hovered or selected, then the C(39,43,54) fill at r6. The accent
+        // underline this used to draw is not part of that language.
+        (void)show_active_line;
         GetWindowDrawList()->AddRectFilled(bb.Min, bb.Max, GetColorU32(it_anim->second.background), c::page::rounding * c::scale);
-
-        if (show_active_line)
-            GetWindowDrawList()->AddRectFilled(bb.Min + ImVec2(+it_anim->second.line_size, (size_arg.y + 9 * c::scale)), bb.Max + ImVec2(-it_anim->second.line_size, 15 * c::scale), GetColorU32(c::accent, it_anim->second.alpha_line), c::page::rounding * c::scale, ImDrawFlags_RoundCornersTop);
 
         PushClipRect(bb.Min, bb.Max, true);
 
@@ -1218,8 +1181,12 @@ namespace custom
             MarkItemEdited(id);
         }
 
+        // IMGUI5 row label: C(207,209,218) at rest, C(226,228,235) when the row
+        // is hovered - the old dim grey read as a disabled row.
         const ImVec4 target_background = *v ? AccentShade(0.12f, 0.98f) : hovered ? ImVec4(0.10f, 0.11f, 0.15f, 0.96f) : ImVec4(0.07f, 0.08f, 0.11f, 0.94f);
-        const ImVec4 target_text = *v ? c::text::text_active : hovered ? c::text::text_hov : c::text::text_active;
+        const ImVec4 target_text = (hovered || g.ActiveId == id)
+            ? ImGui::ColorConvertU32ToFloat4(nl5::TextBright)
+            : ImGui::ColorConvertU32ToFloat4(nl5::RowText);
         it_anim->second.background = ImLerp(it_anim->second.background, target_background, g.IO.DeltaTime * 10.0f);
         it_anim->second.text = ImLerp(it_anim->second.text, target_text, g.IO.DeltaTime * 10.0f);
         it_anim->second.alpha_mark = ImLerp(it_anim->second.alpha_mark, *v ? 1.f : 0.f, g.IO.DeltaTime * 12.0f);
@@ -1228,73 +1195,15 @@ namespace custom
         const float target_box_scale = (*v ? 1.0f : 0.94f) + it_anim->second.hold_t * 0.05f + it_anim->second.hover_t * 0.02f;
         it_anim->second.box_scale = ImLerp(it_anim->second.box_scale, target_box_scale, g.IO.DeltaTime * 14.0f);
 
-        const float row_overlay_alpha = 0.08f + it_anim->second.hover_t * 0.14f + it_anim->second.hold_t * 0.18f;
-        if (row_overlay_alpha > 0.01f) {
-            GetWindowDrawList()->AddRectFilled(
-                total_bb.Min,
-                total_bb.Max,
-                GetColorU32(c::elements::background_hovered, row_overlay_alpha),
-                6.0f * control_scale
-            );
-        }
-
-        const ImVec2 box_center(total_bb.Max.x - box_size * 0.5f - 1.0f * control_scale, total_bb.Min.y + height * 0.5f);
-        const ImVec2 scaled_half(box_size * it_anim->second.box_scale * 0.5f, box_size * it_anim->second.box_scale * 0.5f);
-        const ImVec2 box_min(box_center.x - scaled_half.x, box_center.y - scaled_half.y);
-        const ImVec2 box_max(box_center.x + scaled_half.x, box_center.y + scaled_half.y);
-        const float rounding = 4.5f * control_scale;
-
-        if (*v || it_anim->second.alpha_mark > 0.01f) {
-            const ImVec2 glow_pad(2.0f * control_scale, 2.0f * control_scale);
-            GetWindowDrawList()->AddRectFilled(
-                box_min - glow_pad,
-                box_max + glow_pad,
-                GetColorU32(AccentShade(0.08f), (0.10f + it_anim->second.hover_t * 0.05f) * it_anim->second.alpha_mark),
-                rounding + 2.0f * control_scale
-            );
-        }
-
-        const ImVec4 off_left = ImVec4(0.16f, 0.16f, 0.18f, 0.82f);
-        const ImVec4 off_right = ImVec4(0.07f, 0.08f, 0.10f, 0.90f);
-        const ImVec4 on_left = AccentLift(0.14f, 0.94f);
-        const ImVec4 on_right = AccentShade(0.72f, 0.96f);
-        const ImVec4 left_fill = MixColor(off_left, on_left, it_anim->second.alpha_mark);
-        const ImVec4 right_fill = MixColor(off_right, on_right, it_anim->second.alpha_mark);
-        ImDrawList* draw_list = GetWindowDrawList();
-        const int gradient_vtx_start = draw_list->VtxBuffer.Size;
-        draw_list->AddRectFilled(box_min, box_max, GetColorU32(left_fill), rounding);
-        ShadeVertsLinearColorGradientKeepAlpha(
-            draw_list,
-            gradient_vtx_start,
-            draw_list->VtxBuffer.Size,
-            box_min,
-            ImVec2(box_max.x, box_min.y),
-            GetColorU32(left_fill),
-            GetColorU32(right_fill)
-        );
-        draw_list->AddRect(
-            box_min,
-            box_max,
-            GetColorU32(*v ? WithAlpha(AccentLift(0.08f), 0.34f + it_anim->second.hover_t * 0.08f) : WithAlpha(c::widget::outlinecolor, 0.58f + it_anim->second.hover_t * 0.08f)),
-            rounding,
-            0,
-            1.0f * control_scale
-        );
-        if (*v || it_anim->second.alpha_mark > 0.01f) {
-            const float box_w = box_max.x - box_min.x;
-            const float box_h = box_max.y - box_min.y;
-            const float reveal_t = ImSaturate((it_anim->second.alpha_mark - 0.06f) / 0.94f);
-            const float first_t = ImSaturate(reveal_t / 0.48f);
-            const float second_t = ImSaturate((reveal_t - 0.48f) / 0.52f);
-            const float mark_drop = (1.0f - reveal_t) * 2.0f * control_scale;
-            const ImVec2 p1(box_min.x + box_w * 0.24f, box_min.y + box_h * 0.55f + mark_drop);
-            const ImVec2 p2(box_min.x + box_w * 0.43f, box_min.y + box_h * 0.73f + mark_drop * 0.4f);
-            const ImVec2 p3(box_min.x + box_w * 0.77f, box_min.y + box_h * 0.28f + mark_drop * 0.1f);
-            if (first_t > 0.0f)
-                GetWindowDrawList()->AddLine(p1, ImLerp(p1, p2, first_t), GetColorU32(c::checkbox::mark, it_anim->second.alpha_mark), 1.55f * control_scale);
-            if (second_t > 0.0f)
-                GetWindowDrawList()->AddLine(p2, ImLerp(p2, p3, second_t), GetColorU32(c::checkbox::mark, it_anim->second.alpha_mark), 1.55f * control_scale);
-        }
+        // IMGUI5 switch (neverlose_menu.cpp Toggle): a 29x18 track, r9, with a
+        // r7 knob - C(29,33,43) to the accent when on, knob C(133,144,156) to
+        // C(248,249,252) - and the 1px accent glow around the track on hover.
+        // The animated value IS the track's position, so it slides.
+        const float toggle_scale = control_scale;
+        const ImVec2 toggle_pos(total_bb.Max.x - 29.0f * toggle_scale - 2.0f * toggle_scale,
+                                total_bb.Min.y + (height - 18.0f * toggle_scale) * 0.5f);
+        nl5::Toggle(GetWindowDrawList(), toggle_pos, it_anim->second.alpha_mark,
+                    it_anim->second.hover_t, true, toggle_scale);
 
         GetWindowDrawList()->AddText(
             pos + ImVec2(0.0f, (height - label_size.y) * 0.5f),
@@ -1445,60 +1354,21 @@ namespace custom
 
         it_anim->second.opened_combo = popup_open;
 
-        const float field_rounding = 6.0f * control_scale;
+        // IMGUI5 select (neverlose_menu.cpp RowControl::Select): a flat
+        // C(25,28,38) field that brightens to C(31,38,54) and takes the accent
+        // border on hover, with the two-line chevron on the right.
         GetWindowDrawList()->AddText(total_bb.Min, GetColorU32(WithAlpha(c::text::text, 0.5f)), label, label_end);
-        GetWindowDrawList()->AddRectFilled(field_bb.Min, field_bb.Max, GetColorU32(it_anim->second.background), field_rounding);
-        if (it_anim->second.field_emphasis > 0.01f)
-        {
-            GetWindowDrawList()->AddRectFilled(
-                field_bb.Min - ImVec2(1.0f * control_scale, 1.0f * control_scale),
-                field_bb.Max + ImVec2(1.0f * control_scale, 1.0f * control_scale),
-                GetColorU32(AccentShade(0.18f), 0.06f * it_anim->second.field_emphasis),
-                field_rounding + 1.0f * control_scale
-            );
-        }
-        GetWindowDrawList()->AddRectFilledMultiColor(
-            field_bb.Min + ImVec2(1.0f * control_scale, 1.0f * control_scale),
-            ImVec2(field_bb.Max.x - 1.0f * control_scale, field_bb.Min.y + field_height * 0.46f),
-            GetColorU32(WithAlpha(c::text::text_active, 0.05f)),
-            GetColorU32(WithAlpha(c::text::text_active, 0.02f)),
-            GetColorU32(WithAlpha(c::text::text_active, 0.00f)),
-            GetColorU32(WithAlpha(c::text::text_active, 0.00f))
-        );
-        GetWindowDrawList()->AddRect(
-            field_bb.Min,
-            field_bb.Max,
-            GetColorU32(popup_open ? AccentLift(0.08f) : c::widget::outlinecolor, hovered || popup_open ? 1.0f : 0.78f),
-            field_rounding,
-            0,
-            1.0f * control_scale
-        );
-
-        PushClipRect(field_bb.Min, field_bb.Max, true);
+        nl5::SelectField(GetWindowDrawList(), field_bb.Min, field_bb.Max,
+                         it_anim->second.field_emphasis, control_scale);
+        PushClipRect(field_bb.Min, field_bb.Max - ImVec2(18.0f * control_scale, 0.0f), true);
         GetWindowDrawList()->AddText(
-            field_bb.Min + ImVec2(10.0f * control_scale, (field_height - CalcTextSize(preview_value ? preview_value : "None").y) * 0.5f),
-            GetColorU32(it_anim->second.text),
+            field_bb.Min + ImVec2(7.0f * control_scale, (field_height - CalcTextSize(preview_value ? preview_value : "None").y) * 0.5f),
+            GetColorU32(nl5::FieldText),
             preview_value ? preview_value : "None"
         );
         PopClipRect();
 
-        const float arrow_pad = 14.0f * control_scale;
-        const ImVec2 arrow_center(field_bb.Max.x - arrow_pad, field_bb.Min.y + field_height * 0.5f);
-        const float arrow_size = 3.6f * control_scale;
-        const float arrow_dir = it_anim->second.arrow_roll;
-        const float arrow_offset = ImLerp(-1.2f * control_scale, 1.2f * control_scale, arrow_dir);
-        GetWindowDrawList()->AddLine(
-            ImVec2(arrow_center.x - arrow_size, arrow_center.y - arrow_offset),
-            ImVec2(arrow_center.x, arrow_center.y + arrow_size - arrow_offset),
-            GetColorU32(c::text::text_active),
-            1.4f * control_scale
-        );
-        GetWindowDrawList()->AddLine(
-            ImVec2(arrow_center.x, arrow_center.y + arrow_size - arrow_offset),
-            ImVec2(arrow_center.x + arrow_size, arrow_center.y - arrow_offset),
-            GetColorU32(c::text::text_active),
-            1.4f * control_scale
-        );
+
 
         if (!IsRectVisible(total_bb.Min, total_bb.Max + ImVec2(0, 2 * control_scale)))
         {
@@ -1534,11 +1404,12 @@ namespace custom
         // character that was not near the top of the list could not be picked.
         ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove;
 
-        PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.0f, 0.0f, 0.0f, 0.90f));
-        PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.90f));
-        PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-        PushStyleVar(ImGuiStyleVar_WindowRounding, 5.0f * control_scale);
-        PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6.0f * control_scale, 6.0f * control_scale));
+        // IMGUI5 popup: C(20,20,29,235) at r16 with the C(57,61,76,205) edge.
+        PushStyleColor(ImGuiCol_PopupBg, ImVec4(20.0f / 255.0f, 20.0f / 255.0f, 29.0f / 255.0f, 235.0f / 255.0f));
+        PushStyleColor(ImGuiCol_WindowBg, ImVec4(20.0f / 255.0f, 20.0f / 255.0f, 29.0f / 255.0f, 235.0f / 255.0f));
+        PushStyleColor(ImGuiCol_Border, ImVec4(57.0f / 255.0f, 61.0f / 255.0f, 76.0f / 255.0f, 205.0f / 255.0f));
+        PushStyleVar(ImGuiStyleVar_WindowRounding, 16.0f * control_scale);
+        PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f * control_scale, 4.0f * control_scale));
         PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 
         bool ret = BeginPopupEx(popup_id, window_flags);
@@ -1838,29 +1709,19 @@ namespace custom
         const char* label_end = FindRenderedTextEnd(label);
         it_anim->second.text = ImLerp(it_anim->second.text, selected ? c::text::text_active : hovered ? c::text::text_hov : c::text::text, g.IO.DeltaTime * 8.f);
 
+        // IMGUI5 popup row (neverlose_menu.cpp PopupLayer): accent at 10% for
+        // the hover, a check glyph when taken, no border and no fill otherwise.
         const bool popup_selectable = (window->Flags & ImGuiWindowFlags_Popup) != 0;
-        const ImVec4 selectable_fill = popup_selectable
-            ? (selected ? AccentShade(0.76f, 0.26f) : hovered ? ImVec4(0.0f, 0.0f, 0.0f, 0.76f) : ImVec4(0.0f, 0.0f, 0.0f, 0.48f))
-            : (selected ? AccentShade(0.18f, 0.30f) : hovered ? ImVec4(0.08f, 0.09f, 0.13f, 0.72f) : ImVec4(0.05f, 0.06f, 0.09f, 0.42f));
-
-        GetWindowDrawList()->AddRectFilled(
-            bb.Min,
-            bb.Max,
-            GetColorU32(selectable_fill),
-            6.0f * c::scale
-        );
-        GetWindowDrawList()->AddRect(
-            bb.Min,
-            bb.Max,
-            GetColorU32(selected ? AccentLift(0.08f) : c::widget::outlinecolor, selected ? 0.88f : 0.45f),
-            6.0f * c::scale,
-            0,
-            1.0f * c::scale
-        );
-        if (selected) {
-            const float mark = 7.0f * c::scale;
-            const ImVec2 mark_min(bb.Max.x - (mark + 10.0f * c::scale), bb.Min.y + (bb.GetHeight() - mark) * 0.5f);
-            GetWindowDrawList()->AddCircleFilled(mark_min + ImVec2(mark * 0.5f, mark * 0.5f), mark * 0.5f, GetColorU32(c::accent), 18);
+        const float row_hover = ImSaturate((hovered ? 1.0f : 0.0f) + (selected && popup_selectable ? 0.35f : 0.0f));
+        if (popup_selectable) {
+            if (row_hover > 0.01f)
+                GetWindowDrawList()->AddRectFilled(bb.Min, bb.Max,
+                    nl5::WithAlphaU32(nl5::AccentColor(), 25.0f / 255.0f * row_hover), 10.0f * c::scale);
+            if (selected)
+                nl5::Check(GetWindowDrawList(), ImVec2(bb.Min.x + 14.0f * c::scale,
+                                                       bb.Min.y + bb.GetHeight() * 0.5f), nl5::CheckMark, c::scale);
+        } else if (row_hover > 0.01f) {
+            GetWindowDrawList()->AddRectFilled(bb.Min, bb.Max, GetColorU32(c::page::background_active, row_hover), 6.0f * c::scale);
         }
 
         PushStyleColor(ImGuiCol_Text, GetColorU32(it_anim->second.text));
@@ -2579,7 +2440,9 @@ namespace custom
             if (*(int*)p_data < *(int*)p_min) *(int*)p_data = *(int*)p_min;
         }
 
-        it_anim->second.text = ImLerp(it_anim->second.text, g.ActiveId == id ? c::text::text_active : hovered ? c::text::text_hov : c::text::text, g.IO.DeltaTime * 6.f);
+        it_anim->second.text = ImLerp(it_anim->second.text,
+            ImGui::ColorConvertU32ToFloat4((hovered || g.ActiveId == id) ? nl5::TextBright : nl5::RowText),
+            g.IO.DeltaTime * 6.f);
 
         const bool value_changed = DragBehavior(id, data_type, p_data, 0.f, p_min, p_max, format, NULL);
 
@@ -2595,7 +2458,7 @@ namespace custom
 
         GetWindowDrawList()->PathClear();
         GetWindowDrawList()->PathArcTo(ImVec2(frame_bb.Max.x + radius - 22.f * c::scale, frame_bb.Min.y + (height / 2)), radius, 0.f, 2.f * IM_PI, 40.f);
-        GetWindowDrawList()->PathStroke(GetColorU32(c::elements::background), 0, thickness);
+        GetWindowDrawList()->PathStroke(nl5::TrackBg, 0, thickness);
 
         GetWindowDrawList()->PathClear();
         GetWindowDrawList()->PathArcTo(ImVec2(frame_bb.Max.x + radius - 22.f * c::scale, frame_bb.Min.y + (height / 2)), radius, IM_PI * 1.5f, IM_PI * 1.5f + it_anim->second.position, 40.f);
@@ -2672,7 +2535,9 @@ namespace custom
         }
 
         const bool active_slider = IsItemActive();
-        it_anim->second.text = ImLerp(it_anim->second.text, active_slider ? c::text::text_active : hovered ? c::text::text_hov : c::text::text, g.IO.DeltaTime * 6.f);
+        it_anim->second.text = ImLerp(it_anim->second.text,
+            ImGui::ColorConvertU32ToFloat4((hovered || active_slider) ? nl5::TextBright : nl5::RowText),
+            g.IO.DeltaTime * 6.f);
         it_anim->second.hover_t = ImLerp(it_anim->second.hover_t, hovered ? 1.0f : 0.0f, g.IO.DeltaTime * 10.0f);
         it_anim->second.active_t = ImLerp(it_anim->second.active_t, active_slider ? 1.0f : 0.0f, g.IO.DeltaTime * 14.0f);
         it_anim->second.value_alpha = ImLerp(it_anim->second.value_alpha, active_slider ? 1.0f : hovered ? 0.9f : 0.78f, g.IO.DeltaTime * 10.0f);
@@ -2691,45 +2556,16 @@ namespace custom
 
         const float header_y = total_bb.Min.y + (header_height - label_size.y) * 0.5f;
         GetWindowDrawList()->AddText(ImVec2(total_bb.Min.x, header_y), GetColorU32(it_anim->second.text), label, label_end);
-        GetWindowDrawList()->AddText(
-            ImVec2(total_bb.Max.x - value_size.x, total_bb.Min.y + (header_height - value_size.y) * 0.5f),
-            GetColorU32(WithAlpha(c::text::text_active, it_anim->second.value_alpha)),
-            value_buf
-        );
+        // IMGUI5 slider value: the 42x21 pill, right-aligned on the header row.
+        nl5::ValuePill(GetWindowDrawList(),
+                       ImVec2(total_bb.Max.x - 42.0f * control_scale, total_bb.Min.y),
+                       value_buf, nullptr, control_scale);
 
-        const float track_thickness = ImLerp(3.0f * control_scale, 4.0f * control_scale, it_anim->second.active_t * 0.9f + it_anim->second.hover_t * 0.35f);
-        const float knob_half_width = ImLerp(2.5f * control_scale, 3.4f * control_scale, it_anim->second.active_t);
-        const float knob_half_height = ImLerp(7.0f * control_scale, 8.4f * control_scale, it_anim->second.active_t * 0.9f + it_anim->second.hover_t * 0.2f);
+        // IMGUI5 slider: 3px C(34,38,48) track, accent fill, r5.5 white knob.
         const ImVec2 track_start(slider_bb.Min.x + track_margin, frame_bb.Min.y + box_height * 0.5f);
-        const ImVec2 track_end(slider_bb.Max.x - track_margin, track_start.y);
-        GetWindowDrawList()->AddRectFilled(
-            ImVec2(track_start.x, track_start.y - track_thickness * 0.5f),
-            ImVec2(track_end.x, track_start.y + track_thickness * 0.5f),
-            GetColorU32(WithAlpha(c::widget::outlinecolor, 0.45f + it_anim->second.hover_t * 0.12f)),
-            3.0f * control_scale
-        );
-        GetWindowDrawList()->AddRectFilledMultiColor(
-            ImVec2(track_start.x, track_start.y - track_thickness * 0.5f),
-            ImVec2(track_start.x + it_anim->second.slow, track_start.y + track_thickness * 0.5f),
-            GetColorU32(AccentLift(0.18f)),
-            GetColorU32(c::accent),
-            GetColorU32(c::accent),
-            GetColorU32(AccentLift(0.18f))
-        );
-        const ImVec2 knob_center(track_start.x + it_anim->second.slow, track_start.y);
-        const ImVec2 knob_min(knob_center.x - knob_half_width, knob_center.y - knob_half_height);
-        const ImVec2 knob_max(knob_center.x + knob_half_width, knob_center.y + knob_half_height);
-        if (it_anim->second.hover_t > 0.01f || it_anim->second.active_t > 0.01f) {
-            GetWindowDrawList()->AddRectFilled(
-                knob_min - ImVec2((1.5f + it_anim->second.active_t) * control_scale, (1.5f + it_anim->second.active_t) * control_scale),
-                knob_max + ImVec2((1.5f + it_anim->second.active_t) * control_scale, (1.5f + it_anim->second.active_t) * control_scale),
-                GetColorU32(AccentShade(0.12f), 0.10f + it_anim->second.active_t * 0.08f + it_anim->second.hover_t * 0.03f),
-                5.0f * control_scale
-            );
-        }
-        const ImVec4 knob_fill = MixColor(c::text::text_active, AccentLift(0.10f), it_anim->second.active_t * 0.45f + it_anim->second.hover_t * 0.12f);
-        GetWindowDrawList()->AddRectFilled(knob_min, knob_max, GetColorU32(knob_fill), 3.5f * control_scale);
-        GetWindowDrawList()->AddRect(knob_min, knob_max, GetColorU32(WithAlpha(c::widget::outlinecolor, 0.72f + it_anim->second.active_t * 0.16f)), 3.5f * control_scale, 0, 1.0f * control_scale);
+        const float track_capacity = ImMax(1.0f, slider_bb.GetWidth() - track_margin * 2.0f);
+        nl5::SliderTrack(GetWindowDrawList(), track_start, track_capacity,
+                         it_anim->second.slow / track_capacity, control_scale);
 
         return value_changed;
     }

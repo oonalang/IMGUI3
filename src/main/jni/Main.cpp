@@ -3,6 +3,7 @@
 #include "Includes/obfuscate.h"
 #include "Includes/Utils.h"
 #include "ImGui/Call_ImGui.h"
+#include "ImGui/nl_style.h"       // IMGUI5 palette + shared drawers
 #include "ImGui/menu_layout.h"
 #include "IL2CppSDKGenerator/BasicStructs/Call_BasicStructs.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Call_IL2Cpp.h"
@@ -1276,7 +1277,7 @@ static void DrawEspPreview(ImDrawList* draw, ImVec2 pos, float width, float heig
     if (Config.ESPMenu.ShowFov) {
         float radius = Config.Aim.Cross * 0.6f;
         if (radius > 0)
-            draw->AddCircle(ImVec2(pos.x + width * 0.5f, pos.y + height * 0.5f), radius, IM_COL32(160, 80, 255, 100), 0, 1.5f);
+            draw->AddCircle(ImVec2(pos.x + width * 0.5f, pos.y + height * 0.5f), radius, nl5::WithAlphaU32(nl5::AccentColor(), 100.0f / 255.0f), 0, 1.5f);
     }
 }
 
@@ -1472,9 +1473,9 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             ImGui::SetNextWindowPos(center, ImGuiCond_Always, {0.5f, 0.5f});
             ImGui::SetNextWindowSize({WW, WH}, ImGuiCond_Always);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 20.0f);
-            ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(20, 10, 35, 240));
-            ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(160, 80, 255, 180));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f);
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, C(13, 15, 22, 240));
+            ImGui::PushStyleColor(ImGuiCol_Border, nl5::ShellEdge);
 
             if (ImGui::Begin("##premium_login", nullptr,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
@@ -1486,37 +1487,37 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 ImFont* titleFont = F50 ? F50 : ImGui::GetFont();
                 ImFont* bodyFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
 
-                dl->AddRectFilled(wp, {wp.x + WW, wp.y + WH}, IM_COL32(20, 10, 35, 240), 20.0f);
-                dl->AddRect(wp, {wp.x + WW, wp.y + WH}, IM_COL32(160, 80, 255, 100), 20.0f, 0, 1.5f);
-                dl->AddRect({wp.x + 6, wp.y + 6}, {wp.x + WW - 6, wp.y + WH - 6}, IM_COL32(160, 80, 255, 30), 16.0f, 0, 1.0f);
+                dl->AddRectFilled(wp, {wp.x + WW, wp.y + WH}, C(13, 15, 22, 240), 14.0f);
+                dl->AddRect(wp, {wp.x + WW, wp.y + WH}, C(46, 51, 66, 255), 14.0f, 0, 1.0f);
+                dl->AddRect({wp.x + 6, wp.y + 6}, {wp.x + WW - 6, wp.y + WH - 6}, C(33, 37, 48, 255), 11.0f, 0, 1.0f);
 
                 const char* brand = "ETHNIR NOIR";
                 ImVec2 brandSize = titleFont->CalcTextSizeA(32.0f, FLT_MAX, 0.0f, brand);
-                dl->AddText(titleFont, 32.0f, {wp.x + (WW - brandSize.x) * 0.5f, wp.y + 40.0f}, IM_COL32(160, 80, 255, 255), brand);
+                dl->AddText(titleFont, 32.0f, {wp.x + (WW - brandSize.x) * 0.5f, wp.y + 40.0f}, C(235, 238, 245, 255), brand);
 
                 const char* sub = "AUTHENTICATION";
                 ImVec2 subSize = bodyFont->CalcTextSizeA(12.0f, FLT_MAX, 0.0f, sub);
-                dl->AddText(bodyFont, 12.0f, {wp.x + (WW - subSize.x) * 0.5f, wp.y + 88.0f}, IM_COL32(180, 180, 200, 200), sub);
+                dl->AddText(bodyFont, 12.0f, {wp.x + (WW - subSize.x) * 0.5f, wp.y + 88.0f}, C(110, 116, 132, 255), sub);
 
-                dl->AddLine({wp.x + 60, wp.y + 110}, {wp.x + WW - 60, wp.y + 110}, IM_COL32(160, 80, 255, 60), 1.0f);
+                dl->AddLine({wp.x + 60, wp.y + 110}, {wp.x + WW - 60, wp.y + 110}, C(33, 37, 48, 255), 1.0f);
 
                 const char* prompt = "Enter your license key to continue";
                 ImVec2 promptSize = bodyFont->CalcTextSizeA(10.5f, FLT_MAX, 0.0f, prompt);
-                dl->AddText(bodyFont, 10.5f, {wp.x + (WW - promptSize.x) * 0.5f, wp.y + 128.0f}, IM_COL32(160, 160, 180, 220), prompt);
+                dl->AddText(bodyFont, 10.5f, {wp.x + (WW - promptSize.x) * 0.5f, wp.y + 128.0f}, C(158, 164, 180, 255), prompt);
 
                 const float inputW = WW - 60.0f;
                 const float inputX = wp.x + 30.0f;
                 const float inputY = wp.y + 156.0f;
                 const float inputH = 44.0f;
 
-                dl->AddRectFilled({inputX, inputY}, {inputX + inputW, inputY + inputH}, IM_COL32(30, 15, 50, 220), 10.0f);
+                dl->AddRectFilled({inputX, inputY}, {inputX + inputW, inputY + inputH}, C(20, 23, 31, 255), 6.0f);
                 static bool keyFocused = false;
-                ImU32 bc = keyFocused ? IM_COL32(160, 80, 255, 255) : IM_COL32(160, 80, 255, 80);
-                dl->AddRect({inputX, inputY}, {inputX + inputW, inputY + inputH}, bc, 10.0f, 0, keyFocused ? 2.0f : 1.0f);
+                ImU32 bc = keyFocused ? C(74, 159, 230, 255) : C(46, 51, 66, 255);
+                dl->AddRect({inputX, inputY}, {inputX + inputW, inputY + inputH}, bc, 6.0f, 0, keyFocused ? 2.0f : 1.0f);
 
                 ImGui::SetCursorScreenPos({inputX + 12.0f, inputY + 10.0f});
                 ImGui::PushItemWidth(inputW);
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 220, 240, 255));
+                ImGui::PushStyleColor(ImGuiCol_Text, C(235, 238, 245, 255));
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {0, 0});
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
                 ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0));
@@ -1530,11 +1531,11 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
                 float btnY = inputY + inputH + 16.0f;
                 ImGui::SetCursorScreenPos({inputX, btnY});
-                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(160, 80, 255, 220));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(190, 110, 255, 255));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(120, 50, 200, 255));
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(15, 12, 25, 255));
-                if (ImGui::Button("AUTHENTICATE", {inputW, 44.0f})) {
+                ImGui::PushStyleColor(ImGuiCol_Button, C(58, 132, 199, 255));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, C(74, 159, 230, 255));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, C(46, 112, 172, 255));
+                ImGui::PushStyleColor(ImGuiCol_Text, C(255, 255, 255, 255));
+                if (ImGui::Button("AUTHENTICATE", {inputW, 40.0f})) {
                     err = Login(s);
                     if (err == "OK") {
                         strncpy(logintext, s, sizeof(logintext) - 1);
@@ -1550,10 +1551,10 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
                 float pasteBtnY = btnY + 44.0f + 8.0f;
                 ImGui::SetCursorScreenPos({inputX, pasteBtnY});
-                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(160, 80, 255, 40));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(160, 80, 255, 80));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(160, 80, 255, 120));
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(160, 80, 255, 220));
+                ImGui::PushStyleColor(ImGuiCol_Button, C(26, 29, 38, 255));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, C(33, 37, 48, 255));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, C(40, 45, 58, 255));
+                ImGui::PushStyleColor(ImGuiCol_Text, C(158, 164, 180, 255));
                 if (ImGui::Button("PASTE FROM CLIPBOARD", {inputW, 36.0f})) {
                     std::string clip = getClipboard();
                     strncpy(s, clip.c_str(), sizeof(s) - 1);
@@ -1565,8 +1566,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     float errY = pasteBtnY + 36.0f + 8.0f;
                     ImGui::SetCursorScreenPos({inputX, errY});
                     ImVec2 errPos = ImGui::GetCursorScreenPos();
-                    dl->AddRectFilled(errPos, {errPos.x + inputW, errPos.y + 30.0f}, IM_COL32(200, 50, 50, 40), 6.0f);
-                    dl->AddRect(errPos, {errPos.x + inputW, errPos.y + 30.0f}, IM_COL32(200, 50, 150, 150), 6.0f, 0, 1.0f);
+                    dl->AddRectFilled(errPos, {errPos.x + inputW, errPos.y + 30.0f}, C(239, 68, 68, 26), 6.0f);
+                    dl->AddRect(errPos, {errPos.x + inputW, errPos.y + 30.0f}, C(239, 68, 68, 130), 6.0f, 0, 1.0f);
                     ImGui::SetCursorScreenPos({errPos.x + 12.0f, errPos.y + 8.0f});
                     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
                     ImGui::Text("%s", err.c_str());
@@ -1575,7 +1576,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
                 const char* footer = "Secure connection  -  All data encrypted";
                 ImVec2 footSize = bodyFont->CalcTextSizeA(9.0f, FLT_MAX, 0.0f, footer);
-                dl->AddText(bodyFont, 9.0f, {wp.x + (WW - footSize.x) * 0.5f, wp.y + WH - 28.0f}, IM_COL32(120, 120, 140, 160), footer);
+                dl->AddText(bodyFont, 9.0f, {wp.x + (WW - footSize.x) * 0.5f, wp.y + WH - 28.0f}, C(86, 92, 107, 255), footer);
             }
             ImGui::End();
             ImGui::PopStyleColor(2);
@@ -1636,10 +1637,9 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         const ImVec2 bodyMin = runtimeWindowPos;
                         const ImVec2 bodyMax(runtimeWindowPos.x + runtimeWindowSize.x,
                                              runtimeWindowPos.y + runtimeWindowSize.y);
-                        runtimeDrawList->AddRectFilled(bodyMin, bodyMax, IM_COL32(7, 10, 20, 236), 16.0f);
-                        runtimeDrawList->AddRect(bodyMin, bodyMax,
-                                                 main_runtime_theme::GetAccentTintU32(0.70f, 0.70f),
-                                                 16.0f, 0, 1.0f);
+                        runtimeDrawList->AddRectFilled(bodyMin, bodyMax, C(13, 15, 22, 222), 14.0f);
+                        runtimeDrawList->AddRect(bodyMin, bodyMax, nl5::ShellEdge,
+                                                 14.0f, 0, 1.0f);
                     }
 
                     const float outerPad = 14.0f;
@@ -1668,8 +1668,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     runtimeState.page = ImClamp(runtimeState.page, 1, 6);
                     runtimeState.activeTab = ImClamp(runtimeState.activeTab, 1, 6);
 
-                    runtimeDrawList->AddRectFilled(headerMin, headerMax, IM_COL32(7, 10, 20, 236), 11.0f);
-                    runtimeDrawList->AddRect(headerMin, headerMax, main_runtime_theme::GetAccentTintU32(0.70f, 0.70f), 11.0f, 0, 1.0f);
+                    runtimeDrawList->AddRectFilled(headerMin, headerMax, nl5::ToolbarBg, 12.0f);
+                    runtimeDrawList->AddRect(headerMin, headerMax, nl5::ToolbarLine, 12.0f, 0, 1.0f);
 
                     const ImVec2 flameCenter(headerMin.x + 28.0f, headerMin.y + headerHeight * 0.5f);
                     // No glow halo behind the icon any more - the accent circle used
@@ -1689,12 +1689,12 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     const char *titleB = " V3";
                     const ImVec2 titleASize = runtimeTitleFont->CalcTextSizeA(runtimeTitleSize, FLT_MAX, 0.0f, titleA);
                     runtimeDrawList->AddText(runtimeTitleFont, runtimeTitleSize,
-                        ImVec2(headerMin.x + 56.0f, headerMin.y + 11.0f), IM_COL32(245, 245, 250, 255), titleA);
+                        ImVec2(headerMin.x + 56.0f, headerMin.y + 11.0f), nl5::TextBright, titleA);
                     runtimeDrawList->AddText(runtimeTitleFont, runtimeTitleSize,
                         ImVec2(headerMin.x + 56.0f + titleASize.x, headerMin.y + 11.0f), main_runtime_theme::GetAccentU32(), titleB);
 
                     const ImVec2 subtitlePos(headerMin.x + 57.0f, headerMin.y + 38.0f);
-                    runtimeDrawList->AddText(runtimeTitleFont, 10.0f, subtitlePos, IM_COL32(135, 143, 165, 220), "PLAY LIKE A PLAYER  |  NOT A CHEATER");
+                    runtimeDrawList->AddText(runtimeTitleFont, 10.0f, subtitlePos, nl5::Caption, "PLAY LIKE A PLAYER  |  NOT A CHEATER");
 
                     const ImVec2 trackMin(headerMin.x + headerMainWidth * 0.58f, headerMin.y + 28.0f);
                     const ImVec2 trackMax(headerMax.x - 18.0f, trackMin.y + 8.0f);
@@ -1721,7 +1721,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                             ImGui::ColorConvertFloat4ToU32(ImVec4(r0,g0,b0,1)));
                     }
                     const float hueX = trackMin.x + ImClamp(main_runtime_theme::g_menuHue, 0.0f, 1.0f) * (trackMax.x - trackMin.x);
-                    runtimeDrawList->AddCircleFilled(ImVec2(hueX, trackMin.y + 4.0f), 5.0f, IM_COL32(245,245,250,255), 20);
+                    runtimeDrawList->AddCircleFilled(ImVec2(hueX, trackMin.y + 4.0f), 5.5f, nl5::SliderKnob, 20);
                     runtimeDrawList->AddCircle(ImVec2(hueX, trackMin.y + 4.0f), 6.5f, main_runtime_theme::GetAccentU32(), 20, 1.5f);
 
                     if (custom::shell::DrawCloseCard(closeCardMin, closeCardSize)) {
@@ -1731,7 +1731,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     runtimeState.tabAlpha = ImClamp(runtimeState.tabAlpha + (4.0f * ImGui::GetIO().DeltaTime * (runtimeState.page == runtimeState.activeTab ? 1.0f : -1.0f)), 0.0f, 1.0f);
                     if (runtimeState.tabAlpha == 0.0f && runtimeState.tabAdd == 0.0f) runtimeState.activeTab = runtimeState.page;
 
-                    runtimeDrawList->AddRectFilled(hostMin, hostMax, ImGui::GetColorU32(main_runtime_theme::GetSidebarShellBackgroundColor()), 11.0f);
+                    runtimeDrawList->AddRectFilled(hostMin, hostMax, nl5::SidebarBg, 12.0f);
+                    runtimeDrawList->AddRect(hostMin, hostMax, nl5::SidebarLine, 12.0f, 0, 1.0f);
 
                     // ---- Sidebar: the tab switcher -------------------------
                     // Tabs used to be picked from a floating radial wheel beside
@@ -1767,10 +1768,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                                          ImVec2(sidebar.railW, sidebar.railW)))
                         g_sidebarOpen = !g_sidebarOpen;
                     if (sidebar.panelW > 1.0f) {
-                        runtimeDrawList->AddRectFilled(sidebarMin, sidebarMax,
-                            ImGui::GetColorU32(main_runtime_theme::GetActiveTabBackgroundColor()), 9.0f);
-                        runtimeDrawList->AddRect(sidebarMin, sidebarMax,
-                            main_runtime_theme::GetAccentTintU32(0.22f, 0.35f), 9.0f, 0, 1.0f);
+                        runtimeDrawList->AddRectFilled(sidebarMin, sidebarMax, nl5::CardBg, 10.0f);
+                        runtimeDrawList->AddRect(sidebarMin, sidebarMax, nl5::CardEdge, 10.0f, 0, 1.0f);
 
                         // Six pages, labelled with what they really draw: the
                         // tab the wheel called HOME is the switch page (2), and
@@ -1803,8 +1802,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
                             if (act || hov) {
                                 runtimeDrawList->AddRectFilled(rMin, rMax,
-                                    act ? ImGui::GetColorU32(main_runtime_theme::GetActiveTabBackgroundColor())
-                                        : IM_COL32(18, 20, 29, 150), 8.0f);
+                                    act ? nl5::NavFill
+                                        : IM_COL32(25, 28, 38, 200), 10.0f);
                             }
                             if (act) {
                                 runtimeDrawList->AddRectFilled(rMin, ImVec2(rMin.x + 3.0f, rMax.y),
@@ -1814,16 +1813,16 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                             if (sbIconFont) {
                                 runtimeDrawList->AddText(sbIconFont, 16.0f,
                                     ImVec2(rMin.x + 10.0f, rMin.y + (rSize.y - 16.0f) * 0.5f),
-                                    act ? main_runtime_theme::GetAccentTintU32(0.98f, 1.0f)
-                                        : IM_COL32(154, 160, 182, hov ? 245 : 220),
+                                    act ? nl5::AccentIcon()
+                                        : (hov ? nl5::RowText : nl5::Ghost),
                                     sbIcons[i]);
                             }
 
                             if (rMax.x - 6.0f > rMin.x + 34.0f) {
                                 runtimeDrawList->AddText(sbTextFont, 12.5f,
                                     ImVec2(rMin.x + 34.0f, rMin.y + (rSize.y - 12.5f) * 0.5f),
-                                    act ? IM_COL32(245, 245, 250, 255)
-                                        : IM_COL32(154, 160, 182, hov ? 245 : 205),
+                                    act ? nl5::TextBright
+                                        : (hov ? nl5::RowText : nl5::Muted),
                                     sbNames[i]);
                             }
 

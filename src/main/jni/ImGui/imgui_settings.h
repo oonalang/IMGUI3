@@ -17,67 +17,68 @@ namespace c
 {
     inline float scale = 1.5f;
     inline float widget_scale = 1.0f;
-    // Accent: warm amber
-    inline ImVec4 accent = ImColor(210, 134, 10);
-    inline ImVec4 separator = ImColor(38, 42, 46);
+    // Accent: IMGUI5's blue (neverlose_menu.cpp C(75,126,255)).
+    inline ImVec4 accent = ImColor(75, 126, 255);
+    inline ImVec4 separator = ImColor(28, 31, 40);
 
     namespace bg
     {
-        // Deep warm slate
-        inline ImVec4 background = ImColor(15, 20, 24);
+        // Shell: C(13,15,22,222) with a 14px rounding (IMGUI5 kShell).
+        inline ImVec4 background = ImColor(13, 15, 22, 222);
         inline ImVec2 size = ImVec2(450, 370);
-        inline float rounding = 6.f;
+        inline float rounding = 14.f;
     }
 
     namespace child
     {
-        inline ImVec4 background = ImColor(22, 29, 34);
-        inline ImVec4 cap = ImColor(30, 38, 44);
-        inline float rounding = 6.f;
+        inline ImVec4 background = ImColor(17, 19, 27, 224);
+        inline ImVec4 cap = ImColor(20, 23, 31);
+        inline float rounding = 14.f;
         inline float padding = 13.f;
         inline float spacing = 13.f;
     }
 
     namespace page
     {
-        inline ImVec4 background_active = ImColor(44, 54, 62);
-        inline ImVec4 background = ImColor(28, 36, 42);
+        // Sidebar rows are flat until hovered/selected (IMGUI5 nav()).
+        inline ImVec4 background_active = ImColor(39, 43, 54, 235);
+        inline ImVec4 background = ImColor(18, 21, 30, 0);
 
-        inline ImVec4 text_hov = ImColor(185, 162, 110);
-        inline ImVec4 text = ImColor(110, 100, 80);
+        inline ImVec4 text_hov = ImColor(226, 228, 235);
+        inline ImVec4 text = ImColor(145, 149, 159);
 
-        inline float rounding = 4.f;
+        inline float rounding = 6.f;
     }
 
     namespace elements
     {
-        inline ImVec4 background_hovered = ImColor(40, 50, 58);
-        inline ImVec4 background = ImColor(28, 36, 42);
-        inline float rounding = 4.f;
+        inline ImVec4 background_hovered = ImColor(31, 38, 54);
+        inline ImVec4 background = ImColor(25, 28, 38);
+        inline float rounding = 5.f;
     }
 
     namespace checkbox
     {
-        inline ImVec4 mark = ImColor(15, 20, 24);
-        inline ImVec4 background_on = ImColor(210, 134, 10);
-        inline ImVec4 background_off = ImColor(44, 54, 62);
-        inline ImVec4 circle_inactive = ImColor(90, 100, 110);
-        inline float rounding = 4.f;
+        inline ImVec4 mark = ImColor(20, 20, 29);
+        inline ImVec4 background_on = ImColor(75, 126, 255);
+        inline ImVec4 background_off = ImColor(29, 33, 43);
+        inline ImVec4 circle_inactive = ImColor(133, 144, 156);
+        inline float rounding = 9.f;
     }
 
     namespace text
     {
-        inline ImVec4 text_active = ImColor(228, 213, 185);
-        inline ImVec4 text_hov = ImColor(185, 162, 110);
-        inline ImVec4 text = ImColor(112, 102, 82);
+        inline ImVec4 text_active = ImColor(226, 228, 235);
+        inline ImVec4 text_hov = ImColor(207, 209, 218);
+        inline ImVec4 text = ImColor(145, 149, 159);
     }
 
     namespace widget
     {
         inline ImVec2 size = ImVec2(0, 34.f);
-        inline ImVec4 background = ImColor(28, 36, 42);
-        inline ImVec4 outlinecolor = ImColor(50, 60, 68);
-        inline float rounding = 4.f;
+        inline ImVec4 background = ImColor(25, 28, 38);
+        inline ImVec4 outlinecolor = ImColor(32, 35, 46);
+        inline float rounding = 5.f;
         inline float outline = 1.f;
     }
 
@@ -85,9 +86,9 @@ namespace c
     {
         inline ImVec4 background = ImColor(28, 36, 42);
         inline ImVec4 background_hovered = ImColor(40, 50, 58);
-        inline ImVec4 background_active = ImColor(52, 64, 72);
-        inline ImVec4 outline = ImColor(60, 72, 82);
-        inline float rounding = 4.f;
+        inline ImVec4 background_active = ImColor(37, 45, 63);
+        inline ImVec4 outline = ImColor(32, 35, 46);
+        inline float rounding = 6.f;
     }
 
     namespace scrollbar
@@ -98,12 +99,146 @@ namespace c
         inline float gutter_spacing = 4.f;
     }
 
+    // Re-asserts the IMGUI5 palette. The theme switch and the runtime hue used
+    // to repaint every colour here (five presets, amber/slate by default);
+    // IMGUI5 has exactly one theme, so both entry points end by calling this and
+    // the menu keeps the blue-on-charcoal palette whatever the toggle does.
+    inline void ApplyIMGUI5Palette()
+    {
+        // The accent is not pinned here: it follows the hue card (which defaults
+        // to this same blue), so recolouring the menu keeps every IMGUI5 drawer
+        // on the colour the user picked.
+        accent = ImColor(menu[0], menu[1], menu[2], menu[3]);
+        separator = ImColor(28, 31, 40);
+
+        bg::background = ImColor(13, 15, 22, 222);
+        bg::rounding = 14.f;
+
+        child::background = ImColor(17, 19, 27, 224);
+        child::cap = ImColor(20, 23, 31);
+        child::rounding = 14.f;
+        child::padding = 13.f;
+        child::spacing = 13.f;
+
+        page::background_active = ImColor(39, 43, 54, 235);
+        page::background = ImColor(18, 21, 30, 0);
+        page::text_hov = ImColor(226, 228, 235);
+        page::text = ImColor(145, 149, 159);
+        page::rounding = 6.f;
+
+        elements::background_hovered = ImColor(31, 38, 54);
+        elements::background = ImColor(25, 28, 38);
+        elements::rounding = 5.f;
+
+        checkbox::mark = ImColor(20, 20, 29);
+        checkbox::background_on = ImColor(75, 126, 255);
+        checkbox::background_off = ImColor(29, 33, 43);
+        checkbox::circle_inactive = ImColor(133, 144, 156);
+        checkbox::rounding = 9.f;
+
+        text::text_active = ImColor(226, 228, 235);
+        text::text_hov = ImColor(207, 209, 218);
+        text::text = ImColor(145, 149, 159);
+
+        widget::background = ImColor(25, 28, 38);
+        widget::outlinecolor = ImColor(32, 35, 46);
+        widget::rounding = 5.f;
+
+        button::background = ImColor(25, 28, 38);
+        button::background_hovered = ImColor(31, 38, 54);
+        button::background_active = ImColor(37, 45, 63);
+        button::outline = ImColor(32, 35, 46);
+        button::rounding = 6.f;
+    }
+
+    inline void ApplyIMGUI5NativeStyle(ImGuiStyle& style);
+
     inline void ApplyMainWindowStyle(ImGuiStyle& style)
     {
         style.WindowPadding = ImVec2(0.0f, 0.0f);
         style.ItemSpacing = ImVec2(10.0f * scale, 10.0f * scale);
         style.WindowBorderSize = 0.0f;
         style.ScrollbarSize = 8.0f * scale;
+
+        ApplyIMGUI5NativeStyle(style);
+    }
+
+    // The IMGUI5 palette written into ImGuiStyle, for the widgets that are still
+    // stock ImGui rather than the custom layer: the ESP colour picker popup, the
+    // license InputText, tables and scrollbars. Without this they render on
+    // ImGui's own default theme, which is the one thing in the menu that would
+    // still look like a different design. Geometry matches too (field r5, popup
+    // r16, shell r14), since those roundings are what the frames draw with.
+    inline void ApplyIMGUI5NativeStyle(ImGuiStyle& style)
+    {
+        const ImVec4 bg        = ImColor(13, 15, 22, 255);
+        const ImVec4 child     = ImColor(17, 19, 27, 255);
+        const ImVec4 popup     = ImColor(20, 20, 29, 245);
+        const ImVec4 field     = ImColor(25, 28, 38, 255);
+        const ImVec4 field_hot = ImColor(31, 38, 54, 255);
+        const ImVec4 edge      = ImColor(32, 35, 46, 255);
+        const ImVec4 edge_hot  = ImColor(57, 61, 76, 255);
+        const ImVec4 text      = ImColor(226, 228, 235, 255);
+        const ImVec4 muted     = ImColor(145, 149, 159, 255);
+        const ImVec4 acc       = c::accent;   // the live hue colour set above
+        const ImVec4 nav_fill  = ImColor(39, 43, 54, 255);
+
+        style.FrameRounding    = 5.0f * scale;
+        style.GrabRounding     = 5.0f * scale;
+        style.PopupRounding    = 16.0f * scale;
+        style.WindowRounding   = 14.0f * scale;
+        style.ChildRounding    = 14.0f * scale;
+        style.ScrollbarRounding= 6.0f * scale;
+        style.TabRounding      = 6.0f * scale;
+        style.FrameBorderSize  = 0.0f;
+        style.PopupBorderSize  = 1.0f * scale;
+
+        style.Colors[ImGuiCol_WindowBg]             = ImVec4(bg.x, bg.y, bg.z, 0.98f);
+        style.Colors[ImGuiCol_ChildBg]              = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        style.Colors[ImGuiCol_PopupBg]              = popup;
+        style.Colors[ImGuiCol_Border]               = edge;
+        style.Colors[ImGuiCol_BorderShadow]         = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        style.Colors[ImGuiCol_FrameBg]              = field;
+        style.Colors[ImGuiCol_FrameBgHovered]       = field_hot;
+        style.Colors[ImGuiCol_FrameBgActive]        = field_hot;
+        style.Colors[ImGuiCol_TitleBg]              = ImColor(11, 13, 20, 255);
+        style.Colors[ImGuiCol_TitleBgActive]        = ImColor(11, 13, 20, 255);
+        style.Colors[ImGuiCol_TitleBgCollapsed]     = ImColor(11, 13, 20, 200);
+        style.Colors[ImGuiCol_MenuBarBg]            = ImColor(11, 13, 20, 255);
+        style.Colors[ImGuiCol_ScrollbarBg]          = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        style.Colors[ImGuiCol_ScrollbarGrab]        = ImColor(34, 38, 48, 255);
+        style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImColor(44, 49, 62, 255);
+        style.Colors[ImGuiCol_ScrollbarGrabActive]  = ImColor(54, 60, 76, 255);
+        style.Colors[ImGuiCol_CheckMark]            = ImColor(230, 233, 241, 255);
+        style.Colors[ImGuiCol_SliderGrab]           = ImColor(247, 248, 252, 255);
+        style.Colors[ImGuiCol_SliderGrabActive]     = ImColor(255, 255, 255, 255);
+        style.Colors[ImGuiCol_Button]               = field;
+        style.Colors[ImGuiCol_ButtonHovered]        = field_hot;
+        style.Colors[ImGuiCol_ButtonActive]         = ImColor(37, 45, 63, 255);
+        style.Colors[ImGuiCol_Header]               = nav_fill;
+        style.Colors[ImGuiCol_HeaderHovered]        = field_hot;
+        style.Colors[ImGuiCol_HeaderActive]         = nav_fill;
+        style.Colors[ImGuiCol_Separator]            = ImColor(28, 31, 40, 255);
+        style.Colors[ImGuiCol_SeparatorHovered]     = acc;
+        style.Colors[ImGuiCol_SeparatorActive]      = acc;
+        style.Colors[ImGuiCol_ResizeGrip]           = edge;
+        style.Colors[ImGuiCol_ResizeGripHovered]    = acc;
+        style.Colors[ImGuiCol_ResizeGripActive]     = acc;
+        style.Colors[ImGuiCol_Tab]                  = child;
+        style.Colors[ImGuiCol_TabHovered]           = nav_fill;
+        style.Colors[ImGuiCol_TabActive]            = nav_fill;
+        style.Colors[ImGuiCol_TabUnfocused]         = child;
+        style.Colors[ImGuiCol_TabUnfocusedActive]   = child;
+        style.Colors[ImGuiCol_Text]                 = text;
+        style.Colors[ImGuiCol_TextDisabled]         = muted;
+        style.Colors[ImGuiCol_TextSelectedBg]       = ImVec4(acc.x, acc.y, acc.z, 0.35f);
+        style.Colors[ImGuiCol_NavHighlight]         = acc;
+        style.Colors[ImGuiCol_TableHeaderBg]        = ImColor(11, 13, 20, 255);
+        style.Colors[ImGuiCol_TableBorderStrong]    = edge_hot;
+        style.Colors[ImGuiCol_TableBorderLight]     = edge;
+        style.Colors[ImGuiCol_TableRowBg]           = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        style.Colors[ImGuiCol_TableRowBgAlt]        = ImColor(20, 23, 31, 255);
+        style.Colors[ImGuiCol_ModalWindowDimBg]     = ImVec4(5.0f / 255.0f, 6.0f / 255.0f, 9.0f / 255.0f, 0.55f);
     }
 
     inline float MainTopAreaHeight()
@@ -148,6 +283,8 @@ namespace c
         text::text_active = ImLerp(text::text_active, dark_mode ? ImColor(255, 255, 255) : ImColor(0, 0, 0), dt * 12.0f);
         text::text_hov = ImLerp(text::text_hov, dark_mode ? ImColor(68, 71, 85) : ImColor(68, 71, 81), dt * 12.0f);
         text::text = ImLerp(text::text, dark_mode ? ImColor(68, 71, 85) : ImColor(68, 71, 81), dt * 12.0f);
+
+        ApplyIMGUI5Palette();
     }
 
     inline void ApplyTheme()
@@ -189,10 +326,12 @@ namespace c
 
         ImGuiStyle& style = ImGui::GetStyle();
         style.ScrollbarSize = 5.0f;
-        style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.08f, 0.10f, 0.12f, 0.72f);
-        style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.55f, 0.40f, 0.10f, 0.80f);
-        style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.70f, 0.52f, 0.14f, 0.90f);
-        style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.82f, 0.60f, 0.18f, 1.0f);
+        style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(38.0f / 255.0f, 42.0f / 255.0f, 52.0f / 255.0f, 1.0f);
+        style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(48.0f / 255.0f, 53.0f / 255.0f, 65.0f / 255.0f, 1.0f);
+        style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(58.0f / 255.0f, 64.0f / 255.0f, 78.0f / 255.0f, 1.0f);
+
+        ApplyIMGUI5Palette();
     }
 
     inline void DrawWindowShadow(const ImVec2& menuSize)
@@ -205,8 +344,8 @@ namespace c
         shadowSettings.rings = 5;
         shadowSettings.spacingBetweenRings = 2;
         shadowSettings.samplesPerCornerSide = 2;
-        // Warm dark shadow
-        shadowSettings.shadowColor = ImGui::ColorConvertU32ToFloat4(IM_COL32(8, 12, 16, 200));
+        // IMGUI5 popup shadow: C(0,0,0,55) over a C(20,20,29) panel
+        shadowSettings.shadowColor = ImGui::ColorConvertU32ToFloat4(IM_COL32(0, 0, 0, 140));
         shadowSettings.shadowSize = ImVec2(0.0f, 0.0f);
         drawRectangleShadowVerticesAdaptive(shadowSettings);
     }
@@ -228,20 +367,19 @@ namespace c
                 rounding
             );
         } else {
-            // Warm slate background
-            drawList->AddRectFilled(min, max, IM_COL32(15, 20, 24, 255), rounding);
+            // IMGUI5 shell: C(13,15,22,222)
+            drawList->AddRectFilled(min, max, IM_COL32(13, 15, 22, 222), rounding);
         }
 
-        // Subtle warm tint overlay
-        drawList->AddRectFilled(min, max, IM_COL32(20, 14, 8, 40), rounding);
-        // Warm amber border
-        drawList->AddRect(min, max, IM_COL32(210, 134, 10, 90), rounding, 0, 1.0f);
+        // IMGUI5 shell edge: C(31,34,44)
+        drawList->AddRect(min, max, IM_COL32(31, 34, 44, 255), rounding, 0, 1.0f);
     }
 }
 
 namespace main_runtime_theme
 {
-    inline float g_menuHue = 0.76f;  // violet default for the runtime UI
+    // IMGUI5 blue C(75,126,255): hue 0.62 at the saturation/value below.
+    inline float g_menuHue = 0.6195f;
 
     // ============================================================
     // THEME SYSTEM
@@ -374,6 +512,10 @@ namespace main_runtime_theme
 
         // Separator
         c::separator        = ImGui::ColorConvertU32ToFloat4(t.border);
+
+        // IMGUI5 ships one theme, so whichever preset was picked the palette
+        // ends up as the blue-on-charcoal one.
+        c::ApplyIMGUI5Palette();
     }
     // ============================================================
 
@@ -399,8 +541,10 @@ namespace main_runtime_theme
 
     inline void ApplyAccentFromHue()
     {
-        // Default to warm amber hue (~0.10 in HSV)
-        ImGui::ColorConvertHSVtoRGB(g_menuHue, 0.90f, 0.92f, menu[0], menu[1], menu[2]);
+        // Saturation/value are picked so the default hue lands on the IMGUI5
+        // blue exactly: HSV(0.6195, 0.706, 1.0) == C(75,126,255). Any other hue
+        // gives that hue at the same brightness instead of a muddier one.
+        ImGui::ColorConvertHSVtoRGB(g_menuHue, 0.706f, 1.0f, menu[0], menu[1], menu[2]);
         menu[3] = 1.0f;
     }
 
@@ -421,12 +565,14 @@ namespace main_runtime_theme
 
     inline ImVec4 GetSidebarShellBackgroundColor()
     {
-        return ImColor(0, 0, 0, 130);
+        // IMGUI5 sidebar: C(18,21,30,231)
+        return ImColor(18.0f / 255.0f, 21.0f / 255.0f, 30.0f / 255.0f, 231.0f / 255.0f);
     }
 
     inline ImVec4 GetActiveTabBackgroundColor()
     {
-        return ImColor(0, 0, 0, 150);
+        // IMGUI5 selected nav row: C(39,43,54)
+        return ImColor(39.0f / 255.0f, 43.0f / 255.0f, 54.0f / 255.0f, 235.0f / 255.0f);
     }
 
     inline void ApplyThemeState()
@@ -434,8 +580,13 @@ namespace main_runtime_theme
         c::scale = 1.15f;
         c::widget_scale = 1.45f;
         const float childPadding = GetChildPadding();
-        c::accent = ImColor(GetAccentVec4());
-        c::separator = ImColor(0.0f, 0.0f, 0.0f, 0.0f);
+        // The accent is the menu's one live colour - the hue card in the header
+        // drives it and it starts on the IMGUI5 blue (neverlose_menu.cpp
+        // C(75,126,255)). Everything the IMGUI5 palette below cannot fix to a
+        // constant reads this.
+        ApplyAccentFromHue();
+        c::accent = ImColor(menu[0], menu[1], menu[2], menu[3]);
+        c::separator = ImColor(28, 31, 40);
 
         // Read from active theme palette for base background colors
         const ThemePalette& tp = g_themes[g_activeTheme];
@@ -503,6 +654,10 @@ namespace main_runtime_theme
         style.Colors[ImGuiCol_ScrollbarGrab]         = ImVec4(ac.x*0.60f, ac.y*0.60f, ac.z*0.60f, 0.80f);
         style.Colors[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(ac.x*0.80f, ac.y*0.80f, ac.z*0.80f, 0.90f);
         style.Colors[ImGuiCol_ScrollbarGrabActive]   = ImVec4(ac.x,       ac.y,       ac.z,       1.0f);
+
+        // Whatever the theme palette above just wrote, the menu renders in the
+        // IMGUI5 palette - this call is the last word on c::.
+        c::ApplyIMGUI5Palette();
     }
 }
 
