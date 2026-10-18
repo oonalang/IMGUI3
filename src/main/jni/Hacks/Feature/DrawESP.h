@@ -1177,15 +1177,3 @@ void WeaponFireComponent_Instant_CreateBulletProjectile(void* thiz, Vector3 star
 //   ChangePunchAngleByGetHit: 0xC9C0EDC (Slot 57)
 //   UpdateBreatheTrembling:   0xC9BE4C0
 //   m_AimmingBreatheCountDown: field @ 0x774 on WeaponFireComponent_Instant
-y. Their targets (libunity.so+0xC9C0EDC /
-// +0xC9C0B64) are correct per the GR .57 dump, but Dobby's inline trampoline on
-// these tiny shared callers corrupted game state (screen flicker, native
-// crash). The safe equivalents are memory patches in Main.cpp that toggle
-// per-frame: Patches.NoHitFlinch (@0xC9C0EDC, mov w0,#0 + ret) and
-// Patches.NoDrift (@0xC9BE4C0 UpdateBreatheTrembling, ret) - every address
-// verified against dump.cs and dump (GR .57).cs from the jeudhehs/dump
-// dataset. Reference addresses from that dump:
-//   Tick:                    0xC9C0B64 (Slot 51)
-//   ChangePunchAngleByGetHit: 0xC9C0EDC (Slot 57)
-//   UpdateBreatheTrembling:   0xC9BE4C0
-//   m_AimmingBreatheCountDown: field @ 0x774 on WeaponFireComponent_Instant
