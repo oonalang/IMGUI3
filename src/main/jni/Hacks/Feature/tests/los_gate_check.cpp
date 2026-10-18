@@ -2148,6 +2148,10 @@ static void testReleaseKindGuard()
     g_triggerDiag = TriggerbotDiag{};
 }
 
+
+// Host-only link stub: the include graph references the A64 hook engine.
+void A64HookFunction(void *const symbol, void *const replace, void **result)
+{ (void)symbol; if (result) *result = replace; }
 int main()
 {
     installFns();

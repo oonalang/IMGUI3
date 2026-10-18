@@ -35,7 +35,7 @@
 // is linked into this test (see the command above) rather than stubbed.
 #include "IL2CppSDKGenerator/IL2Cpp/Tools.h"
 // Fields.h first: it is a fragment without an include guard, and AutoEquipSkin.h
-// relies on the structs/vectors it declares (same order SkinTab.h uses).
+// relies on the structs/vectors it declares (same order MainFeatureIncludes.h uses).
 #include "Skin/Fields.h"
 #include "Skin/AutoEquipSkin.h"
 
@@ -134,6 +134,10 @@ static std::vector<void *> confsOf(const std::vector<ConfObj *> &rows)
 }
 
 // ---------------------------------------------------------------------------
+
+// Host-only link stub: the include graph references the A64 hook engine.
+void A64HookFunction(void *const symbol, void *const replace, void **result)
+{ (void)symbol; if (result) *result = replace; }
 int main()
 {
     // --- T1: the equipped skin lands on its base gun, nothing else ---------

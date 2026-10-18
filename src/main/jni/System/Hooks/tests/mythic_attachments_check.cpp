@@ -249,6 +249,14 @@ static void installLayer2Fakes()
     orig_IsPreConditionSatisfied          = fake_origPreCondition;
 }
 
+
+// Host-only link stubs: the include graph references the hook engines and
+// OpenSSL's MD5; the test calls none of them.
+#include <openssl/md5.h>
+extern "C" int DobbyHook(void *address, void *replace, void **original)
+{ (void)address; (void)replace; (void)original; return 0; }
+void A64HookFunction(void *const symbol, void *const replace, void **result)
+{ (void)symbol; if (result) *result = replace; }
 int main()
 {
     // ---- M1: the documented default ---------------------------------------

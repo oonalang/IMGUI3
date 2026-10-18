@@ -118,6 +118,10 @@ static void setUnlock(bool on)
     g_calls.reset();
 }
 
+
+// Host-only link stub: the include graph references the A64 hook engine.
+void A64HookFunction(void *const symbol, void *const replace, void **result)
+{ (void)symbol; if (result) *result = replace; }
 int main()
 {
     const blueprint_equip::BagIdentifierRaw bag = makeBag(11, 22, 33);

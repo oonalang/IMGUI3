@@ -164,7 +164,7 @@ namespace crash_breadcrumb_detail
     {
         void *faultAddr = (info != nullptr) ? info->si_addr : nullptr;
         void *pc = nullptr;
-#if defined(__aarch64__)
+#if defined(__aarch64__) && !defined(HOST_SYNTAX_ONLY)
         if (context != nullptr)
             pc = (void *)((ucontext_t *)context)->uc_mcontext.pc;
 #endif

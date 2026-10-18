@@ -7,13 +7,15 @@
 #include <string>
 #include <vector>
 
-#include "ImGui/Call_ImGui.h"
+#include "ImGui/imgui.h"
+#include "ImGui/imgui_internal.h"
 #include "Includes/Logger.h"
 #include "Includes/Macros.h"
 #include "Includes/obfuscate.h"
 #include "Includes/Utils.h"
 #include "IL2CppSDKGenerator/BasicStructs/Call_BasicStructs.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Call_IL2Cpp.h"
+#include "Includes/OverlayGeometry.h"
 #include "Hacks/Hacks.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
 #include "AstralPrtctn/AntiHook.h"

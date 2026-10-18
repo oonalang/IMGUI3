@@ -814,6 +814,9 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
         auto m_PlayerInfo = *(uintptr_t *)(pawn + Class_Pawn_m_PlayerInfo);
         if (!Tools::IsPtrValid((void *)m_PlayerInfo)) continue;
 
+        // A dead / mid-respawn pawn may carry no attackable record yet; that
+        // is not a reason to drop it - just draw it without health numbers.
+        int CurHP = 0, MaxHP = 0;
         EspPawnHealth((uintptr_t)pawn, CurHP, MaxHP);
 
         auto m_HeadBone = *(Transform **)(pawn + Class_Pawn_m_HeadBone);
@@ -1071,112 +1074,40 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
         }
     }
 
-// ================= BAGONG HUDRON DESIGN (EKSAMININ MULA SA PILL THEME) =================
+    // Bots / players counter. Drawn straight onto the background draw list so
+    // it never creates an ImGui window next to the menu canvas.
     if (Config.ESPMenu.Count) {
-        int totalEnemyCount = totalBots + totalEnemies;
-        
+        const int totalEnemyCount = totalBots + totalEnemies;
+        ImFont* hudFont = ImGui::GetFont();
+        const float hudWidth = 240.0f, hudHeight = 62.0f;
+        const ImVec2 tl(ImGui::GetIO().DisplaySize.x * 0.5f - hudWidth * 0.5f, 32.0f);
+        const ImVec2 br(tl.x + hudWidth, tl.y + hudHeight);
+        draw->AddRectFilled(tl, br, IM_COL32(15, 23, 33, 242), hudHeight * 0.5f);
+        draw->AddRect(tl, br, IM_COL32(51, 102, 153, 102), hudHeight * 0.5f, 0, 1.0f);
+        draw->AddLine(ImVec2(tl.x + 30.0f, br.y - 9.0f), ImVec2(br.x - 30.0f, br.y - 9.0f),
+                      IM_COL32(51, 102, 153, 77), 1.5f);
+
+        auto centered = [&](float centerX, float y, float size, ImU32 col, const char* text) {
+            const ImVec2 ts = hudFont->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
+            draw->AddText(hudFont, size, ImVec2(centerX - ts.x * 0.5f, y), col, text);
+        };
+
         if (totalEnemyCount > 0) {
-            float windowWidth = 240.0f; 
-            float windowHeight = 85.0f;
-            
-            ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, 45.0f), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
-            ImGui::SetNextWindowSize(ImVec2(windowWidth, windowHeight), ImGuiCond_Always);
-            
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, windowHeight * 0.5f);
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 8));
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 2));
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 15.0f);
-            
-            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.09f, 0.13f, 0.95f)); 
-            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.2f, 0.4f, 0.6f, 0.4f));
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-            
-            if (ImGui::Begin("EnemyCounterHUD", nullptr, 
-                            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | 
-                            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoTitleBar | 
-                            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs | 
-                            ImGuiWindowFlags_NoBringToFrontOnFocus)) {
-                
-                float colWidth = windowWidth * 0.45f;
-                
-                // --- LEFT: BOTS (Gumagamit ng ICON_FA_ROBOT mula sa Icon.h) ---
-                ImGui::BeginGroup();
-                ImGui::SetWindowFontScale(1.2f);
-                float iconBotWidth = ImGui::CalcTextSize(ICON_FA_ROBOT).x;
-                ImGui::SetCursorPosX((colWidth - iconBotWidth) * 0.5f);
-                ImGui::TextColored(ImVec4(0.2f, 0.85f, 0.3f, 1.0f), ICON_FA_ROBOT);
-                
-                ImGui::SetWindowFontScale(0.85f);
-                float textBotWidth = ImGui::CalcTextSize("Bots").x;
-                ImGui::SetCursorPosX((colWidth - textBotWidth) * 0.5f);
-                ImGui::TextColored(ImVec4(0.55f, 0.6f, 0.65f, 0.8f), "Bots");
-                
-                ImGui::SetWindowFontScale(1.3f);
-                char botStr[16]; sprintf(botStr, "%d", totalBots);
-                float numBotWidth = ImGui::CalcTextSize(botStr).x;
-                ImGui::SetCursorPosX((colWidth - numBotWidth) * 0.5f);
-                ImGui::Text(botStr);
-                ImGui::EndGroup();
-                
-                // --- CENTER DOT ---
-                ImGui::SameLine();
-                ImGui::SetCursorPosX(windowWidth * 0.5f - 4.0f);
-                ImGui::SetCursorPosY(windowHeight * 0.5f - 10.0f);
-                ImGui::SetWindowFontScale(1.1f);
-                ImGui::TextColored(ImVec4(0.3f, 0.65f, 1.0f, 1.0f), "•");
-                
-                // --- RIGHT: PLAYERS (Gumagamit ng ICON_FA_USER mula sa Icon.h) ---
-                ImGui::SameLine();
-                ImGui::SetCursorPosX(windowWidth * 0.55f);
-                ImGui::SetCursorPosY(8.0f);
-                
-                ImGui::BeginGroup();
-                ImGui::SetWindowFontScale(1.2f);
-                float iconPlrWidth = ImGui::CalcTextSize(ICON_FA_USER).x;
-                ImGui::SetCursorPosX(windowWidth * 0.55f + (colWidth - iconPlrWidth) * 0.5f);
-                ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.15f, 1.0f), ICON_FA_USER);
-                
-                ImGui::SetWindowFontScale(0.85f);
-                float textPlrWidth = ImGui::CalcTextSize("Players").x;
-                ImGui::SetCursorPosX(windowWidth * 0.55f + (colWidth - textPlrWidth) * 0.5f);
-                ImGui::TextColored(ImVec4(0.55f, 0.6f, 0.65f, 0.8f), "Players");
-                
-                ImGui::SetWindowFontScale(1.3f);
-                char plrStr[16]; sprintf(plrStr, "%d", totalEnemies);
-                float numPlrWidth = ImGui::CalcTextSize(plrStr).x;
-                ImGui::SetCursorPosX(windowWidth * 0.55f + (colWidth - numPlrWidth) * 0.5f);
-                ImGui::Text(plrStr);
-                ImGui::EndGroup();
-                
-                ImGui::SetWindowFontScale(1.0f);
-                
-                ImDrawList* window_draw_list = ImGui::GetWindowDrawList();
-                ImVec2 window_pos = ImGui::GetWindowPos();
-                window_draw_list->AddLine(
-                    ImVec2(window_pos.x + 30, window_pos.y + windowHeight - 8),
-                    ImVec2(window_pos.x + windowWidth - 30, window_pos.y + windowHeight - 8),
-                    ImGui::GetColorU32(ImVec4(0.2f, 0.4f, 0.6f, 0.3f)), 
-                    1.5f
-                );
-            }
-            ImGui::End();
-            ImGui::PopStyleColor(3);
-            ImGui::PopStyleVar(4);
+            char botStr[16], plrStr[16];
+            snprintf(botStr, sizeof(botStr), "%d", totalBots);
+            snprintf(plrStr, sizeof(plrStr), "%d", totalEnemies);
+
+            const float leftX = tl.x + hudWidth * 0.25f;
+            const float rightX = tl.x + hudWidth * 0.75f;
+            centered(leftX, tl.y + 9.0f, 10.0f, IM_COL32(140, 153, 166, 204), "BOTS");
+            centered(leftX, tl.y + 22.0f, 20.0f, IM_COL32(51, 217, 77, 255), botStr);
+            centered(rightX, tl.y + 9.0f, 10.0f, IM_COL32(140, 153, 166, 204), "PLAYERS");
+            centered(rightX, tl.y + 22.0f, 20.0f, IM_COL32(255, 166, 38, 255), plrStr);
+            draw->AddCircleFilled(ImVec2(tl.x + hudWidth * 0.5f, tl.y + hudHeight * 0.5f - 4.0f),
+                                  3.0f, IM_COL32(77, 166, 255, 255));
         } else {
-            auto drawFG = ImGui::GetForegroundDrawList();
-            const char* safeText = "[ SAFE ]";
-            float fontSize = 25.0f;
-            
-            ImVec2 textSize = ImGui::CalcTextSize(safeText);
-            float currentScreenWidth = ImGui::GetIO().DisplaySize.x;
-            float textPosX = (currentScreenWidth - textSize.x) / 2;
-            float textPosY = 80.0f - textSize.y - 10.0f;
-            
-            drawFG->AddText(NULL, fontSize, ImVec2(textPosX - 1, textPosY - 1), IM_COL32(0, 0, 0, 255), safeText);
-            drawFG->AddText(NULL, fontSize, ImVec2(textPosX + 1, textPosY - 1), IM_COL32(0, 0, 0, 255), safeText);
-            drawFG->AddText(NULL, fontSize, ImVec2(textPosX - 1, textPosY + 1), IM_COL32(0, 0, 0, 255), safeText);
-            drawFG->AddText(NULL, fontSize, ImVec2(textPosX + 1, textPosY + 1), IM_COL32(0, 0, 0, 255), safeText);
-            drawFG->AddText(NULL, fontSize, ImVec2(textPosX, textPosY), IM_COL32(0, 255, 0, 255), safeText);
+            centered(tl.x + hudWidth * 0.5f, tl.y + 16.0f, 22.0f,
+                     IM_COL32(0, 255, 0, 255), "[ SAFE ]");
         }
     }
 }

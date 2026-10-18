@@ -8,17 +8,13 @@
 #include "System/Core/Bypass.h"
 
 #include "System/UI/GuestAccount.h"
-#include "System/UI/SearchFunction.h"
-
-#include "System/UI/TextureLoader.h"
-#include "System/UI/MiscTab.h"
-#include "System/UI/SkinTab.h"
-#include "System/UI/SettingsTab.h"
-#include "System/UI/Keyboard.h"
-#include "System/UI/LoadingAnimation.h"
-#include "System/UI/Logo.h"
 #include "System/UI/FloatingInfo.h"
-#include "IMAGE/astral.h"
+
+// Skin/Fields.h is a fragment without a guard: include exactly this order.
+#include "Skin/Fields.h"
+#include "Skin/Thread.h"
+#include "Skin/AutoEquipSkin.h"
+#include "Skin/Camo.h"
 
 #include "AstralPrtctn/StrEnc.h"
 #include "AstralPrtctn/json.hpp"
@@ -28,10 +24,9 @@
 #include "xhook.h"
 #include "Includes/Jni_Stuff.h"
 
-#include "ImGui/runtime_preview_menu.h"
-
-#include "Fonts/Iconcpp.h"
-#include "Fonts/fonts.h"
-// Neverlose/HexSync (IMGUI5) UI faces: SSTMedium for body text, SSTBold for
-// titles and bold labels (subset, see the header). Replaces Poppins.
-#include "Fonts/nl_fonts.h"
+// Neverlose/HexSync (IMGUI5) menu: the only UI. nl_ui is the adapter the
+// render loop calls (Init/BeginFrame/Draw/EndFrame/OnTouch/Shutdown).
+#include "nl_layout.hpp"
+#include "menu/nl_ui.hpp"
+#include "menu/nl_bindings.hpp"
+#include "menu/nl_embedded_assets.hpp"

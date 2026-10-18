@@ -2,9 +2,10 @@
 #include "Includes/Macros.h"
 #include "Includes/obfuscate.h"
 #include "Includes/Utils.h"
-#include "ImGui/Call_ImGui.h"
-#include "ImGui/menu_layout.h"
-#include "ImGui/nl_style.h"
+#include "imgui.h"
+#include "imgui_internal.h"
+#include "backends/imgui_impl_opengl3.h"
+#include "Includes/OverlayGeometry.h"
 #include "IL2CppSDKGenerator/BasicStructs/Call_BasicStructs.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Call_IL2Cpp.h"
 #include "Hacks/Hacks.h"
@@ -857,11 +858,6 @@ float jumpHeightMultiplier = 1.0f;
 char logintext[4096];
 float menu[4] = {188.0f / 255.0f, 110.0f / 255.0f, 1.0f, 1.0f};
 
-float g_LastLogoOpacity = 1.0f;
-float g_LastLogoSize = 1.0f;
-int g_LogoHideDelayFrames = 0;
-int g_LogoHideDelay = 40;
-
 #define _BYTE uint8_t
 #define _WORD  uint8_t
 #define _DWORD uint64_t
@@ -874,23 +870,12 @@ using namespace std;
 #include <Substrate/SubstrateHook.h>
 #include <Substrate/CydiaSubstrate.h>
 
-ImFont* F50 = nullptr;
-ImFont* F107 = nullptr;
-ImFont* SOCIAL = nullptr;
-ImFont* Bold = nullptr;
 JavaVM* jvm = nullptr;
+
 JavaVM* VM = nullptr;
 
 namespace font {
-    ImFont* icomoon_logo = nullptr;
     ImFont* inter_semibold = nullptr;
-    ImFont* icomoon_page = nullptr;
-    ImFont* icon_notify = nullptr;
-    ImFont* regular_m = nullptr;
-    ImFont* regular_l = nullptr;
-    ImFont* inter_medium = nullptr;
-    ImFont* bold_font = nullptr;
-    ImFont* esp_font = nullptr;
 }
 
 static int g_GlWidth, g_GlHeight;
@@ -913,10 +898,6 @@ static bool g_imguiBackendReady = false;    struct My_Patches {
     MemoryPatch NoSlideFatigue, NoSlideFatiguePve;
 } Patches;
 
-float AVIWA = 119.167f;
-bool wallh;
-bool active = false;
-float AimSmooth = 1.0f;
 static bool g_RuntimeClearDisplayInit = false;
 
 struct ClearDisplayDefaultInit {
@@ -927,28 +908,6 @@ struct sRegion { uintptr_t start, end; };
 
 std::chrono::steady_clock::time_point appStartTime = std::chrono::steady_clock::now();
 
-static float veh_min = 0.1f;
-static float veh_max = 5.0f;
-static bool windowCollapsed = false;
-static double collapseBarLastActiveTime = 0.0;
-static float collapseBarOpacityAnim = 1.0f;
-static float collapseBarPressAnim = 0.0f;
-static float collapseBarEnterAnim = 1.0f;
-static float collapseBarRestoreAnim = 1.0f;
-static bool collapseBarRestoreActive = false;
-static bool collapseBarWasCollapsed = false;
-static float uncollapseOpenAnim = 1.0f;
-static bool dark = true;
-static float tabAlpha = 0.0f;
-static float tabAdd = 0.0f;
-static int page = 1;
-static int activeTab = 1;
-bool g_LogoPreviewMode = false;
-static bool isLogin = true;
-static std::string err;
-static std::string storedKey = "";
-static char s[256];
-static bool g_LoginTextLoaded = false;
 
 
 
@@ -956,341 +915,8 @@ std::vector<sRegion> trapRegions;
 uintptr_t address = 0;
 std::string md5(std::string s);
 uintptr_t g_il2cpp;
-static bool isMenuVisible = true;
-
-int TABG = 1;
 
 EGLBoolean (*old_eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
-
-static void DrawEspPreview(ImDrawList* draw, ImVec2 pos, float width, float height) {
-    draw->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), IM_COL32(10, 12, 18, 245));
-    draw->AddRect(pos, ImVec2(pos.x + width, pos.y + height), IM_COL32(70, 70, 82, 180), 8.0f, 0, 1.0f);
-
-    static float animTime = 0.0f;
-    animTime += ImGui::GetIO().DeltaTime;
-    float sway     = sinf(animTime * 1.1f) * 4.0f;
-    float hairSway = sinf(animTime * 1.5f) * 3.0f;
-    float blink    = fmodf(animTime, 4.5f);
-    bool  eyesShut = blink > 4.25f && blink < 4.38f;
-
-    ImVec2 center = ImVec2(pos.x + width * 0.5f + sway, pos.y + height * 0.50f + height * 0.02f);
-    float s = std::min(width, height) * 0.72f;
-
-    auto P = [&](float nx, float ny) -> ImVec2 { return ImVec2(center.x + nx * s, center.y + ny * s); };
-
-    ImU32 skinShade = IM_COL32(232, 200, 178, 255);
-    ImU32 skinBase  = IM_COL32(248, 222, 200, 255);
-    ImU32 skinHigh  = IM_COL32(255, 236, 220, 255);
-    ImU32 hairDark  = IM_COL32(78, 60, 130, 255);
-    ImU32 hairBase  = IM_COL32(140, 110, 200, 255);
-    ImU32 hairHigh  = IM_COL32(200, 170, 250, 255);
-    ImU32 hairTip   = IM_COL32(232, 130, 220, 255);
-    ImU32 coatDark  = IM_COL32(28, 22, 48, 255);
-    ImU32 coatBase  = IM_COL32(48, 38, 82, 255);
-    ImU32 coatTrim  = IM_COL32(160, 80, 255, 255);
-    ImU32 pantsCol  = IM_COL32(24, 20, 40, 255);
-    ImU32 bootCol   = IM_COL32(14, 12, 24, 255);
-    ImU32 bootHigh  = IM_COL32(90, 60, 160, 255);
-    ImU32 eyeWhite  = IM_COL32(250, 248, 255, 255);
-    ImU32 eyeIris   = IM_COL32(150, 90, 230, 255);
-    ImU32 eyePupil  = IM_COL32(28, 12, 50, 255);
-    ImU32 outline   = IM_COL32(8, 4, 20, 220);
-
-    auto drawLimb = [&](ImVec2 a, ImVec2 b, float w, ImU32 col) {
-        draw->AddLine(a, b, col, w);
-        draw->AddCircleFilled(a, w * 0.5f, col, 12);
-        draw->AddCircleFilled(b, w * 0.5f, col, 12);
-    };
-
-    ImVec2 headC  = P(0.00f, -0.72f);
-    float  headR  = s * 0.155f;
-    ImVec2 chin   = P(0.00f, -0.55f);
-    ImVec2 neck   = P(0.00f, -0.52f);
-    ImVec2 shL    = P(-0.19f, -0.42f);
-    ImVec2 shR    = P( 0.19f, -0.42f);
-    ImVec2 chest  = P(0.00f, -0.24f);
-    ImVec2 waist  = P(0.00f, -0.05f);
-    ImVec2 hipL   = P(-0.13f,  0.05f);
-    ImVec2 hipR   = P( 0.13f,  0.05f);
-    ImVec2 elbL   = P(-0.30f, -0.10f);
-    ImVec2 elbR   = P( 0.30f, -0.10f);
-    ImVec2 wrL    = P(-0.31f,  0.20f);
-    ImVec2 wrR    = P( 0.31f,  0.20f);
-    ImVec2 knL    = P(-0.12f,  0.38f);
-    ImVec2 knR    = P( 0.12f,  0.38f);
-    ImVec2 anL    = P(-0.12f,  0.70f);
-    ImVec2 anR    = P( 0.12f,  0.70f);
-
-    {
-        ImVec2 hw = ImVec2(hairSway * 0.5f, 0);
-        ImVec2 backHair[] = {
-            ImVec2(headC.x - headR * 0.95f + hw.x, headC.y - headR * 0.4f),
-            ImVec2(headC.x - headR * 1.15f + hw.x, headC.y + headR * 0.6f),
-            ImVec2(headC.x - headR * 1.05f + hw.x, headC.y + headR * 1.8f),
-            ImVec2(waist.x - s * 0.16f + hw.x,     waist.y + s * 0.05f),
-            ImVec2(waist.x - s * 0.10f + hw.x,     waist.y + s * 0.22f),
-            ImVec2(waist.x + s * 0.10f + hw.x,     waist.y + s * 0.22f),
-            ImVec2(waist.x + s * 0.16f + hw.x,     waist.y + s * 0.05f),
-            ImVec2(headC.x + headR * 1.05f + hw.x, headC.y + headR * 1.8f),
-            ImVec2(headC.x + headR * 1.15f + hw.x, headC.y + headR * 0.6f),
-            ImVec2(headC.x + headR * 0.95f + hw.x, headC.y - headR * 0.4f),
-        };
-        draw->AddConvexPolyFilled(backHair, 10, hairDark);
-        ImVec2 tipPts[] = {
-            ImVec2(headC.x - headR * 1.05f + hw.x, headC.y + headR * 1.8f),
-            ImVec2(waist.x - s * 0.16f + hw.x,     waist.y + s * 0.05f),
-            ImVec2(waist.x - s * 0.10f + hw.x,     waist.y + s * 0.22f),
-            ImVec2(waist.x + s * 0.10f + hw.x,     waist.y + s * 0.22f),
-            ImVec2(waist.x + s * 0.16f + hw.x,     waist.y + s * 0.05f),
-            ImVec2(headC.x + headR * 1.05f + hw.x, headC.y + headR * 1.8f),
-        };
-        draw->AddConvexPolyFilled(tipPts, 6, hairTip);
-    }
-
-    drawLimb(hipR, knR, s * 0.100f, pantsCol);
-    drawLimb(knR, anR, s * 0.085f, bootCol);
-    drawLimb(hipL, knL, s * 0.100f, pantsCol);
-    drawLimb(knL, anL, s * 0.085f, bootCol);
-
-    draw->AddLine(P(0.075f, 0.52f), P(0.14f, 0.60f), bootHigh, 1.4f);
-    draw->AddLine(P(-0.14f, 0.52f), P(-0.075f, 0.60f), bootHigh, 1.4f);
-
-    draw->AddRectFilled(P(-0.185f, 0.70f), P(-0.070f, 0.78f), bootCol, 2.5f);
-    draw->AddRectFilled(P( 0.070f, 0.70f), P( 0.185f, 0.78f), bootCol, 2.5f);
-    draw->AddRect(P(-0.185f, 0.70f), P(-0.070f, 0.78f), outline, 2.5f, 0, 1.0f);
-    draw->AddRect(P( 0.070f, 0.70f), P( 0.185f, 0.78f), outline, 2.5f, 0, 1.0f);
-
-    drawLimb(shR, elbR, s * 0.078f, coatBase);
-    drawLimb(elbR, wrR, s * 0.062f, skinBase);
-    draw->AddCircleFilled(wrR, s * 0.038f, skinHigh, 14);
-
-    ImVec2 coat[] = {
-        ImVec2(shL.x + s * 0.01f, shL.y - s * 0.02f),
-        ImVec2(waist.x - s * 0.11f, waist.y),
-        ImVec2(waist.x - s * 0.14f, waist.y + s * 0.15f),
-        ImVec2(waist.x - s * 0.10f, waist.y + s * 0.22f),
-        ImVec2(waist.x + s * 0.10f, waist.y + s * 0.22f),
-        ImVec2(waist.x + s * 0.14f, waist.y + s * 0.15f),
-        ImVec2(waist.x + s * 0.11f, waist.y),
-        ImVec2(shR.x - s * 0.01f, shR.y - s * 0.02f),
-    };
-    draw->AddConvexPolyFilled(coat, 8, coatBase);
-
-    draw->AddLine(ImVec2(chest.x - s * 0.01f, shL.y), ImVec2(waist.x, waist.y + s * 0.20f), coatTrim, 1.8f);
-    draw->AddLine(ImVec2(chest.x + s * 0.01f, shL.y), ImVec2(waist.x, waist.y + s * 0.20f), coatTrim, 1.8f);
-    draw->AddLine(shL, shR, coatDark, 2.5f);
-    draw->AddLine(ImVec2(shL.x, shL.y), ImVec2(chest.x, chest.y - s * 0.02f), coatTrim, 1.2f);
-    draw->AddLine(ImVec2(shR.x, shR.y), ImVec2(chest.x, chest.y - s * 0.02f), coatTrim, 1.2f);
-
-    for (int i = 0; i < 8; i++) {
-        ImVec2 a = coat[i], b = coat[(i + 1) % 8];
-        draw->AddLine(a, b, outline, 1.0f);
-    }
-
-    drawLimb(shL, elbL, s * 0.078f, coatBase);
-    drawLimb(elbL, wrL, s * 0.062f, skinBase);
-    draw->AddCircleFilled(wrL, s * 0.038f, skinHigh, 14);
-
-    drawLimb(neck, ImVec2(neck.x, chest.y - s * 0.02f), s * 0.055f, skinBase);
-
-    ImVec2 headBounds[] = {
-        ImVec2(headC.x,                 headC.y - headR * 1.05f),
-        ImVec2(headC.x + headR * 0.75f, headC.y - headR * 0.95f),
-        ImVec2(headC.x + headR * 1.00f, headC.y - headR * 0.40f),
-        ImVec2(headC.x + headR * 0.90f, headC.y + headR * 0.30f),
-        ImVec2(headC.x + headR * 0.55f, headC.y + headR * 0.90f),
-        ImVec2(chin.x,                  chin.y),
-        ImVec2(headC.x - headR * 0.55f, headC.y + headR * 0.90f),
-        ImVec2(headC.x - headR * 0.90f, headC.y + headR * 0.30f),
-        ImVec2(headC.x - headR * 1.00f, headC.y - headR * 0.40f),
-        ImVec2(headC.x - headR * 0.75f, headC.y - headR * 0.95f),
-    };
-    draw->AddConvexPolyFilled(headBounds, 10, skinBase);
-
-    draw->AddCircleFilled(ImVec2(headC.x - headR * 0.98f, headC.y + headR * 0.12f), headR * 0.16f, skinBase, 16);
-    draw->AddCircleFilled(ImVec2(headC.x + headR * 0.98f, headC.y + headR * 0.12f), headR * 0.16f, skinBase, 16);
-    draw->AddLine(ImVec2(headC.x - headR * 0.99f, headC.y + headR * 0.12f),
-                  ImVec2(headC.x - headR * 0.91f, headC.y + headR * 0.20f), skinShade, 1.0f);
-    draw->AddLine(ImVec2(headC.x + headR * 0.99f, headC.y + headR * 0.12f),
-                  ImVec2(headC.x + headR * 0.91f, headC.y + headR * 0.20f), skinShade, 1.0f);
-
-    draw->AddCircleFilled(ImVec2(headC.x - headR * 0.55f, headC.y + headR * 0.25f), headR * 0.18f, IM_COL32(255, 150, 180, 90), 20);
-    draw->AddCircleFilled(ImVec2(headC.x + headR * 0.55f, headC.y + headR * 0.25f), headR * 0.18f, IM_COL32(255, 150, 180, 90), 20);
-
-    {
-        float browY = headC.y - headR * 0.43f;
-        float browSpacing = headR * 0.48f;
-        float browW = headR * 0.27f;
-        draw->AddLine(ImVec2(headC.x - browSpacing - browW, browY + headR * 0.02f),
-                      ImVec2(headC.x - browSpacing + browW, browY - headR * 0.02f), outline, 1.6f);
-        draw->AddLine(ImVec2(headC.x + browSpacing - browW, browY - headR * 0.02f),
-                      ImVec2(headC.x + browSpacing + browW, browY + headR * 0.02f), outline, 1.6f);
-    }
-
-    if (!eyesShut) {
-        float eyeY = headC.y - headR * 0.10f;
-        float eyeSpacing = headR * 0.48f;
-        float eyeW = headR * 0.34f;
-        float eyeH = headR * 0.46f;
-
-        auto drawEye = [&](float x) {
-            ImVec2 eC(x, eyeY);
-            draw->AddEllipseFilled(eC, eyeW, eyeH, eyeWhite, 0.0f, 24);
-            draw->AddEllipseFilled(eC, eyeW * 0.72f, eyeH * 0.85f, eyeIris, 0.0f, 24);
-            draw->AddEllipseFilled(eC, eyeW * 0.32f, eyeH * 0.42f, eyePupil, 0.0f, 20);
-            draw->PathClear();
-            draw->PathArcTo(ImVec2(eC.x, eC.y - eyeH * 0.10f), eyeW, IM_PI + 0.25f, -0.25f, 20);
-            draw->PathStroke(outline, false, 1.8f);
-            draw->AddCircleFilled(ImVec2(eC.x - eyeW * 0.28f, eC.y - eyeH * 0.35f), eyeW * 0.22f, IM_COL32(255,255,255,240), 12);
-            draw->AddCircleFilled(ImVec2(eC.x + eyeW * 0.25f, eC.y + eyeH * 0.30f), eyeW * 0.10f, IM_COL32(255,255,255,180), 10);
-        };
-        drawEye(headC.x - eyeSpacing);
-        drawEye(headC.x + eyeSpacing);
-    } else {
-        float eyeY = headC.y - headR * 0.10f;
-        float eyeSpacing = headR * 0.45f;
-        float eyeW = headR * 0.38f;
-        draw->PathClear();
-        draw->PathArcTo(ImVec2(headC.x - eyeSpacing, eyeY), eyeW, IM_PI + 0.2f, -0.2f, 20);
-        draw->PathStroke(outline, false, 1.8f);
-        draw->PathClear();
-        draw->PathArcTo(ImVec2(headC.x + eyeSpacing, eyeY), eyeW, IM_PI + 0.2f, -0.2f, 20);
-        draw->PathStroke(outline, false, 1.8f);
-    }
-
-    draw->AddCircleFilled(ImVec2(headC.x + headR * 0.10f, headC.y + headR * 0.22f), headR * 0.03f, IM_COL32(200, 150, 130, 200), 8);
-    draw->PathClear();
-    draw->PathArcTo(ImVec2(headC.x, headC.y + headR * 0.42f), headR * 0.10f, 0.15f, IM_PI - 0.15f, 12);
-    draw->PathStroke(IM_COL32(180, 90, 110, 220), false, 1.2f);
-
-    {
-        ImVec2 hw = ImVec2(hairSway, 0);
-        ImVec2 bangs[] = {
-            ImVec2(headC.x - headR * 1.05f + hw.x, headC.y - headR * 0.35f),
-            ImVec2(headC.x - headR * 0.85f + hw.x, headC.y - headR * 1.10f),
-            ImVec2(headC.x - headR * 0.30f + hw.x, headC.y - headR * 1.30f),
-            ImVec2(headC.x + headR * 0.30f + hw.x, headC.y - headR * 1.30f),
-            ImVec2(headC.x + headR * 0.85f + hw.x, headC.y - headR * 1.10f),
-            ImVec2(headC.x + headR * 1.05f + hw.x, headC.y - headR * 0.35f),
-            ImVec2(headC.x + headR * 0.55f + hw.x, headC.y - headR * 0.55f),
-            ImVec2(headC.x + headR * 0.15f + hw.x, headC.y - headR * 0.85f),
-            ImVec2(headC.x - headR * 0.10f + hw.x, headC.y - headR * 0.55f),
-            ImVec2(headC.x - headR * 0.45f + hw.x, headC.y - headR * 0.85f),
-        };
-        draw->AddConvexPolyFilled(bangs, 10, hairBase);
-
-        draw->AddLine(ImVec2(headC.x - headR * 0.55f, headC.y - headR * 0.95f),
-                      ImVec2(headC.x - headR * 0.30f, headC.y - headR * 0.55f), hairHigh, 1.2f);
-        draw->AddLine(ImVec2(headC.x + headR * 0.15f, headC.y - headR * 1.10f),
-                      ImVec2(headC.x + headR * 0.30f, headC.y - headR * 0.55f), hairHigh, 1.2f);
-
-        ImVec2 sideL[] = {
-            ImVec2(headC.x - headR * 1.00f + hw.x, headC.y - headR * 0.30f),
-            ImVec2(headC.x - headR * 1.15f + hw.x, headC.y + headR * 0.40f),
-            ImVec2(headC.x - headR * 1.00f + hw.x, headC.y + headR * 1.40f),
-            ImVec2(headC.x - headR * 0.85f + hw.x, headC.y + headR * 0.55f),
-            ImVec2(headC.x - headR * 0.85f + hw.x, headC.y - headR * 0.20f),
-        };
-        draw->AddConvexPolyFilled(sideL, 5, hairBase);
-        ImVec2 sideR[] = {
-            ImVec2(headC.x + headR * 1.00f + hw.x, headC.y - headR * 0.30f),
-            ImVec2(headC.x + headR * 1.15f + hw.x, headC.y + headR * 0.40f),
-            ImVec2(headC.x + headR * 1.00f + hw.x, headC.y + headR * 1.40f),
-            ImVec2(headC.x + headR * 0.85f + hw.x, headC.y + headR * 0.55f),
-            ImVec2(headC.x + headR * 0.85f + hw.x, headC.y - headR * 0.20f),
-        };
-        draw->AddConvexPolyFilled(sideR, 5, hairBase);
-    }
-
-    float minX = headC.x - headR * 1.20f;
-    float maxX = headC.x + headR * 1.20f;
-    float minY = headC.y - headR * 1.35f;
-    float maxY = anR.y + s * 0.12f;
-
-    auto safeColor = [](float* col) -> ImU32 {
-        if (!col) return IM_COL32(255, 255, 255, 255);
-        return IM_COL32((int)(col[0]*255), (int)(col[1]*255), (int)(col[2]*255), (int)(col[3]*255));
-    };
-
-    if (Config.ESPMenu.Box) {
-        ImU32 bc = safeColor(Config.sColorsESPPLAYER.BoxPLAYER);
-        float bx = minX - 6, by = minY - 6, bw = (maxX - minX) + 12, bh = (maxY - minY) + 12;
-        if (Config.ESPMenu.BoxType == EspBoxType::Outline) {
-            draw->AddRect(ImVec2(bx, by), ImVec2(bx + bw, by + bh), bc, 0.0f, 0, 2.0f);
-        } else if (Config.ESPMenu.BoxType == EspBoxType::Fill) {
-            ImVec4 c = ImGui::ColorConvertU32ToFloat4(bc);
-            draw->AddRectFilled(ImVec2(bx, by), ImVec2(bx + bw, by + bh), ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, 0.15f)));
-            draw->AddRect(ImVec2(bx, by), ImVec2(bx + bw, by + bh), bc, 0.0f, 0, 2.0f);
-        } else if (Config.ESPMenu.BoxType == EspBoxType::Corner) {
-            float iw = bw / 4.0f, ih = bh / 4.0f;
-            draw->AddLine(ImVec2(bx, by), ImVec2(bx + iw, by), bc, 2.0f);
-            draw->AddLine(ImVec2(bx, by), ImVec2(bx, by + ih), bc, 2.0f);
-            draw->AddLine(ImVec2(bx + bw - iw, by), ImVec2(bx + bw, by), bc, 2.0f);
-            draw->AddLine(ImVec2(bx + bw, by), ImVec2(bx + bw, by + ih), bc, 2.0f);
-            draw->AddLine(ImVec2(bx, by + bh - ih), ImVec2(bx, by + bh), bc, 2.0f);
-            draw->AddLine(ImVec2(bx, by + bh), ImVec2(bx + iw, by + bh), bc, 2.0f);
-            draw->AddLine(ImVec2(bx + bw - iw, by + bh), ImVec2(bx + bw, by + bh), bc, 2.0f);
-            draw->AddLine(ImVec2(bx + bw, by + bh - ih), ImVec2(bx + bw, by + bh), bc, 2.0f);
-        }
-    }
-
-    if (Config.ESPMenu.isPlayerLine) {
-        ImU32 lc = safeColor(Config.sColorsESPPLAYER.LinePLAYER);
-        ImVec2 from;
-        if (Config.ESPMenu.Target == LineTarget::Bottom) from = ImVec2(pos.x + width * 0.5f, pos.y + height);
-        else if (Config.ESPMenu.Target == LineTarget::Center) from = ImVec2(pos.x + width * 0.5f, pos.y + height * 0.5f);
-        else from = ImVec2(pos.x + width * 0.5f, pos.y + 10);
-        draw->AddLine(from, ImVec2(center.x, minY), lc, 1.6f);
-    }
-
-    if (Config.ESPMenu.Skeleton) {
-        ImU32 sc = safeColor(Config.sColorsESPPLAYER.SkeletonPLAYER);
-        draw->AddLine(headC, neck, sc, 1.6f);
-        draw->AddLine(neck, shL, sc, 1.6f);
-        draw->AddLine(neck, shR, sc, 1.6f);
-        draw->AddLine(shL, elbL, sc, 1.6f);
-        draw->AddLine(shR, elbR, sc, 1.6f);
-        draw->AddLine(elbL, wrL, sc, 1.6f);
-        draw->AddLine(elbR, wrR, sc, 1.6f);
-        draw->AddLine(chest, waist, sc, 1.6f);
-        draw->AddLine(waist, hipL, sc, 1.6f);
-        draw->AddLine(waist, hipR, sc, 1.6f);
-        draw->AddLine(hipL, knL, sc, 1.6f);
-        draw->AddLine(hipR, knR, sc, 1.6f);
-        draw->AddLine(knL, anL, sc, 1.6f);
-        draw->AddLine(knR, anR, sc, 1.6f);
-    }
-
-    if (Config.ESPMenu.Health) {
-        float hp = 0.72f;
-        int r = (int)(255 * (1.0f - hp)), g = (int)(255 * hp);
-        ImU32 hpc = IM_COL32(r, g, 0, 255);
-        float bx = minX - 14, by = minY - 6, bw = 4.5f, bh = (maxY - minY) + 12;
-        draw->AddRectFilled(ImVec2(bx, by), ImVec2(bx + bw, by + bh), IM_COL32(0, 0, 0, 120));
-        draw->AddRect(ImVec2(bx, by), ImVec2(bx + bw, by + bh), IM_COL32(0, 0, 0, 220), 0.0f, 0, 1.0f);
-        draw->AddRectFilled(ImVec2(bx, by + bh * (1.0f - hp)), ImVec2(bx + bw, by + bh), hpc);
-    }
-
-    if (Config.ESPMenu.Name) {
-        ImU32 nc = safeColor(Config.sColorsESPPLAYER.NamePLAYER);
-        const char* name = "PLAYER";
-        ImVec2 ts = ImGui::CalcTextSize(name);
-        draw->AddText(ImVec2(center.x - ts.x * 0.5f, minY - ts.y - 8.0f), nc, name);
-    }
-
-    if (Config.ESPMenu.Distance) {
-        ImU32 dc = safeColor(Config.sColorsESPPLAYER.DistancePLAYER);
-        const char* dist = "50m";
-        ImVec2 ts = ImGui::CalcTextSize(dist);
-        draw->AddText(ImVec2(center.x - ts.x * 0.5f, maxY + 8.0f), dc, dist);
-    }
-
-    if (Config.ESPMenu.ShowFov) {
-        float radius = Config.Aim.Cross * 0.6f;
-        if (radius > 0)
-            draw->AddCircle(ImVec2(pos.x + width * 0.5f, pos.y + height * 0.5f), radius, IM_COL32(160, 80, 255, 100), 0, 1.5f);
-    }
-}
 
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 {
@@ -1314,38 +940,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         if (!g_imguiBackendReady) { ImGui::DestroyContext(); return old_eglSwapBuffers(dpy, surface); }
         g_imguiDisplay = dpy; g_imguiContext = currentContext; g_imguiSurface = surface;
 
-        char lcdDensity[PROP_VALUE_MAX] = {};
-        if (__system_property_get("ro.sf.lcd_density", lcdDensity) > 0)
-            font::SetDensity((float)atoi(lcdDensity) / 160.0f);
-        const float uiScale = font::UiScale();
-        const ImWchar* textRanges = io.Fonts->GetGlyphRangesCyrillic();
-
-        ImFontConfig textCfg; textCfg.PixelSnapH = true; textCfg.FontDataOwnedByAtlas = false;
-        textCfg.OversampleH = 2; textCfg.OversampleV = 2;
-        // Neverlose/HexSync faces (Fonts/nl_fonts.h, from oonalang/IMGUI5). The
-        // font:: slot names are unchanged on purpose: every tab, ESP label and
-        // widget already draws through them, so the reskin needs no feature edit.
-        font::regular_m = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_medium, nl_sst_medium_size, 17.0f * uiScale, &textCfg, textRanges);
-        font::regular_l = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_medium, nl_sst_medium_size, 20.0f * uiScale, &textCfg, textRanges);
-        font::inter_medium = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_medium, nl_sst_medium_size, 15.0f * uiScale, &textCfg, textRanges);
-        font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_bold, nl_sst_bold_size, 16.0f * uiScale, &textCfg, textRanges);
-        font::bold_font = io.Fonts->AddFontFromMemoryTTF((void*)nl_sst_bold, nl_sst_bold_size, 25.0f * uiScale, &textCfg, textRanges);
-
-        ImFontConfig iconCfg; iconCfg.PixelSnapH = true; iconCfg.FontDataOwnedByAtlas = false;
-        font::icomoon_page = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 18.0f * uiScale, &iconCfg);
-        font::icomoon_logo = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 20.0f * uiScale, &iconCfg);
-        font::icon_notify = io.Fonts->AddFontFromMemoryTTF((void*)icon_notify, sizeof(icon_notify), 16.0f * uiScale, &iconCfg);
-
-        static const ImWchar icons_ranges[] = { 0xe000, 0xf8ff, 0 };
-        ImFontConfig iconsCfg; iconsCfg.MergeMode = true; iconsCfg.PixelSnapH = true;
-        iconsCfg.OversampleH = 2.5f; iconsCfg.OversampleV = 2.5f; iconsCfg.FontDataOwnedByAtlas = false;
-        F107 = io.Fonts->AddFontFromMemoryCompressedTTF((void*)font_awesome_data1, (int)font_awesome_size1, 25.0f * uiScale, &iconsCfg, icons_ranges);
-        F50 = font::bold_font;
-        font::esp_font = font::inter_semibold;
-        if (!F107) F107 = font::icomoon_page;
-        if (font::inter_semibold) io.FontDefault = font::inter_semibold;
-        io.Fonts->Build();
-        ImGui_ImplOpenGL3_CreateFontsTexture();
 
         memset(&Config, 0, sizeof(sConfig));
         Config.sColorsESPPLAYER.LinePLAYER = CREATE_COLOR(255, 0, 0, 255);
@@ -1365,9 +959,9 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         // Mythic Attachments is ON by default: an applied skin behaves as if it
         // were really owned, so the weapon's attachments (the mythic's own ones
         // included) are not locked. Every other ExtraMenu option stays off; the
-        // checkbox that turns this one off is in the HOME tab, directly
-        // above No Slide Fatigue; its live counters are in the SKINS tab, next to
-        // Unlock Blueprints. See System/Hooks/MythicAttachments.h.
+        // row that turns this one off is on the menu's Extra page, and its live
+        // counters sit next to Unlock Blueprints on the Skins page. See
+        // System/Hooks/MythicAttachments.h.
         Config.ExtraMenu.MythicAttachments = true;
         Config.Aim.AimAssistSize = 0.0f;
         Config.Aim.Cross = 45.0f;
@@ -1382,8 +976,20 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     ImGuiIO *io = &ImGui::GetIO();
     screenWidth = (float)g_GlWidth;
     screenHeight = (float)g_GlHeight;
-    io->DisplaySize = ImVec2((float)g_GlWidth, (float)g_GlHeight);
+
+    // One-time menu setup (REPLACE_EVERYTHING.md): asset reader, overlay config.
+    if (!nl_ui::IsReady()) {
+        nl_ui::SetConfig({0.97f, 1.0f, false, false});   // in-game overlay: no intro, no background
+        nl_ui::SetAssetReader(nl_embedded_asset_reader);
+        nl_ui::Init(g_GlWidth, g_GlHeight);
+        if (io->Fonts && io->Fonts->Fonts.Size > 1) {
+            font::inter_semibold = io->Fonts->Fonts[1];
+            if (font::inter_semibold) io->FontDefault = font::inter_semibold;
+        }
+    }
+
     ImGui_ImplOpenGL3_NewFrame();
+    nl_ui::BeginFrame(g_GlWidth, g_GlHeight);           // layout + fonts + canvas DisplaySize
     ImGui::NewFrame();
 
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
@@ -1404,1057 +1010,119 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     AutoEquipSkin_Tick(Config.ExtraMenu.AutoSkin);
     floating_info::Render(draw, screenWidth, screenHeight);
 
-    if (windowCollapsed) {
-        if (!collapseBarWasCollapsed) {
-            collapseBarEnterAnim = 0.0f;
-            collapseBarRestoreAnim = 1.0f;
-            collapseBarRestoreActive = false;
-            collapseBarOpacityAnim = 1.0f;
-            collapseBarLastActiveTime = ImGui::GetTime();
-        }
-        collapseBarWasCollapsed = true;
-        const float dt = ImGui::GetIO().DeltaTime;
-        collapseBarEnterAnim = ImClamp(collapseBarEnterAnim + dt * 6.0f, 0.0f, 1.0f);
-        if (collapseBarRestoreActive) collapseBarRestoreAnim = ImClamp(collapseBarRestoreAnim + dt * 8.0f, 0.0f, 1.0f);
-        const float enterEase = collapseBarEnterAnim * collapseBarEnterAnim * (3.0f - 2.0f * collapseBarEnterAnim);
-        const float restoreEase = collapseBarRestoreAnim * collapseBarRestoreAnim * (3.0f - 2.0f * collapseBarRestoreAnim);
-        const float cAlpha = ImClamp(GetLogoOpacity(), 0.0f, 1.0f);
-        const float cScale = ImClamp(GetLogoSizeMultiplier(), 0.1f, 2.0f);
-        const ImVec2 disp = ImGui::GetIO().DisplaySize;
-        const float baseLineW = 120.0f * c::scale * cScale;
-        const float line_w = collapseBarRestoreActive ? ImLerp(baseLineW * 1.28f, baseLineW, restoreEase) : ImLerp(baseLineW * 1.28f, baseLineW, enterEase);
-        const float line_h = collapseBarRestoreActive ? ImLerp(10.0f, 6.0f, restoreEase) : ImLerp(6.0f, 10.0f, enterEase);
-        const float lineH = line_h * c::scale * cScale;
-        const float click_w = line_w + 72.0f * c::scale;
-        const float click_h = ImMax(28.0f * c::scale, lineH + 20.0f * c::scale);
-        const float startY = disp.y - 10.0f * c::scale - lineH;
-        const float endY = disp.y - 10.0f * c::scale - lineH;
-        const float handleY = collapseBarRestoreActive ? ImLerp(startY, endY, restoreEase) : ImLerp(endY, startY, enterEase);
-        const ImVec2 handlePos((disp.x - line_w) * 0.5f, handleY);
-        const ImVec2 clickPos(handlePos.x - (click_w - line_w) * 0.5f, handlePos.y - (click_h - lineH) * 0.5f);
+    const bool menuVisible = nl_ui::Visible();
 
-        ImGui::SetNextWindowPos(clickPos, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(click_w, click_h), ImGuiCond_Always);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-
-        if (ImGui::Begin("##indicator", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoSavedSettings)) {
-            ImVec2 windowPos = ImGui::GetWindowPos();
-            ImGui::SetCursorPos(ImVec2(0, 0));
-            ImGui::InvisibleButton("##restoreclick", ImVec2(click_w, click_h));
-            bool barHeld = ImGui::IsItemActive();
-            bool barHovered = ImGui::IsItemHovered();
-            if (barHovered || barHeld) collapseBarLastActiveTime = ImGui::GetTime();
-            const bool idle = (ImGui::GetTime() - collapseBarLastActiveTime) > 5.0;
-            const float targetOpacity = idle ? 0.20f : 1.0f;
-            collapseBarOpacityAnim = ImLerp(collapseBarOpacityAnim, targetOpacity, ImGui::GetIO().DeltaTime * 9.0f);
-            collapseBarPressAnim = ImLerp(collapseBarPressAnim, barHeld ? 1.0f : 0.0f, ImGui::GetIO().DeltaTime * 22.0f);
-            if (ImGui::IsItemClicked()) {
-                collapseBarRestoreActive = true;
-                collapseBarRestoreAnim = 0.0f;
-                collapseBarLastActiveTime = ImGui::GetTime();
-            }
-            float drawAlpha = ImClamp(collapseBarOpacityAnim * cAlpha, 0.0f, 1.0f);
-            ImDrawList* ind = ImGui::GetWindowDrawList();
-            const ImVec2 lineMin(windowPos.x + (click_w - line_w) * 0.5f, windowPos.y + (click_h - lineH) * 0.5f);
-            const ImVec2 lineMax(lineMin.x + line_w, lineMin.y + lineH);
-            ind->AddRectFilled(lineMin, lineMax, IM_COL32(255, 255, 255, (int)((225.0f + 30.0f * collapseBarPressAnim) * drawAlpha)), lineH * 0.5f);
-            if (collapseBarRestoreActive && collapseBarRestoreAnim >= 1.0f) {
-                windowCollapsed = false; isMenuVisible = true;
-                uncollapseOpenAnim = 0.0f;
-                collapseBarRestoreActive = false;
-                collapseBarEnterAnim = 1.0f;
-            }
-        }
-        ImGui::End();
-        ImGui::PopStyleColor(2);
-        ImGui::PopStyleVar(3);
-    } else {
-        collapseBarWasCollapsed = false;
-        collapseBarEnterAnim = 1.0f;
-    }
-
-    ImVec2 ioDisplaySize = ImGui::GetIO().DisplaySize;
-
-    if (isMenuVisible && !windowCollapsed) {
+    if (menuVisible) {
         if (!g_RuntimeClearDisplayInit) { Config.ExtraMenu.ClearDisplay = true; g_RuntimeClearDisplayInit = true; }
-        if (!g_LoginTextLoaded && VM != nullptr) {
-            if (LoadTextFromFile() && logintext[0] != '\0') {
-                strncpy(s, logintext, sizeof(s) - 1);
-                s[sizeof(s) - 1] = '\0';
-                g_LoginTextLoaded = true;
-            }
-        }
-        runtime_preview_menu::EnsureTexturesLoaded();
-        main_runtime_theme::ApplyThemeState();
+        // The Neverlose/HexSync menu itself (nl_ui drives it).
+        if (nl_ui::IsReady()) nl_ui::Draw();
 
-        ImVec2 viewportCenter = ImGui::GetMainViewport()->GetCenter();
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    }
 
-        if (!isLogin && !ui_loading::IsActive()) {
-            const float WW = ImMin(440.0f, ioDisplaySize.x * 0.92f);
-            const float WH = ImMin(380.0f, ioDisplaySize.y * 0.92f);
-            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    // Feature flags -> memory patches, every frame and independent of the
+    // menu being on screen: closing the menu must not leave a patch applied.
+    if (Config.ExtraMenu.WallHack) Patches.A1.Modify();
+    else Patches.A1.Restore();
 
-            ImGui::SetNextWindowPos(center, ImGuiCond_Always, {0.5f, 0.5f});
-            ImGui::SetNextWindowSize({WW, WH}, ImGuiCond_Always);
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 20.0f);
-            ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(22, 22, 22, 244));
-            ImGui::PushStyleColor(ImGuiCol_Border, main_runtime_theme::GetAccentU32(0.75f));
 
-            if (ImGui::Begin("##premium_login", nullptr,
-                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
-                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize |
-                ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove)) {
+    if (Config.NewFeaturesMenu.NoCrouch) Patches.NoCrouch.Modify();
+    else Patches.NoCrouch.Restore();
 
-                ImDrawList* dl = ImGui::GetWindowDrawList();
-                ImVec2 wp = ImGui::GetWindowPos();
-                ImFont* titleFont = F50 ? F50 : ImGui::GetFont();
-                ImFont* bodyFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
+    // The two NewFeatures patches are EDGE-TRIGGERED: write once on
+    // state change, never while idle. Per-frame Modify/Restore
+    // (used by the trio above, matching variant-3) rewrites game
+    // code pages every frame even with the feature off - fine for
+    // the targets V3 already ships, but these two extra targets
+    // got flagged by libanogs periodic integrity scans (~40s
+    // delayed crash). Idle = zero memory writes.
+    static bool s_appliedNoHitFlinch = false;
+    static bool s_appliedNoDrift = false;
+    // The applied-flags only flip when the memory write actually
+    // succeeded - otherwise a failed Restore() left the patch live
+    // forever with the UI claiming it was off (the old "No Drift
+    // won't stop" bug, together with the removed Stable Scope
+    // always-zero breathe hook). Running every frame is safe:
+    // KittyMemory skips the write while patched state matches.
+    if (Config.NewFeaturesMenu.NoHitFlinch && !s_appliedNoHitFlinch) {
+        if (Patches.NoHitFlinch.Modify()) s_appliedNoHitFlinch = true;
+    } else if (!Config.NewFeaturesMenu.NoHitFlinch && s_appliedNoHitFlinch) {
+        if (Patches.NoHitFlinch.Restore()) s_appliedNoHitFlinch = false;
+    }
+    if (Config.NewFeaturesMenu.NoDrift && !s_appliedNoDrift) {
+        if (Patches.NoDrift.Modify()) s_appliedNoDrift = true;
+    } else if (!Config.NewFeaturesMenu.NoDrift && s_appliedNoDrift) {
+        if (Patches.NoDrift.Restore()) s_appliedNoDrift = false;
+    }
+    static bool s_appliedNoSlideFatigue = false;
+    if (Config.NewFeaturesMenu.NoSlideFatigue && !s_appliedNoSlideFatigue) {
+        const bool ok = Patches.NoSlideFatigue.Modify()
+                     && Patches.NoSlideFatiguePve.Modify();
+        if (ok) s_appliedNoSlideFatigue = true;
+    } else if (!Config.NewFeaturesMenu.NoSlideFatigue && s_appliedNoSlideFatigue) {
+        const bool ok = Patches.NoSlideFatigue.Restore()
+                     && Patches.NoSlideFatiguePve.Restore();
+        if (ok) s_appliedNoSlideFatigue = false;
+    }
 
-                dl->AddRectFilled(wp, {wp.x + WW, wp.y + WH}, IM_COL32(22, 22, 22, 244), 20.0f);
-                dl->AddRect(wp, {wp.x + WW, wp.y + WH}, main_runtime_theme::GetAccentU32(0.45f), 20.0f, 0, 1.5f);
-                dl->AddRect({wp.x + 6, wp.y + 6}, {wp.x + WW - 6, wp.y + WH - 6}, main_runtime_theme::GetAccentU32(0.14f), 16.0f, 0, 1.0f);
+    // Same edge-triggered pattern for the four 8-byte getters that
+    // used to be inline hooks (they are patches now, see the
+    // Patches.* creation in Init_Thread / the Feats.h comments).
+    static bool s_appliedEm3Eye = false;
+    if (Config.ExtraMenu.RedWallhack && !s_appliedEm3Eye) {
+        if (Patches.Em3Eye.Modify()) s_appliedEm3Eye = true;
+    } else if (!Config.ExtraMenu.RedWallhack && s_appliedEm3Eye) {
+        if (Patches.Em3Eye.Restore()) s_appliedEm3Eye = false;
+    }
+    static bool s_appliedKineticArmor = false;
+    if (Config.ExtraMenu.Kinetic && !s_appliedKineticArmor) {
+        if (Patches.KineticArmor.Modify()) s_appliedKineticArmor = true;
+    } else if (!Config.ExtraMenu.Kinetic && s_appliedKineticArmor) {
+        if (Patches.KineticArmor.Restore()) s_appliedKineticArmor = false;
+    }
+    static bool s_appliedNoHipfireDelay = false;
+    if (Config.NewFeaturesMenu.NoHipfireDelay && !s_appliedNoHipfireDelay) {
+        const bool ok = Patches.NoHipfireUseGetReadyTime.Modify()
+                     && Patches.NoHipfireSpringFireGetReady.Modify();
+        if (ok) s_appliedNoHipfireDelay = true;
+    } else if (!Config.NewFeaturesMenu.NoHipfireDelay && s_appliedNoHipfireDelay) {
+        const bool ok = Patches.NoHipfireUseGetReadyTime.Restore()
+                     && Patches.NoHipfireSpringFireGetReady.Restore();
+        if (ok) s_appliedNoHipfireDelay = false;
+    }
 
-                const char* brand = "ETHNIR NOIR";
-                ImVec2 brandSize = titleFont->CalcTextSizeA(32.0f, FLT_MAX, 0.0f, brand);
-                dl->AddText(titleFont, 32.0f, {wp.x + (WW - brandSize.x) * 0.5f, wp.y + 40.0f}, main_runtime_theme::GetAccentU32(1.0f), brand);
-
-                const char* sub = "AUTHENTICATION";
-                ImVec2 subSize = bodyFont->CalcTextSizeA(12.0f, FLT_MAX, 0.0f, sub);
-                dl->AddText(bodyFont, 12.0f, {wp.x + (WW - subSize.x) * 0.5f, wp.y + 88.0f}, IM_COL32(180, 180, 200, 200), sub);
-
-                dl->AddLine({wp.x + 60, wp.y + 110}, {wp.x + WW - 60, wp.y + 110}, main_runtime_theme::GetAccentU32(0.28f), 1.0f);
-
-                const char* prompt = "Enter your license key to continue";
-                ImVec2 promptSize = bodyFont->CalcTextSizeA(10.5f, FLT_MAX, 0.0f, prompt);
-                dl->AddText(bodyFont, 10.5f, {wp.x + (WW - promptSize.x) * 0.5f, wp.y + 128.0f}, IM_COL32(160, 160, 180, 220), prompt);
-
-                const float inputW = WW - 60.0f;
-                const float inputX = wp.x + 30.0f;
-                const float inputY = wp.y + 156.0f;
-                const float inputH = 44.0f;
-
-                ImGui::SetCursorScreenPos({inputX, inputY});
-                custom::InputTextWithHint("##license_key", "License key", s, sizeof(s),
-                                          ImGuiInputTextFlags_CharsNoBlank, {inputW, inputH});
-
-                float btnY = inputY + inputH + 16.0f;
-                ImGui::SetCursorScreenPos({inputX, btnY});
-                if (custom::Button("AUTHENTICATE", {inputW, 44.0f})) {
-                    err = Login(s);
-                    if (err == "OK") {
-                        strncpy(logintext, s, sizeof(logintext) - 1);
-                        logintext[sizeof(logintext) - 1] = '\0';
-                        SaveLoginTextToFile(s);
-                        g_LoginTextLoaded = true;
-                        err.clear();
-                        ui_loading::Start(7.0f);
-                        
-                    }
-                }
-
-                float pasteBtnY = btnY + 44.0f + 8.0f;
-                ImGui::SetCursorScreenPos({inputX, pasteBtnY});
-                if (custom::Button("PASTE FROM CLIPBOARD", {inputW, 36.0f})) {
-                    std::string clip = getClipboard();
-                    strncpy(s, clip.c_str(), sizeof(s) - 1);
-                    s[sizeof(s) - 1] = '\0';
-                }
-
-                if (!err.empty() && err != "OK") {
-                    float errY = pasteBtnY + 36.0f + 8.0f;
-                    ImGui::SetCursorScreenPos({inputX, errY});
-                    ImVec2 errPos = ImGui::GetCursorScreenPos();
-                    dl->AddRectFilled(errPos, {errPos.x + inputW, errPos.y + 30.0f}, IM_COL32(200, 50, 50, 40), 6.0f);
-                    dl->AddRect(errPos, {errPos.x + inputW, errPos.y + 30.0f}, IM_COL32(200, 50, 150, 150), 6.0f, 0, 1.0f);
-                    ImGui::SetCursorScreenPos({errPos.x + 12.0f, errPos.y + 8.0f});
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
-                    ImGui::Text("%s", err.c_str());
-                    ImGui::PopStyleColor();
-                }
-
-                const char* footer = "Secure connection  -  All data encrypted";
-                ImVec2 footSize = bodyFont->CalcTextSizeA(9.0f, FLT_MAX, 0.0f, footer);
-                dl->AddText(bodyFont, 9.0f, {wp.x + (WW - footSize.x) * 0.5f, wp.y + WH - 28.0f}, IM_COL32(120, 120, 140, 160), footer);
-            }
-            ImGui::End();
-            ImGui::PopStyleColor(2);
-            ImGui::PopStyleVar(2);
-        }
-        else if (!isLogin && ui_loading::IsActive()) {
-            if (ui_loading::RenderWindow((ImTextureID)(intptr_t)runtime_preview_menu::g_menuBackground.id)) {
-                isLogin = true;
-            }
-        }
-        else {
-            uncollapseOpenAnim = ImClamp(uncollapseOpenAnim + ImGui::GetIO().DeltaTime * 5.0f, 0.0f, 1.0f);
-            float openEase = uncollapseOpenAnim * uncollapseOpenAnim * (3.0f - 2.0f * uncollapseOpenAnim);
-            float openAlpha = 0.2f + 0.8f * openEase;
-            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, openAlpha);
-
-            ImVec2 layoutDisplay = ioDisplaySize;
-            if (ImGui::GetIO().WantTextInput)
-                layoutDisplay.y = ImMax(240.0f, layoutDisplay.y - lanx_ime::PanelHeight(ioDisplaySize));
-            const MenuLayout menuLayout = ComputeMenuLayout(layoutDisplay);
-            const float menuW = menuLayout.menuW;
-            const float menuH = menuLayout.menuH;
-            ImVec2 menuPos = menuLayout.menuPos;
-
-            ImGui::SetNextWindowPos(menuPos, ImGuiCond_Always, ImVec2(0.0f, 0.0f));
-            ImGui::SetNextWindowSize(ImVec2(menuW, menuH), ImGuiCond_Always);
-            ImGui::SetNextWindowBgAlpha(0.0f);
-
-            ImGui::Begin("@Shaiaintshyy", nullptr,
-                ImGuiWindowFlags_NoTitleBar |
-                ImGuiWindowFlags_NoBringToFrontOnFocus |
-                ImGuiWindowFlags_NoScrollbar |
-                ImGuiWindowFlags_NoSavedSettings |
-                ImGuiWindowFlags_NoBackground);
-            {
-                runtime_preview_menu::StateRefs runtimeState{
-                    dark, tabAlpha, tabAdd, page, activeTab,
-                    windowCollapsed, isMenuVisible,
-                    collapseBarLastActiveTime, collapseBarOpacityAnim, collapseBarPressAnim
-                };
-                {
-                    using namespace runtime_preview_menu;
-                    main_runtime_theme::ApplyAccentFromHue();
-
-                    ImGuiStyle *runtimeStyle = &ImGui::GetStyle();
-                    c::ApplyMainWindowStyle(*runtimeStyle);
-                    c::UpdateTheme(runtimeState.dark, menu, ImGui::GetIO().DeltaTime);
-                    main_runtime_theme::ApplyThemeState();
-
-                    const ImVec2 runtimeWindowSize = ImGui::GetWindowSize();
-                    const ImVec2 runtimeWindowPos = ImGui::GetWindowPos();
-                    ImDrawList *runtimeDrawList = ImGui::GetWindowDrawList();
-
-                    // One flat rounded panel with the header's 1px accent border.
-                    {
-                        const ImVec2 bodyMin = runtimeWindowPos;
-                        const ImVec2 bodyMax(runtimeWindowPos.x + runtimeWindowSize.x,
-                                             runtimeWindowPos.y + runtimeWindowSize.y);
-                        // IMGUI5 shell: a near-black plate with one hairline
-                        // border. The accent is the user's hue, but it lives in
-                        // the controls, not in a glowing frame.
-                        runtimeDrawList->AddRectFilled(bodyMin, bodyMax, ImGui::GetColorU32(nl::Shell()), 14.0f);
-                        runtimeDrawList->AddRect(bodyMin, bodyMax, ImGui::GetColorU32(nl::CardBorder()), 14.0f, 0, 1.0f);
-                    }
-
-                    const float outerPad = 14.0f;
-                    const float layoutGap = 8.0f;
-                    const float contentPadding = 10.0f;
-                    const float columnGap = 10.0f;
-                    const float headerHeight = 64.0f;
-                    const float closeHeaderWidth = 72.0f;
-
-                    const float contentLeft = runtimeWindowPos.x + outerPad;
-                    const float contentRight = runtimeWindowPos.x + runtimeWindowSize.x - outerPad;
-                    const float headerTop = runtimeWindowPos.y + outerPad;
-                    const float headerWidth = contentRight - contentLeft;
-                    const float headerMainWidth = ImMax(0.0f, headerWidth - closeHeaderWidth - layoutGap);
-                    const ImVec2 headerMin(contentLeft, headerTop);
-                    const ImVec2 headerMax(contentLeft + headerMainWidth, headerTop + headerHeight);
-                    const ImVec2 closeCardMin(headerMax.x + layoutGap, headerTop);
-                    const ImVec2 closeCardSize(closeHeaderWidth, headerHeight);
-
-                    const ImVec2 hostMin(contentLeft, headerTop + headerHeight + layoutGap);
-                    const ImVec2 hostMax(contentRight, runtimeWindowPos.y + runtimeWindowSize.y - outerPad);
-                    // Top left of the content area inside the shell; the sidebar
-                    // below splits it into the rail, the panel and the tab host.
-                    const ImVec2 contentInnerMin(hostMin.x + contentPadding, hostMin.y + contentPadding);
-
-                    runtimeState.page = ImClamp(runtimeState.page, 1, 6);
-                    runtimeState.activeTab = ImClamp(runtimeState.activeTab, 1, 6);
-
-                    // IMGUI5 header: the mark and the title sit straight on the
-                    // panel, closed off by a hairline instead of a boxed card.
-                    runtimeDrawList->AddLine(ImVec2(headerMin.x, headerMax.y - 1.0f),
-                                             ImVec2(headerMax.x, headerMax.y - 1.0f),
-                                             ImGui::GetColorU32(nl::RowDivider()));
-
-                    const ImVec2 flameCenter(headerMin.x + 28.0f, headerMin.y + headerHeight * 0.5f);
-                    {
-                        ImFont *iconFont = custom::shell::GetIconFont();
-                        const char *logoIcon = ICON_FA_FIRE;
-                        const ImVec2 ls = custom::shell::MeasureText(iconFont, 17.0f, logoIcon);
-                        runtimeDrawList->AddText(iconFont, 17.0f,
-                            ImVec2(flameCenter.x - ls.x * 0.5f, flameCenter.y - ls.y * 0.5f),
-                            main_runtime_theme::GetAccentU32(), logoIcon);
-                    }
-
-                    ImFont *runtimeTitleFont = custom::shell::GetTitleFont();
-                    const float runtimeTitleSize = 22.0f;
-                    const char *titleA = "ETHNIR NOIR";
-                    const char *titleB = " V3";
-                    const ImVec2 titleASize = runtimeTitleFont->CalcTextSizeA(runtimeTitleSize, FLT_MAX, 0.0f, titleA);
-                    runtimeDrawList->AddText(runtimeTitleFont, runtimeTitleSize,
-                        ImVec2(headerMin.x + 56.0f, headerMin.y + 11.0f), IM_COL32(245, 245, 250, 255), titleA);
-                    runtimeDrawList->AddText(runtimeTitleFont, runtimeTitleSize,
-                        ImVec2(headerMin.x + 56.0f + titleASize.x, headerMin.y + 11.0f), main_runtime_theme::GetAccentU32(), titleB);
-
-                    const ImVec2 subtitlePos(headerMin.x + 57.0f, headerMin.y + 38.0f);
-                    runtimeDrawList->AddText(runtimeTitleFont, 10.0f, subtitlePos, IM_COL32(135, 143, 165, 220), "PLAY LIKE A PLAYER  |  NOT A CHEATER");
-
-                    const ImVec2 trackMin(headerMin.x + headerMainWidth * 0.58f, headerMin.y + 31.0f);
-                    const ImVec2 trackMax(headerMax.x - 18.0f, trackMin.y + 3.0f);
-                    ImGui::SetCursorScreenPos(ImVec2(trackMin.x - 4.0f, trackMin.y - 7.0f));
-                    ImGui::InvisibleButton("##main_runtime_menu_color_slider_new", ImVec2((trackMax.x - trackMin.x) + 8.0f, 22.0f));
-                    if (ImGui::IsItemActive()) {
-                        main_runtime_theme::g_menuHue = custom::shell::Normalize(ImGui::GetIO().MousePos.x, trackMin.x, trackMax.x);
-                        main_runtime_theme::ApplyAccentFromHue();
-                        c::UpdateTheme(runtimeState.dark, menu, ImGui::GetIO().DeltaTime);
-                        main_runtime_theme::ApplyThemeState();
-                    }
-                    const float segments = 8.0f;
-                    const float segmentWidth = (trackMax.x - trackMin.x) / segments;
-                    for (int i = 0; i < (int)segments; ++i) {
-                        float r0, g0, b0, r1, g1, b1;
-                        ImGui::ColorConvertHSVtoRGB((float)i / segments, 0.90f, 1.0f, r0, g0, b0);
-                        ImGui::ColorConvertHSVtoRGB((float)(i + 1) / segments, 0.90f, 1.0f, r1, g1, b1);
-                        const ImVec2 a(trackMin.x + segmentWidth * i, trackMin.y);
-                        const ImVec2 b((i == (int)segments - 1) ? trackMax.x : a.x + segmentWidth + 1.0f, trackMax.y);
-                        runtimeDrawList->AddRectFilledMultiColor(a, b,
-                            ImGui::ColorConvertFloat4ToU32(ImVec4(r0,g0,b0,1)),
-                            ImGui::ColorConvertFloat4ToU32(ImVec4(r1,g1,b1,1)),
-                            ImGui::ColorConvertFloat4ToU32(ImVec4(r1,g1,b1,1)),
-                            ImGui::ColorConvertFloat4ToU32(ImVec4(r0,g0,b0,1)));
-                    }
-                    const float hueX = trackMin.x + ImClamp(main_runtime_theme::g_menuHue, 0.0f, 1.0f) * (trackMax.x - trackMin.x);
-                    runtimeDrawList->AddCircleFilled(ImVec2(hueX, trackMin.y + 1.5f), 5.5f, IM_COL32(247,248,252,255), 20);
-
-                    if (custom::shell::DrawCloseCard(closeCardMin, closeCardSize)) {
-                        runtime_preview_menu::CollapseMenu(runtimeState);
-                    }
-
-                    runtimeState.tabAlpha = ImClamp(runtimeState.tabAlpha + (4.0f * ImGui::GetIO().DeltaTime * (runtimeState.page == runtimeState.activeTab ? 1.0f : -1.0f)), 0.0f, 1.0f);
-                    if (runtimeState.tabAlpha == 0.0f && runtimeState.tabAdd == 0.0f) runtimeState.activeTab = runtimeState.page;
-
-                    runtimeDrawList->AddRectFilled(hostMin, hostMax, ImGui::GetColorU32(nl::Rgb(13, 15, 22, 225)), 14.0f);
-                    runtimeDrawList->AddRect(hostMin, hostMax, ImGui::GetColorU32(nl::CardBorder()), 14.0f, 0, 1.0f);
-
-                    // LANX shell: a horizontal segmented tab strip across the top
-                    // of the panel replaces the left sidebar, so every page gets
-                    // the full width of the window.
-                    const float tabBarH = 36.0f;
-                    const ImVec2 tabBarMin(contentInnerMin.x, contentInnerMin.y);
-                    const ImVec2 tabBarMax(hostMax.x - contentPadding, contentInnerMin.y + tabBarH);
-                    runtimeDrawList->AddRectFilled(tabBarMin, tabBarMax, IM_COL32(11, 13, 20, 225), 9.0f);
-                    runtimeDrawList->AddRect(tabBarMin, tabBarMax, ImGui::GetColorU32(nl::CardBorder()), 9.0f, 0, 1.0f);
-
-                    static const char *tabIcons[] = { ICON_FA_HOME, ICON_FA_EYE, ICON_FA_MICROCHIP,
-                                                      ICON_FA_STAR, ICON_FA_SLIDERS_H, ICON_FA_COG };
-                    static const char *tabNames[] = { "HOME", "ESP", "AIM", "SKINS", "MISC", "SETTINGS" };
-                    static const int   tabIds[]   = { 2, 1, 3, 4, 5, 6 };
-                    ImFont *tabIconFont = custom::shell::GetIconFont();
-                    ImFont *tabTextFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
-                    const int   tabCount = 6;
-                    const float tabGap = 5.0f;
-                    const float tabW = ImMax(1.0f, ((tabBarMax.x - tabBarMin.x) - tabGap * (tabCount + 1)) / (float)tabCount);
-
-                    for (int i = 0; i < tabCount; ++i) {
-                        const ImVec2 pMin(tabBarMin.x + tabGap + (tabW + tabGap) * i, tabBarMin.y + 4.0f);
-                        const ImVec2 pMax(pMin.x + tabW, tabBarMax.y - 4.0f);
-                        char tId[40];
-                        snprintf(tId, sizeof(tId), "##lanx_tab_%d", tabIds[i]);
-                        ImGui::SetCursorScreenPos(pMin);
-                        ImGui::InvisibleButton(tId, ImVec2(tabW, pMax.y - pMin.y));
-                        const bool hov = ImGui::IsItemHovered();
-                        const bool act = (runtimeState.page == tabIds[i]);
-
-                        // IMGUI5 nav row: a flat filled pill. The accent lives
-                        // in the icon, the label just brightens. No underline.
-                        if (act || hov) {
-                            runtimeDrawList->AddRectFilled(pMin, pMax,
-                                act ? ImGui::GetColorU32(nl::NavHover())
-                                    : ImGui::GetColorU32(nl::Rgb(26, 29, 39, 190)), 6.0f);
-                        }
-
-                        const ImU32 ink = act ? IM_COL32(245, 245, 250, 255)
-                                              : IM_COL32(150, 157, 178, hov ? 245 : 205);
-                        if (tabIconFont) {
-                            const ImVec2 is = custom::shell::MeasureText(tabIconFont, 13.0f, tabIcons[i]);
-                            runtimeDrawList->AddText(tabIconFont, 13.0f,
-                                ImVec2(ImFloor(pMin.x + 9.0f), ImFloor((pMin.y + pMax.y - is.y) * 0.5f)),
-                                act ? main_runtime_theme::GetAccentTintU32(0.98f, 1.0f) : ink, tabIcons[i]);
-                        }
-                        if (tabTextFont && pMax.x - pMin.x > 46.0f) {
-                            const ImVec2 ts = custom::shell::MeasureText(tabTextFont, 11.5f, tabNames[i]);
-                            runtimeDrawList->AddText(tabTextFont, 11.5f,
-                                ImVec2(ImFloor(pMin.x + 26.0f), ImFloor((pMin.y + pMax.y - ts.y) * 0.5f)), ink, tabNames[i]);
-                        }
-
-                        if (ImGui::IsItemClicked()) {
-                            runtimeState.page = tabIds[i];
-                            runtimeState.activeTab = tabIds[i];
-                            g_LogoPreviewMode = false;
-                        }
-                    }
-
-                    const ImVec2 contentMin(tabBarMin.x, tabBarMax.y + 8.0f);
-                    const ImVec2 contentSize(ImMax(1.0f, (hostMax.x - contentPadding) - contentMin.x),
-                                             ImMax(1.0f, (hostMax.y - contentPadding) - contentMin.y));
-                    ImGui::SetCursorScreenPos(contentMin);
-                    ImGui::BeginChild("##RuntimeContentHost", contentSize, false, ImGuiWindowFlags_NoBackground);
-                    {
-                        const bool pushedContentFont = (font::inter_semibold != nullptr);
-                        if (pushedContentFont) ImGui::PushFont(font::inter_semibold);
-                        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, runtimeState.tabAlpha * runtimeStyle->Alpha);
-
-                        const ImVec2 contentRegion = ImGui::GetContentRegionAvail();
-                        const float childHeight = ImMax(0.0f, contentRegion.y);
-                        const float childWidth = ImMax(0.0f, (contentRegion.x - columnGap) * 0.5f);
-
-                        if (runtimeState.activeTab == 2) {
-                            custom::BeginGroup();
-                            {
-                                const ChildFrame left = BeginContentChild("EXTRA", ImVec2(childWidth, childHeight));
-                                custom::Checkbox("Hitbox", &Config.ExtraMenu.Hit);
-                                custom::Checkbox("No Recoil", &Config.ExtraMenu.Recoil);
-                                custom::Checkbox("No Spread", &Config.ExtraMenu.Spread);
-                                custom::Checkbox("No Shake", &Config.ExtraMenu.Shake);
-                                custom::Checkbox("No Overheat", &Config.ExtraMenu.Rpd);
-                                custom::Checkbox("No Parachute", &Config.ExtraMenu.Parachute);
-                                custom::Checkbox("Anti Flashbang", &Config.ExtraMenu.Flash);
-                                custom::Checkbox("Firerate", &Config.ExtraMenu.Fire);
-                                custom::Checkbox("Unlimited Fly", &UnlimitedFly);
-                                custom::Checkbox("Fast Dive", &Config.ExtraMenu.Diving);
-                                custom::Checkbox("Fast Reload", &Config.ExtraMenu.Reload);
-                                custom::Checkbox("Fast Scope", &Config.ExtraMenu.Scope);
-                                custom::Checkbox("Quick Switch", &Config.ExtraMenu.Switch);
-                                custom::Checkbox("Weapon Kinetic", &Config.ExtraMenu.Kinetic);
-                                // No Slide Fatigue: remove the slide limit/fatigue system
-                                // (SlideTackleComponent::get_UseSlideTackleLimit -> false,
-                                // local pawn only). Unlimited slides, no idle-time decay.
-                                // Mythic Attachments: an applied weapon skin behaves as
-                                // if it were really owned, so its attachments (the
-                                // mythic's own included) stop reading as locked.
-                                // ON by default; the live counters sit in the SKINS
-                                // tab next to Unlock Blueprints.
-                                custom::Checkbox("Mythic Attachments", &Config.ExtraMenu.MythicAttachments);
-                                custom::Checkbox("No Slide Fatigue", &Config.NewFeaturesMenu.NoSlideFatigue);
-                                custom::Separator();
-                                custom::Separator();
-                                custom::Checkbox("No Crouch", &Config.NewFeaturesMenu.NoCrouch);
-                                custom::Checkbox("No Hit Flinch", &Config.NewFeaturesMenu.NoHitFlinch);
-                                // No Drift = breathing sway only (m_AimmingBreatheCountDown @0x774)
-                                // NOTE: the old broken disable came from Stable Scope's
-                                // always-zero breathe hook (removed with that feature).
-                                custom::Checkbox("No Drift (Hardscope)", &Config.NewFeaturesMenu.NoDrift);
-                                // (No Fire Delay and Stable Scope removed per request.)
-                                custom::Checkbox("No Sprint Fire Delay", &Config.NewFeaturesMenu.NoSprintToFireDelay);
-                                if (Config.NewFeaturesMenu.NoSprintToFireDelay) {
-                                    // The option is applied inside the game's own
-                                    // Weapon.get_DelaySprintFire, and that hook body only
-                                    // compares the instance against a cache (it may not
-                                    // call into the game - the native call it used to
-                                    // make is what crashed this option). This line is
-                                    // that cache: an empty one means the local player's
-                                    // pawn tick has not run yet, so nothing is overridden.
-                                    ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "  %s",
-                                        NewFeatures::g_noSprintFireDelayWeapon.load() != nullptr
-                                            ? "armed: local weapon cached"
-                                            : "waiting for the local pawn tick");
-                                }
-                                custom::Checkbox("No Hipfire Delay", &Config.NewFeaturesMenu.NoHipfireDelay);
-                                custom::Separator();
-                                custom::Separator();
-                                custom::Separator();
-
-                                EndContentChild(left);
-                            }
-                            custom::EndGroup();
-                            ImGui::SameLine(0.0f, 10.0f);
-                            custom::BeginGroup();
-                            {
-                                const ChildFrame right = BeginContentChild("EXTRA OPTIONS", ImVec2(childWidth, childHeight));
-                                custom::SliderFloat("Snowboard Speed", &SnowBsize, 0.0f, 100.0f, "%.1f");
-                                custom::SliderFloat("Slide Distance", &SlideRange, 0.0f, 30.0f, "%.1f");
-                                custom::SliderFloat("SpeedHack", &speedHackMultiplier, 0.5f, 2.0f, "%.1fx");
-                                custom::SliderFloat("High Jump", &jumpHeightMultiplier, 0.5f, 5.0f, "%.2fx");
-                                EndContentChild(right);
-                            }
-                            custom::EndGroup();
-                        }
-
-                        if (runtimeState.activeTab == 1) {
-                            const float espGap = 8.0f;
-                            const float espAvailW = ImMax(1.0f, contentRegion.x - espGap * 2.0f);
-                            const float espSettingsW = ImFloor(espAvailW * 0.40f);
-                            const float espOptionsW = ImFloor(espAvailW * 0.32f);
-                            const float espPreviewW = ImMax(1.0f, espAvailW - espSettingsW - espOptionsW);
-
-                            custom::BeginGroup();
-                            {
-                                const ChildFrame settings = BeginContentChild("ESP SETTINGS##RUNTIME_ESP", ImVec2(espSettingsW, childHeight));
-                                custom::Checkbox("Hide Stream", &HIDEESP);
-                                custom::Checkbox("ESP Line", &Config.ESPMenu.isPlayerLine);
-                                custom::Checkbox("ESP Box", &Config.ESPMenu.Box);
-                                custom::Checkbox("ESP Skeleton", &Config.ESPMenu.Skeleton);
-                                custom::Checkbox("ESP Health", &Config.ESPMenu.Health);
-                                custom::Checkbox("ESP Name", &Config.ESPMenu.Name);
-                                custom::Checkbox("ESP Distance", &Config.ESPMenu.Distance);
-                                custom::Checkbox("ESP Count", &Config.ESPMenu.Count);
-                                custom::Checkbox("360 Alert", &Config.ESPMenu.Alert);
-                                custom::Checkbox("Show AimLine", &Config.ESPMenu.Aimline);
-                                custom::Checkbox("Yellow Wallhack", &Config.ExtraMenu.WallHack);
-                                custom::Checkbox("Red Wallhack", &Config.ExtraMenu.RedWallhack);
-                                ImGui::Dummy(ImVec2(0.0f, 5.0f));
-                                ImGui::TextColored(main_runtime_theme::GetAccentVec4(), "ESP COLORS");
-                                runtime_preview_menu::DrawRuntimeEspColorRow("Player ESP Color", Config.sColorsESPPLAYER.LinePLAYER);
-                                runtime_preview_menu::CopyLinkedEspColors(
-                                    Config.sColorsESPPLAYER.LinePLAYER, Config.sColorsESPPLAYER.BoxPLAYER,
-                                    Config.sColorsESPPLAYER.NamePLAYER, Config.sColorsESPPLAYER.HealthPLAYER,
-                                    Config.sColorsESPPLAYER.DistancePLAYER, Config.sColorsESPPLAYER.SkeletonPLAYER);
-                                runtime_preview_menu::DrawRuntimeEspColorRow("Bot ESP Color", Config.sColorsESPBOT.LineBOT);
-                                runtime_preview_menu::CopyLinkedEspColors(
-                                    Config.sColorsESPBOT.LineBOT, Config.sColorsESPBOT.BoxBOT,
-                                    Config.sColorsESPBOT.NameBOT, Config.sColorsESPBOT.HealthBOT,
-                                    Config.sColorsESPBOT.DistanceBOT, Config.sColorsESPBOT.SkeletonBOT);
-                                EndContentChild(settings);
-                            }
-                            custom::EndGroup();
-                            ImGui::SameLine(0.0f, espGap);
-                            custom::BeginGroup();
-                            {
-                                const ChildFrame options = BeginContentChild("DISPLAY OPTIONS##RUNTIME_DISPLAY_OPTIONS", ImVec2(espOptionsW, childHeight));
-                                static const char *boxTypes[] = {"Fill", "Outline", "Corner", "3D"};
-                                static const char *linePositions[] = {"Top", "Mid", "Bottom"};
-                                static const char *healthPositions[] = {"Top", "Side"};
-                                static const char *espStyles[] = {"None", "3D Sphere", "Player Signal"};
-                                custom::Combo("Box Type", (int *)&Config.ESPMenu.BoxType, boxTypes, IM_ARRAYSIZE(boxTypes), -1);
-                                custom::Combo("Line Position", (int *)&Config.ESPMenu.Target, linePositions, IM_ARRAYSIZE(linePositions), -1);
-                                custom::Combo("Health Position", (int *)&Config.ESPMenu.HealthPosition, healthPositions, IM_ARRAYSIZE(healthPositions), -1);
-                                custom::Combo("ESP Style", (int *)&Config.ESPMenu.EspStyle, espStyles, IM_ARRAYSIZE(espStyles), -1);
-                                ImGui::Dummy(ImVec2(0.0f, 8.0f));
-                                ImGui::TextColored(main_runtime_theme::GetAccentVec4(), "EXTRA OPTIONS");
-                                ImGui::TextUnformatted("Player ESP Color");
-                                ImGui::TextUnformatted("Bot ESP Color");
-                                EndContentChild(options);
-                            }
-                            custom::EndGroup();
-                            ImGui::SameLine(0.0f, espGap);
-                            ImGui::BeginChild("##CustomRealisticEspPreview", ImVec2(espPreviewW, childHeight), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoBackground);
-                            {
-                                ImVec2 previewPos = ImGui::GetCursorScreenPos();
-                                ImVec2 previewSize = ImGui::GetContentRegionAvail();
-                                DrawEspPreview(ImGui::GetWindowDrawList(), previewPos, previewSize.x, previewSize.y);
-                            }
-                            ImGui::EndChild();
-                        }
-
-if (runtimeState.activeTab == 4) {
-    const ChildFrame skinChild = BeginContentChild("SKINS", ImVec2(contentRegion.x, childHeight));
-
-    custom::Checkbox("Unlock Blueprints", &Config.ExtraMenu.Blueprints);
-    // Attachments counted as unlocked for the weapon wearing an applied skin -
-    // the mythic's own set included - so the loadout stops drawing them locked.
-    // Client-side answers only; the server still knows the real inventory.
-    // The "Mythic Attachments" switch itself lives in the HOME tab, directly
-    // above No Slide Fatigue; its live counters stay here next to Unlock
-    // Blueprints, which is the tab that owns the weapon skins.
-    // Live instrument: how often the loadout / skin UI asked each of the four
-    // unlock questions and how often this feature answered YES. That UI asks them
-    // by itself, so non-zero counters are the on-device proof that the hooks are
-    // installed at the dump's addresses (see System/Hooks/MythicAttachments.h).
+    // Touch -> nl_ui (REPLACE_EVERYTHING.md): the game's own touch becomes
+    // screen-pixel OnTouch events; the adapter converts them to the canvas.
     {
-        namespace ma = mythic_attachments;
-        ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1),
-            "Unlock gates asked/granted: att %d/%d  skin %d/%d  loadout %d/%d  confirm %d/%d",
-            ma::g_diag.asked[ma::GateAttachment], ma::g_diag.granted[ma::GateAttachment],
-            ma::g_diag.asked[ma::GateSkin],       ma::g_diag.granted[ma::GateSkin],
-            ma::g_diag.asked[ma::GateLoadout],    ma::g_diag.granted[ma::GateLoadout],
-            ma::g_diag.asked[ma::GateConfirm],    ma::g_diag.granted[ma::GateConfirm]);
-        // The three DATA-side writes (the part that behaves like the skin: the
-        // client's own objects are rewritten, no answer function has to be asked
-        // for the lock to disappear).
-        ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1),
-            "Client-side writes: list %d/%d  item %d/%d  cell %d/%d",
-            ma::g_diag.asked[ma::GateList], ma::g_diag.granted[ma::GateList],
-            ma::g_diag.asked[ma::GateItem], ma::g_diag.granted[ma::GateItem],
-            ma::g_diag.asked[ma::GateCell], ma::g_diag.granted[ma::GateCell]);
-        // The two ANSWERS the gunsmith re-asks per row: is this attachment
-        // disabled on this weapon, and does the lock view still run. Non-zero
-        // asked counts here (with granted on the DATA lines above) are the proof
-        // that the layer-3 hooks are what the screen consults.
-        ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1),
-            "Row answers: disabled %d/%d  lockview %d/%d  precond %d/%d",
-            ma::g_diag.asked[ma::GateDisabled], ma::g_diag.granted[ma::GateDisabled],
-            ma::g_diag.asked[ma::GateLockView], ma::g_diag.granted[ma::GateLockView],
-            ma::g_diag.asked[ma::GatePrecondition], ma::g_diag.granted[ma::GatePrecondition]);
-        // Did the hook itself land? A 0 here means the address never took the
-        // hook (bad dump / failed install), which is why the counters above stay
-        // at 0/0 - it is the first thing to check on a game update.
-        ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1),
-            "Hooks landed: att %d skin %d loadout %d confirm %d | list %d item %d cell %d",
-            ma::g_landed[ma::GateAttachment] ? 1 : 0, ma::g_landed[ma::GateSkin] ? 1 : 0,
-            ma::g_landed[ma::GateLoadout] ? 1 : 0,    ma::g_landed[ma::GateConfirm] ? 1 : 0,
-            ma::g_landed[ma::GateList] ? 1 : 0,       ma::g_landed[ma::GateItem] ? 1 : 0,
-            ma::g_landed[ma::GateCell] ? 1 : 0);
-        ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1),
-            "Layer-3/4 hooks landed: disabled %d  lockview %d  precond %d",
-            ma::g_landed[ma::GateDisabled] ? 1 : 0,
-            ma::g_landed[ma::GateLockView] ? 1 : 0,
-            ma::g_landed[ma::GatePrecondition] ? 1 : 0);
-    }
-
-    RenderSkinCategoryContent(skinSubTab, true);
-    EndContentChild(skinChild);
-}
-
-                        if (runtimeState.activeTab == 3) {
-                            custom::BeginGroup();
-                            {
-                                const ChildFrame left = BeginContentChild("AIMBOT", ImVec2(childWidth, childHeight));
-                                custom::Checkbox("Aimbot 360", &Config.Aim.Aimbot360);
-                                custom::Checkbox("Bullet Track", &Config.Aim.AimSilent);
-                                custom::SliderFloat("Aim Assist Size", &Config.Aim.AimAssistSize, 0.0f, 100.0f, "%.0f");
-                                // Triggerbot (Combat)
-                                custom::Separator();
-                                custom::Checkbox("Triggerbot", &Config.NewFeaturesMenu.Triggerbot);
-                                if (Config.NewFeaturesMenu.Triggerbot) {
-                                    static const char* triggerModes[] = { "Always", "ADS Only", "Firing Only" };
-                                    custom::Combo("Mode", &Config.NewFeaturesMenu.TriggerbotMode, triggerModes, IM_ARRAYSIZE(triggerModes));
-                                    // No "Delay" slider: the trigger fires the frame the
-                                    // target is under the crosshair, and the re-press rate
-                                    // is the weapon's OWN fire interval (Weapon.
-                                    // RealFireInterval), not a configured ms value. The
-                                    // TriggerbotDelay field is kept only so old config
-                                    // files keep loading.
-                                    // The crosshair zone is not a number of its own any
-                                    // more: it IS the dot crosshair's own size (see the
-                                    // Dot Crosshair section below), so what the user sees
-                                    // drawn is exactly what the trigger covers. The
-                                    // TriggerbotRadius field is kept only so old config
-                                    // files keep loading.
-                                    ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1),
-                                                       "Zone = the dot crosshair below");
-                                    
-                                    // No Hitbox pick: Head/Chest/Limbs/Any needed a
-                                    // raw bone FIELD offset (m_HeadBone 0x308 /
-                                    // m_Mesh 0x628) that did not hold up in BR (the
-                                    // panel showed Cand=0 with 5 enemies, so the zone
-                                    // path never fired). The trigger now uses the
-                                    // enemy's own on-screen BODY - the game's
-                                    // Pawn.get_HeadPosition getter and the root
-                                    // transform, measured against the crosshair
-                                    // segment and confirmed by the visibility ray.
-                                    // No target filter any more (Visible Only / the
-                                    // 25-50-100 m limits): it never changed a shot and
-                                    // it silently dropped candidates the rest of the
-                                    // gate accepts. The advisory options that used to sit
-                                    // here (Lead Target, Check Spread, Require Ready)
-                                    // could not change a shot either, and the debug Test
-                                    // Fire button is gone too. Everything the trigger
-                                    // obeys is above (Mode) plus StartFire itself - and
-                                    // its crosshair zone, which is the dot below.
-                                }
-                                // There is ONE crosshair now: this dot. The triggerbot
-                                // aims through its pixel and its zone IS the dot's own
-                                // radius, always - there is no separate trigger crosshair
-                                // and no switch to connect the two. The checkbox decides
-                                // whether the dot is DRAWN; the trigger uses its position
-                                // either way.
-                                custom::Separator();
-                                custom::Checkbox("Dot Crosshair", &Config.Crosshair.Enabled);
-                                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1),
-                                                   "The triggerbot aims through this dot");
-                                {
-                                    // Opacity is the colour's own alpha: one value, so a
-                                    // fade can never disagree with what is drawn.
-                                    custom::SliderFloat("Opacity", &Config.Crosshair.Color[3], 0.0f, 1.0f, "%.2f");
-                                    custom::SliderFloat("Size (trigger zone)", &Config.Crosshair.Size, 1.0f, 40.0f, "%.0f px");
-                                    custom::SliderFloat("Offset X", &Config.Crosshair.OffsetX, -400.0f, 400.0f, "%.0f px");
-                                    custom::SliderFloat("Offset Y", &Config.Crosshair.OffsetY, -400.0f, 400.0f, "%.0f px");
-                                    ImGui::TextUnformatted("Crosshair Color");
-                                    custom::ColorEdit4("##crosshair_color", Config.Crosshair.Color,
-                                                       ImGuiColorEditFlags_NoInputs |
-                                                       ImGuiColorEditFlags_PickerHueWheel);
-                                    if (custom::Button("Reset To Centre",
-                                                       ImVec2(ImMax(1.0f, ImGui::GetContentRegionAvail().x), 50.0f))) {
-                                        Config.Crosshair.OffsetX = 0.0f;
-                                        Config.Crosshair.OffsetY = 0.0f;
-                                    }
-                                    // These settings stay visible while the dot is hidden:
-                                    // the trigger aims at these offsets regardless, so
-                                    // hiding the dot must never hide the only way to see
-                                    // and fix them.
-                                    if (!Config.Crosshair.Enabled &&
-                                        (Config.Crosshair.OffsetX != 0.0f || Config.Crosshair.OffsetY != 0.0f)) {
-                                        ImGui::TextColored(ImVec4(1, 0.5f, 0, 1),
-                                                           "Dot hidden - the trigger still aims at these offsets");
-                                    }
-                                }
-                                // Debug status (shows in-game). Every number below is
-                                // written by the GAME-THREAD decision tree
-                                // (NewFeatures::A_FireShouldFire) inside A_FireTick, so
-                                // the headline IS the reason of the last scan: it prints
-                                // the exact gate that refused the shot (FireBlock), not
-                                // a guess. A_FireRenderTick() stays scan-free - the
-                                // render thread must never run A_FireScan /
-                                // Physics.Raycast, the physics world has exactly one
-                                // caller (A_FireTick, game thread).
-                                ImGui::Spacing();
-                                NewFeatures::A_FireRenderTick();
-                                NewFeatures::TriggerbotDiag& td = NewFeatures::GetTriggerbotDiag();
-                                int dbgState = NewFeatures::GetTriggerbotDebugState();
-                                const bool hbAlive = NewFeatures::A_FireHeartbeatAlive();
-                                const NewFeatures::FireBlock lastBlock =
-                                    (NewFeatures::FireBlock)td.lastBlock;
-                                if (!hbAlive) {
-                                    ImGui::TextColored(ImVec4(1, 0.25f, 0.25f, 1), "NO GAME-THREAD TICK");
-                                } else if (dbgState == 2) {
-                                    ImGui::TextColored(ImVec4(0, 1, 0, 1), ">> FIRING <<");
-                                } else if (dbgState == 1) {
-                                    if (td.paceWaiting)
-                                        ImGui::TextColored(ImVec4(1, 1, 0, 1),
-                                            "WAITING: aimed in, gun still cycling");
-                                    else
-                                        ImGui::TextColored(ImVec4(1, 1, 0, 1), "HOLDING: aimed in");
-                                } else {
-                                    ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "BLOCKED: %s",
-                                                       NewFeatures::A_FireBlockText(lastBlock));
-                                }
-                                    // The debug "Test Fire" button is gone: it only queued a
-                                    // StartFire from the menu, which is a test harness, not a
-                                    // feature. Everything below is the live state written by the
-                                    // game-thread decision tree.
-                                {
-                                    const ImVec4 dim(0.65f, 0.65f, 0.72f, 1);
-                                    ImGui::TextColored(dim, "HB %s  wTick=%d held=%d pawn=%d",
-                                        hbAlive ? "OK" : "DEAD",
-                                        td.weaponTicks, td.weaponHeldTicks, td.pawnLocalTicks);
-                                    ImGui::TextColored(dim, "Dot=%.0f,%.0f %s zone=%.1fpx ray=%s",
-                                        td.crosshairCx, td.crosshairCy,
-                                        Config.Crosshair.Enabled ? "shown" : "hidden",
-                                        td.radiusPx,
-                                        td.crosshairRayViaGame ? "game-projection"
-                                            : td.crosshairRayFellBack ? "basis-rebuilt"
-                                            : "centre-ray");
-                                    ImGui::TextColored(dim, "Scan=%d Enemy=%d Cand=%d Ray=%d Tgt=%d Fire=%d",
-                                        td.scans, td.enemyCount, td.candidates,
-                                        td.losChecked, td.targets, td.fires);
-                                    ImGui::TextColored(dim, "R=%.0f Closest=%.0fpx LOSblk=%d Friend=%d",
-                                        td.radiusPx,
-                                        td.closestPx < 0.0f ? -1.0f : sqrtf(td.closestPx),
-                                        td.losBlocked, td.friendsInLine);
-                                    // "ADS only" is decided by the game's OWN getters -
-                                    // Pawn.IsAiming 0x519BB10 and the held weapon's fire
-                                    // component get_IsAiming 0xC9AF4E0 - each called only
-                                    // on an object that passed the m_CachedPtr liveness
-                                    // check. The RawField line under them is the two
-                                    // Weapon field offsets, which are NOT verified and are
-                                    // shown for the record only. NO SIGNAL means the mode
-                                    // is not blocking at all (fail-open), which is why
-                                    // that line turns red instead of silently doing
-                                    // nothing.
-                                    if (Config.NewFeaturesMenu.TriggerbotMode == 1) {
-                                        if (td.adsUnknown)
-                                            ImGui::TextColored(ImVec4(1, 0.5f, 0, 1),
-                                                "ADS: NO SIGNAL - mode not enforced (fail-open)");
-                                        else
-                                            ImGui::TextColored(dim, "ADS: pawn=%s fc=%s => %s",
-                                                td.adsPawnOk ? (td.adsPawnAim ? "scoped" : "no") : "n/a",
-                                                td.adsFcOk   ? (td.adsFcAim   ? "scoped" : "no") : "n/a",
-                                                (td.adsPawnAim || td.adsFcAim) ? "SCOPED" : "hipfire");
-                                    }
-                                    ImGui::TextColored(dim, "RawField=%d/%.2f (dump-verified, display only)",
-                                        td.adsFlag, td.adsPct);
-                                    // Re-press pacing: Pace is the wait a repeat press
-                                    // obeys (the weapon's own cadence), skipped counts the
-                                    // presses held back, waiting is this scan. The first
-                                    // shot on a target is never paced.
-                                    ImGui::TextColored(dim, "Pace=%.3fs skipped=%d waiting=%d reassert=%d",
-                                        td.paceSeconds, td.repressSkipped,
-                                        td.paceWaiting ? 1 : 0, td.reasserts);
-                                    // Same-frame guard: scans the trigger SITS OUT
-                                    // because our fire request is still on the
-                                    // weapon (its get_IsFiring still true). A number
-                                    // stuck at 0 with Fire above it means the
-                                    // getter did not resolve and the guard is off.
-                                    // Kind guard: native calls refused because the
-                                    // slot we held is still a live object but no
-                                    // longer a Weapon (recycled after a death,
-                                    // weapon swap or round end). Non-zero after a
-                                    // long session is the "15 s then it crashes"
-                                    // crash class being refused, not a bug.
-                                    ImGui::TextColored(dim, "SameFrame=%d KindSkips=%d",
-                                        td.sameFrameSkips, td.kindSkips);
-                                    // Which path accepted (or would accept) the shot, and
-                                    // what the visibility ray actually hit. "Rays=id/blk"
-                                    // is the anti-wall gate: id = the nearest thing on the
-                                    // shot line WAS the enemy, blk = something else (a wall,
-                                    // however thin) stopped it.
-                                    ImGui::TextColored(dim, "Path=%s Centre=%s@%.1fm Rays=%d/%d%s",
-                                        td.aimPath == 0 ? "dot-ray" : "dot-zone",
-                                        td.crosshairPawn ? "pawn" : "none",
-                                        td.crosshairHitDist,
-                                        td.raysIdentified, td.raysBlocked,
-                                        td.rayUnknown ? " NO-RAY-SYMBOL" : "");
-                                    // PATH A's BODY BOUND, live: Keep is how far into
-                                    // the enemy's projected body the accepted shot sat
-                                    // (<= 1 means the dot was ON him), and Declined is
-                                    // every shot the dot ray named but the dot was BESIDE
-                                    // - the beside-the-arm refusal, counted.
-                                    // SpanMiss = the dot was above his head or below
-                                    // his feet, OffBody = it was beside him. Both are
-                                    // shots the model bound refused on EITHER path.
-                                    ImGui::TextColored(dim, "Keep=%.2f Declined=%d SpanMiss=%d OffBody=%d",
-                                        td.projKeepFrac, td.dotRayDeclined,
-                                        td.modelSpanMiss, td.modelOffBody);
-                                    ImGui::TextColored(dim, "LOShit=%.2fm LeadBlk=%d SprWarn=%d Sw=%d Int=%.3f",
-                                        td.lastLosHitDist,
-                                        (int)td.leadPathBlocked, (int)td.spreadWarn,
-                                        (int)td.switching, td.lastFireInterval);
-                                    // What the anti-wall gate SKIPPED this scan: hits on our
-                                    // own body/weapon, invisible trigger volumes, and
-                                    // near-origin blockers overruled by the game's occlusion
-                                    // verdict. "self/trigger > 0" is the false-"wall in the
-                                    // way" fix doing its job.
-                                    ImGui::TextColored(dim, "Skipped self=%d trigger=%d occOverride=%d",
-                                        td.selfHitsSkipped, td.triggerHitsSkipped, td.occOverrides);
-                                    ImGui::TextColored(dim, "Ammo=%s CanFire=%s FOV=%0.fpx",
-                                        td.ammoOk ? "ok" : "NO", td.canFire ? "ok" : "NO",
-                                        td.focalPx);
-                                    ImGui::TextColored(dim, "Aim=%.0f Pred=%.0f HB=%.0f Spr=%.0f px",
-                                        td.lastAimPx, td.lastPredPx, td.lastHitboxPx, td.lastSpreadPx);
-                                    ImGui::TextColored(dim, "Dist=%.1fm Travel=%.3fs V=%.0f",
-                                        td.lastWorldDist, td.lastTravel, td.lastBulletSpeed);
-                                    ImGui::TextColored(dim, "GameAim=%p %.1fm",
-                                        (void *)(uintptr_t)td.aimingTarget, td.aimingTargetDis);
-                                    ImGui::TextColored(dim, "Pawn=%p Wpn=%p Match=%p",
-                                        td.localPawn, td.heldWeapon, td.matchGame);
-                                    // Lifetime per-reason counters: what stopped the
-                                    // most shots since the toggle went on.
-                                    for (int bi = 1, shown = 0;
-                                         bi < (int)NewFeatures::FireBlock::Count && shown < 5; bi++) {
-                                        if (td.blockCount[bi] <= 0) continue;
-                                        ImGui::TextColored(ImVec4(0.78f, 0.78f, 0.88f, 1), "%s x%d",
-                                            NewFeatures::A_FireBlockText((NewFeatures::FireBlock)bi),
-                                            td.blockCount[bi]);
-                                        shown++;
-                                    }
-                                }
-                                EndContentChild(left);
-                            }
-                            custom::EndGroup();
-                            ImGui::SameLine(0.0f, 10.0f);
-                            custom::BeginGroup();
-                            {
-                                const ChildFrame right = BeginContentChild("COMBAT OPTIONS", ImVec2(childWidth, childHeight));
-                                static const char *targets[] = {"Head", "Chest", "Body"};
-                                custom::Combo("Location", (int *)&Config.Aim.Target, targets, IM_ARRAYSIZE(targets), -1);
-                                static const char *triggers[] = {"None", "Shooting", "Scoping"};
-                                custom::Combo("Trigger", (int *)&Config.Aim.Trigger, triggers, IM_ARRAYSIZE(triggers), -1);
-                                static const char *targetBy[] = {"Distance", "FOV"};
-                                custom::Combo("Target By", (int *)&Config.Aim.By, targetBy, IM_ARRAYSIZE(targetBy), -1);
-                                custom::SliderFloat("FOV Size", &Config.Aim.Cross, 0.0f, 100.0f, "%.0f");
-                                EndContentChild(right);
-                            }
-                            custom::EndGroup();
-                        }
-
-                        if (runtimeState.activeTab == 5) {
-                            const ChildFrame misc = BeginContentChild("MISC", ImVec2(contentRegion.x, childHeight));
-                            const misc_tab::LayoutMetrics layout = misc_tab::CalculateLayout(contentRegion.x, runtime_preview_menu::g_activeChangelogTab);
-                            {
-                                const ChildFrame changelog = BeginContentChild("CHANGELOG", ImVec2(contentRegion.x, layout.changelogHeight), ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-                                const float changelogTabGap = 5.0f;
-                                const float changelogTabH = 40.0f;
-                                const float changelogSafeRight = ImGui::GetStyle().ScrollbarSize + 12.0f;
-                                const float changelogAvailW = ImMax(1.0f, ImGui::GetContentRegionAvail().x - changelogSafeRight);
-                                const float changelogTabW = ImMax(1.0f, ImFloor((changelogAvailW - changelogTabGap * 2.0f) / 3.0f));
-                                for (int i = 0; i < IM_ARRAYSIZE(misc_tab::kChangelogTabs); ++i) {
-                                    char buttonId[48] = {};
-                                    std::snprintf(buttonId, sizeof(buttonId), "##changelog_%d", i);
-                                    if (i > 0) ImGui::SameLine(0.0f, changelogTabGap);
-                                    if (misc_tab::DrawChangelogTab(buttonId, misc_tab::kChangelogIcons[i], misc_tab::kChangelogTabs[i], runtime_preview_menu::g_activeChangelogTab == i, ImVec2(changelogTabW, changelogTabH)))
-                                        runtime_preview_menu::g_activeChangelogTab = i;
-                                }
-                                misc_tab::ContentGap(12.0f);
-                                const misc_tab::ChangelogSelection activeSection = misc_tab::GetActiveChangelogSelection(runtime_preview_menu::g_activeChangelogTab);
-                                ImFont *activeIconFont = F107 ? F107 : ImGui::GetFont();
-                                ImGui::PushFont(activeIconFont);
-                                ImGui::TextColored(activeSection.color, "%s", activeSection.icon);
-                                ImGui::PopFont();
-                                ImGui::SameLine(0.0f, 8.0f);
-                                ImGui::TextColored(activeSection.color, "%s", activeSection.title);
-                                ImGui::SameLine(0.0f, 10.0f);
-                                ImGui::TextColored(c::text::text, "March 10, 2026");
-                                misc_tab::ContentGap(8.0f);
-                                misc_tab::DrawSectionItems(activeSection.items, activeSection.count);
-                                EndContentChild(changelog);
-                            }
-                            misc_tab::ContentGap(layout.rowGap);
-                            {
-                                const ChildFrame info = BeginContentChild("INFO", ImVec2(contentRegion.x, layout.infoHeight), ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-                                misc_tab::DrawInfoSummary();
-                                EndContentChild(info);
-                            }
-                            misc_tab::ContentGap(layout.rowGap);
-                            {
-                                const ChildFrame price = BeginContentChild("PRICELIST", ImVec2(contentRegion.x, layout.priceHeight), ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-                                misc_tab::DrawPriceSummary("##runtime_main_misc_prices");
-                                EndContentChild(price);
-                            }
-                            EndContentChild(misc);
-                        }
-
-                        if (runtimeState.activeTab == 6) {
-                            ImGuiStyle &style = ImGui::GetStyle();
-                            const float settingsColumnGap = ImClamp(contentRegion.x * 0.022f, 12.0f, 18.0f);
-                            const float settingsRowGap = 6.0f;
-                            const float leftChildWidth = ImMax(0.0f, ImFloor((contentRegion.x - settingsColumnGap) * 0.5f));
-                            const float rightChildWidth = ImMax(0.0f, contentRegion.x - settingsColumnGap - leftChildWidth);
-                            const float topChildHeight = ImMax(0.0f, ImFloor((childHeight - settingsRowGap) * 0.5f));
-                            const float bottomChildHeight = ImMax(0.0f, childHeight - settingsRowGap - topChildHeight);
-                            const float startX = ImGui::GetCursorPosX();
-                            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(style.ItemSpacing.x, settingsRowGap));
-                            ImGui::SetCursorPosX(startX);
-                            custom::BeginGroup();
-                            {
-                                const ChildFrame licenseChild = BeginContentChild("LICENSE INFO", ImVec2(leftChildWidth, topChildHeight));
-                                settings_tab::RenderLicenseCard();
-                                EndContentChild(licenseChild);
-                                const ChildFrame logoChild = BeginContentChild("LOGO SETTINGS", ImVec2(leftChildWidth, bottomChildHeight));
-                                settings_tab::RenderLogoCard();
-                                EndContentChild(logoChild);
-                            }
-                            custom::EndGroup();
-                            ImGui::SameLine(0.0f, settingsColumnGap);
-                            custom::BeginGroup();
-                            {
-                                const ChildFrame configChild = BeginContentChild("CONFIG MANAGEMENT", ImVec2(rightChildWidth, topChildHeight));
-                                settings_tab::RenderConfigCard();
-                                EndContentChild(configChild);
-                                const ChildFrame enhancementChild = BeginContentChild("ENHANCEMENT", ImVec2(rightChildWidth, bottomChildHeight));
-                                // PRIVACY sits at the top of this card so it is
-                                // visible without scrolling: "Block Report
-                                // Evidence" is ON by default.
-                                settings_tab::RenderPrivacyCard();
-                                ImGui::Separator();
-                                settings_tab::RenderEnhancementCard();
-                                EndContentChild(enhancementChild);
-                            }
-                            custom::EndGroup();
-                            ImGui::PopStyleVar();
-                        }
-
-                        ImGui::PopStyleVar();
-                        if (pushedContentFont) ImGui::PopFont();
-                    }
-                    ImGui::EndChild();
-                    runtime_preview_menu::ResetPopupFocusWindow();
-                    runtime_preview_menu::DrawPopupBackdropFocusLayer(ImGui::GetForegroundDrawList());
-                }
-
-                if (Config.ExtraMenu.WallHack) Patches.A1.Modify();
-                else Patches.A1.Restore();
-
-
-                if (Config.NewFeaturesMenu.NoCrouch) Patches.NoCrouch.Modify();
-                else Patches.NoCrouch.Restore();
-
-                // The two NewFeatures patches are EDGE-TRIGGERED: write once on
-                // state change, never while idle. Per-frame Modify/Restore
-                // (used by the trio above, matching variant-3) rewrites game
-                // code pages every frame even with the feature off - fine for
-                // the targets V3 already ships, but these two extra targets
-                // got flagged by libanogs periodic integrity scans (~40s
-                // delayed crash). Idle = zero memory writes.
-                static bool s_appliedNoHitFlinch = false;
-                static bool s_appliedNoDrift = false;
-                // The applied-flags only flip when the memory write actually
-                // succeeded - otherwise a failed Restore() left the patch live
-                // forever with the UI claiming it was off (the old "No Drift
-                // won't stop" bug, together with the removed Stable Scope
-                // always-zero breathe hook). Running every frame is safe:
-                // KittyMemory skips the write while patched state matches.
-                if (Config.NewFeaturesMenu.NoHitFlinch && !s_appliedNoHitFlinch) {
-                    if (Patches.NoHitFlinch.Modify()) s_appliedNoHitFlinch = true;
-                } else if (!Config.NewFeaturesMenu.NoHitFlinch && s_appliedNoHitFlinch) {
-                    if (Patches.NoHitFlinch.Restore()) s_appliedNoHitFlinch = false;
-                }
-                if (Config.NewFeaturesMenu.NoDrift && !s_appliedNoDrift) {
-                    if (Patches.NoDrift.Modify()) s_appliedNoDrift = true;
-                } else if (!Config.NewFeaturesMenu.NoDrift && s_appliedNoDrift) {
-                    if (Patches.NoDrift.Restore()) s_appliedNoDrift = false;
-                }
-                static bool s_appliedNoSlideFatigue = false;
-                if (Config.NewFeaturesMenu.NoSlideFatigue && !s_appliedNoSlideFatigue) {
-                    const bool ok = Patches.NoSlideFatigue.Modify()
-                                 && Patches.NoSlideFatiguePve.Modify();
-                    if (ok) s_appliedNoSlideFatigue = true;
-                } else if (!Config.NewFeaturesMenu.NoSlideFatigue && s_appliedNoSlideFatigue) {
-                    const bool ok = Patches.NoSlideFatigue.Restore()
-                                 && Patches.NoSlideFatiguePve.Restore();
-                    if (ok) s_appliedNoSlideFatigue = false;
-                }
-
-                // Same edge-triggered pattern for the four 8-byte getters that
-                // used to be inline hooks (they are patches now, see the
-                // Patches.* creation in Init_Thread / the Feats.h comments).
-                static bool s_appliedEm3Eye = false;
-                if (Config.ExtraMenu.RedWallhack && !s_appliedEm3Eye) {
-                    if (Patches.Em3Eye.Modify()) s_appliedEm3Eye = true;
-                } else if (!Config.ExtraMenu.RedWallhack && s_appliedEm3Eye) {
-                    if (Patches.Em3Eye.Restore()) s_appliedEm3Eye = false;
-                }
-                static bool s_appliedKineticArmor = false;
-                if (Config.ExtraMenu.Kinetic && !s_appliedKineticArmor) {
-                    if (Patches.KineticArmor.Modify()) s_appliedKineticArmor = true;
-                } else if (!Config.ExtraMenu.Kinetic && s_appliedKineticArmor) {
-                    if (Patches.KineticArmor.Restore()) s_appliedKineticArmor = false;
-                }
-                static bool s_appliedNoHipfireDelay = false;
-                if (Config.NewFeaturesMenu.NoHipfireDelay && !s_appliedNoHipfireDelay) {
-                    const bool ok = Patches.NoHipfireUseGetReadyTime.Modify()
-                                 && Patches.NoHipfireSpringFireGetReady.Modify();
-                    if (ok) s_appliedNoHipfireDelay = true;
-                } else if (!Config.NewFeaturesMenu.NoHipfireDelay && s_appliedNoHipfireDelay) {
-                    const bool ok = Patches.NoHipfireUseGetReadyTime.Restore()
-                                 && Patches.NoHipfireSpringFireGetReady.Restore();
-                    if (ok) s_appliedNoHipfireDelay = false;
-                }
+        auto Input_get_touchCount = (int (*)())(Class_Input_get_touchCount);
+        static bool s_touchDown = false;
+        if (Input_get_touchCount() > 0) {
+            auto Input_GetTouch = (Touch(*)(uintptr_t, int))(Class_Input_GetTouch);
+            auto Input_get_mousePosition = (Vector3(*)(uintptr_t))(Class_Input_get_mousePosition);
+            Touch t = Input_GetTouch(Config.ImGuiMenu.thiz, 0);
+            Vector3 mp = Input_get_mousePosition(Config.ImGuiMenu.thiz);
+            const float x = mp.x;
+            const float y = (float)get_height() - mp.y;
+            switch (t.m_Phase) {
+            case TouchPhase::Began:
+                nl_ui::OnTouch(nl_ui::Touch::Down, x, y);
+                s_touchDown = true;
+                break;
+            case TouchPhase::Stationary:
+            case TouchPhase::Moved:
+                if (!s_touchDown) { nl_ui::OnTouch(nl_ui::Touch::Down, x, y); s_touchDown = true; }
+                else nl_ui::OnTouch(nl_ui::Touch::Move, x, y);
+                break;
+            case TouchPhase::Ended:
+            case TouchPhase::Canceled:
+                nl_ui::OnTouch(nl_ui::Touch::Up, x, y);
+                s_touchDown = false;
+                break;
+            default: break;
             }
-            ImGui::End();
-            ImGui::PopStyleVar();
+        } else if (s_touchDown) {
+            nl_ui::OnTouch(nl_ui::Touch::Up, 0.0f, 0.0f);
+            s_touchDown = false;
         }
-
-        lanx_ime::Render();
-        ImGui::PopStyleVar();
-    }
-
-    auto Input_get_touchCount = (int (*)())(Class_Input_get_touchCount);
-    if (Input_get_touchCount() > 0) {
-        auto Input_GetTouch = (Touch(*)(uintptr_t, int))(Class_Input_GetTouch);
-        auto Input_get_mousePosition = (Vector3(*)(uintptr_t))(Class_Input_get_mousePosition);
-        Touch t = Input_GetTouch(Config.ImGuiMenu.thiz, 0);
-        Vector3 mp = Input_get_mousePosition(Config.ImGuiMenu.thiz);
-        float mx = mp.x;
-        float my = (float)get_height() - mp.y;
-        switch (t.m_Phase) {
-        case TouchPhase::Began:
-        case TouchPhase::Stationary:
-        case TouchPhase::Moved:
-            io->MouseDown[0] = true;
-            io->MousePos = ImVec2(mx, my);
-            break;
-        case TouchPhase::Ended:
-        case TouchPhase::Canceled:
-            io->MouseDown[0] = false;
-            g_clearMousePos = true;
-            break;
-        default: break;
-        }
-    } else {
-        if (g_clearMousePos) { io->MousePos = ImVec2(-FLT_MAX, -FLT_MAX); g_clearMousePos = false; }
-        io->MouseDown[0] = false;
     }
 
     UpdateCamoOverride();
@@ -2470,8 +1138,8 @@ if (runtimeState.activeTab == 4) {
         lastScreenshotTime = currentTime;
     }
 
-    ImGui::EndFrame();
     ImGui::Render();
+    nl_ui::EndFrame();
 
     bool rendered = false;
     if (HIDEESP) {
