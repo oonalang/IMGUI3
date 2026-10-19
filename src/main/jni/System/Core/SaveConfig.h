@@ -58,6 +58,7 @@ void SaveConfiguration(const std::string& filename) {
     // startup defaults on every launch.
     config["ExtraMenu"]["MythicAttachments"] = Config.ExtraMenu.MythicAttachments;
     config["ExtraMenu"]["BlockReportEvidence"] = Config.ExtraMenu.BlockReportEvidence;
+    config["ExtraMenu"]["BlockAceReport"] = Config.ExtraMenu.BlockAceReport;
     config["ExtraMenu"]["Blueprints"] = Config.ExtraMenu.Blueprints;
     config["ExtraMenu"]["AntiLogin"] = Config.ExtraMenu.AntiLogin;
 
@@ -159,6 +160,8 @@ bool LoadConfiguration(const std::string& filename) {
                 Config.ExtraMenu.MythicAttachments = config["ExtraMenu"]["MythicAttachments"].get<bool>();
             if (config["ExtraMenu"].contains("BlockReportEvidence"))
                 Config.ExtraMenu.BlockReportEvidence = config["ExtraMenu"]["BlockReportEvidence"].get<bool>();
+            if (config["ExtraMenu"].contains("BlockAceReport"))
+                Config.ExtraMenu.BlockAceReport = config["ExtraMenu"]["BlockAceReport"].get<bool>();
             if (config["ExtraMenu"].contains("Blueprints"))
                 Config.ExtraMenu.Blueprints = config["ExtraMenu"]["Blueprints"].get<bool>();
             if (config["ExtraMenu"].contains("AntiLogin"))

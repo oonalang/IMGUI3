@@ -206,6 +206,14 @@ sColorsESPBOT sColorsESPBOT{0};
         // evidence when another player reports you
         // (see System/Hooks/ReportBlock.h). ON by default.
         bool BlockReportEvidence = true;
+        // "Scrub ACE Report Data": the anti-cheat (libanogs / ACE) evidence the
+        // client hands to the game is emptied before the game can send it - the
+        // channel that makes a report stick rather than just be filed
+        // (see System/Hooks/ReportBlock.h). OFF by default ON PURPOSE: unlike
+        // the on-demand player-report pull, ACE's blob is a steady stream, so a
+        // client that never produces one is itself the anomaly. Turn it on per
+        // device, ideally test accounts first.
+        bool BlockAceReport = false;
         // "Anti-Login": refuses the forced relogin the client performs when
         // the account is accessed from another location (the 0E100004
         // CONNECT popup) - no popup, no self-logout (see

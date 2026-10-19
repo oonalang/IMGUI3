@@ -1126,6 +1126,14 @@ inline void InitializeAllHooks() {
     report_block::NoteLanded(report_block::GateBeginReport,    report_block::orig_BeginReportPlayerPull != nullptr);
     report_block::NoteLanded(report_block::GateFillReportData, report_block::orig_FillPlayerFullData != nullptr);
     report_block::NoteLanded(report_block::GateEndReport,      report_block::orig_EndReportPlayerPull != nullptr);
+    //-- Scrub ACE Report Data (HOME tab switch, OFF by default): the four
+    //   managed wrappers the game pulls the anti-cheat's evidence through.
+    //   See System/Hooks/ReportBlock.h - the native libanogs exports are
+    //   flattened thunks, the managed wrappers are the choke point.
+    report_block::NoteLanded(report_block::GateAceGetData,  report_block::orig_AceGetReportData != nullptr);
+    report_block::NoteLanded(report_block::GateAceGetData2, report_block::orig_AceGetReportData2 != nullptr);
+    report_block::NoteLanded(report_block::GateAceGetData3, report_block::orig_AceGetReportData3 != nullptr);
+    report_block::NoteLanded(report_block::GateAceGetData4, report_block::orig_AceGetReportData4 != nullptr);
 
     //-- Anti-Login (Account tab switch, OFF by default). The whole forced-
     //   relogin path (heartbeat executor, relogin-state verdict, popup

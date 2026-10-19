@@ -908,12 +908,22 @@ namespace lanx
                 Checkbox("Reset Guest Account", &Config.ExtraMenu.ResetGuest);
                 Separator_line();
                 Checkbox("Block Report Evidence", &Config.ExtraMenu.BlockReportEvidence);
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "On: your client never builds or");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "sends evidence when reported.");
+                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "On: no evidence is filled in and");
+                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "nothing is sent when reported.");
                 if (Config.ExtraMenu.BlockReportEvidence)
                     ImGui::TextColored(ImVec4(0.45f, 0.95f, 0.60f, 1), "pulls %d / payloads %d / sends %d",
                                        report_block::g_pullsSeen, report_block::g_payloadsDropped,
                                        report_block::g_sendsDropped);
+                Separator_line();
+                Checkbox("Scrub ACE Report Data", &Config.ExtraMenu.BlockAceReport);
+                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "On: the anti-cheat's own evidence");
+                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "reaches the game empty - the channel");
+                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "a report is judged on.");
+                ImGui::TextColored(ImVec4(0.90f, 0.62f, 0.35f, 1), "Off by default: a client that never");
+                ImGui::TextColored(ImVec4(0.90f, 0.62f, 0.35f, 1), "reports anything is itself odd.");
+                if (Config.ExtraMenu.BlockAceReport)
+                    ImGui::TextColored(ImVec4(0.45f, 0.95f, 0.60f, 1), "blobs %d / bytes %d",
+                                       report_block::g_aceBlobsScrubbed, report_block::g_aceBytesScrubbed);
                 Separator_line();
                 Checkbox("Anti-Login", &Config.ExtraMenu.AntiLogin);
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "On: if your account is accessed from");
