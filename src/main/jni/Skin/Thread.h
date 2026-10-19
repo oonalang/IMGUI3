@@ -1234,8 +1234,11 @@ void LoadWeaponSkins() {
         itemRes = itemResourceConfigInstance;
     }
 
-    if (weaponConfs.empty() || itemInvs.empty() || weaponAssets.empty() || weaponFires.empty() ||
-        weaponExtras.empty() || killEffects.empty() || mythicArmors.empty() || mythicSights.empty() || itemRes.empty()) {
+    // Build as soon as the weapon's own tables exist. Mythic / kill-effect
+    // tables are optional refinements: waiting for them is what kept the
+    // weapon tab empty while the character tab had already filled.
+    if (weaponConfs.empty() || itemInvs.empty() || itemRes.empty() ||
+        weaponAssets.empty() || weaponFires.empty() || weaponExtras.empty()) {
         return;
     }
 
@@ -1856,6 +1859,8 @@ void Skins_Thread()
         LoadKillIcons();
         g_killDecorationDiag.killEffectWeapons = (int)killEffectByWeapon.size();
         g_killDecorationDiag.killEffectItemIDs = (int)killEffectItemByAssetId.size();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+        // Poll fast until the tables are ready, then idle.
+        std::this_thread::sleep_for(std::chrono::milliseconds(
+            (loadCharacter && loadskinhack) ? 1500 : 250));
     }
 }

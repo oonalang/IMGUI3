@@ -12,7 +12,7 @@
 //   * The notification widget loop (CNotifications - not part of the menu)
 // Kept verbatim: the c_tabs sidebar, the c_animated_bg particle background,
 // Triangle_background(), the c_welcome_bg text animation, the State struct,
-// Style() and the Render() layout (850x596, centered).
+// Style() and the Render() layout (c::bg::size, centered).
 // ---------------------------------------------------------------------------
 
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
@@ -46,7 +46,7 @@ namespace lanx
     using namespace ImGui;
 
     // Page-switch travel (pixels) for the tab animation - see DrawTabs().
-    inline constexpr float kPageSlide = 160.f;
+    inline constexpr float kPageSlide = 48.f;
 
     // GetTickCount() replacement for the c_welcome_bg animation clock.
     inline unsigned int LanxNowMs()
@@ -157,7 +157,7 @@ namespace lanx
                 // page is readable almost immediately after a tab tap instead
                 // of sliding in from off-panel for a third of a second.
                 page_offset = ImLerp(page_offset, page_is_changing ? kPageSlide : 0.f,
-                    ImMin(1.f, ImGui::GetIO().DeltaTime * 26.f));
+                    ImMin(1.f, ImGui::GetIO().DeltaTime * 60.f));
             }
             ImGui::EndChild();
             ImGui::PopStyleVar();
@@ -167,7 +167,7 @@ namespace lanx
     struct c_animated_bg
     {
     private:
-        const int p_cout = 60;
+        const int p_cout = 32;
 
         // ONE engine for the whole particle field. LANX's original built a
         // fresh std::random_device (on Android that is an /dev/urandom open)
@@ -284,8 +284,8 @@ namespace lanx
 
                 // LANX used AddShadowCircle for the glow; the rim-draw below
                 // gives the same halo with two stacked filled circles.
-                window->DrawList->AddCircleFilled(particle[i].current_pos, particle[i].radius + 2.5f, utils::GetColorWithAlpha(c::anim::active, particle[i].alpha / 2), 36);
-                window->DrawList->AddCircleFilled(particle[i].current_pos, particle[i].radius, utils::GetColorWithAlpha(c::anim::active, particle[i].alpha), 36);
+                window->DrawList->AddCircleFilled(particle[i].current_pos, particle[i].radius + 2.5f, utils::GetColorWithAlpha(c::anim::active, particle[i].alpha / 2), 16);
+                window->DrawList->AddCircleFilled(particle[i].current_pos, particle[i].radius, utils::GetColorWithAlpha(c::anim::active, particle[i].alpha), 16);
             }
         }
     };
@@ -513,7 +513,7 @@ namespace lanx
     }
 
     // ---------------------------------------------------------------------------
-    // Render() - the LANX window: 850x596 centered, header block, sidebar tab
+    // Render() - the LANX window: c::bg::size (lanx_style.h) centered, header block, sidebar tab
     // switcher, nine tab pages (Combat / Visuals / Miscellaneous groups) and
     // the animated particle background.
     // ---------------------------------------------------------------------------
@@ -548,7 +548,7 @@ namespace lanx
             // ~0.25 at 120 fps) - the menu visibly snappier, no lerp ever
             // overshooting since every one of these animates a value towards a
             // target that never swings the other way mid-motion.
-            c::anim::speed = ImGui::GetIO().DeltaTime * 30.f;
+            c::anim::speed = ImGui::GetIO().DeltaTime * 45.f;
             c::second_color = utils::GetDarkColor(c::main_color);
 
             const ImVec2& pos = ImGui::GetWindowPos();
@@ -612,14 +612,18 @@ namespace lanx
 
             static const ImGuiColorEditFlags picker_flags = s.picker_flags;
 
-            // Page geometry. The sidebar occupies the first 180px of the 850px
+            // Page geometry. The sidebar occupies the first 180px of the
             // panel, so the columns start at a 200px cursor inset and have to
             // share what is left - sizing them from the whole content width
             // pushed the right-hand column under the panel edge and clipped
-            // it. Height keeps the 40px card cap inside the 596px panel.
+            // it. Height is derived from the panel instead of hardcoded: 85px
+            // of header/sidebar origin plus an 81px footer band (the dev-build
+            // label at size.y - 35 and the 20px window padding) = 166px. So
+            // growing c::bg::size.y in lanx_style.h grows the page cards by the
+            // same amount, and shrinking it can never run them past the footer.
             const float col_gap = ImGui::GetStyle().ItemSpacing.x * 3.0f;
             const float col_w = (c::bg::size.x - 40.0f - 200.0f - col_gap) * 0.5f;
-            const float full_h = 430;
+            const float full_h = c::bg::size.y - 166.0f;
 
             if (p_tabs.IsTabActive(0))
             {

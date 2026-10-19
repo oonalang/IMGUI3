@@ -198,7 +198,7 @@ inline bool IsThisAttachmentUnlock(void *instance, uint32_t blueprintWeaponId,
 }
 
 // ---- 4. the confirm-time validator ---------------------------------------
-// dump.cs 2045791: bool IsAttachUnlock(uint weaponID, uint attachID).
+// dump.cs: LoadoutWeaponsSyncAttachPopupController.IsAttachUnlock(uint weaponID, uint attachID).
 inline bool (*orig_IsAttachUnlock)(void *instance, uint32_t weaponID, uint32_t attachID) = nullptr;
 inline bool IsAttachUnlock(void *instance, uint32_t weaponID, uint32_t attachID)
 {

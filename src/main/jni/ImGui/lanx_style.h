@@ -104,7 +104,14 @@ namespace lanx
         inline namespace bg
         {
             inline ImVec4 background = rgba(22, 22, 22, 0.71);
-            inline ImVec2 size = ImVec2(850, 596);
+            // The whole menu panel: width x height in screen pixels. This is the
+            // ONE place to change the menu size - Render() centres the window on
+            // it, the background / header / footer are drawn from it, and the
+            // page cards derive their height from size.y (see full_h in
+            // lanx_menu.h). Width is shared by the 180px sidebar and the two
+            // content columns, so widen it in steps of ~20px; height can be any
+            // value that still fits the game's render surface.
+            inline ImVec2 size = ImVec2(850, 660);
             inline float rounding = 15.f;
         }
 

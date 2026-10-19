@@ -14,7 +14,7 @@ namespace report_block
     enum Gate
     {
         GateDoReport = 0,       // ReportWindowController.DoReport
-        GateDoReportPlayer,     // VoiceSystem.DoReportPlayer(string[] openids)
+        GateDoReportPlayer,     // GVoiceSystem.DoReportPlayer(string[] openids)
         GateBeginReport,        // BeginReportPlayerPull(...)
         GateFillReportData,     // LocalPlayerMoveChecker.FillPlayerFullData(request)
         GateEndReport,          // EndReportPlayerPull(request)
