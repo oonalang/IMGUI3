@@ -1013,6 +1013,21 @@ inline void InitializeAllHooks() {
     NotePlacableHookLanded(PlcHookTrapChip, orig_TrapChipTick != nullptr);
     NotePlacableHookLanded(PlcHookTripWire, orig_TripWireTick != nullptr);
 
+    // Route 3: the game's own live-projectile table. PushProjectile is called
+    // for every projectile that enters BaseGame.m_WeaponProjectileList, so a
+    // device placed by somebody else is registered even if its Tick override
+    // is never called on this client - the failure the two Tick routes alone
+    // could not rule out. RemoveWeaponProjectile drops the marker with it.
+    // RVAs from dump.cs GR .57 (BaseGame @702371: PushProjectile 0x9CBEE0C,
+    // RemoveWeaponProjectile 0x9CBDAC4); see PlacableEsp.h.
+    DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::PushProjectileRva),
+          (void *)&hook_PushProjectile,
+          (void **)&orig_PushProjectile);
+    DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::RemoveProjectileRva),
+          (void *)&hook_RemoveWeaponProjectile,
+          (void **)&orig_RemoveWeaponProjectile);
+    NotePlacablePushLanded(orig_PushProjectile != nullptr);
+
     // The same tracker also rides the base WeaponProjectile.Tick hook that
     // ThrowableAlert installed above, so a device whose own Tick chains to the
     // base is still seen (see PlacableEsp.h).
@@ -1109,6 +1124,7 @@ inline void InitializeAllHooks() {
     report_block::NoteLanded(report_block::GateDoReport,       report_block::orig_DoReport != nullptr);
     report_block::NoteLanded(report_block::GateDoReportPlayer, report_block::orig_DoReportPlayer != nullptr);
     report_block::NoteLanded(report_block::GateBeginReport,    report_block::orig_BeginReportPlayerPull != nullptr);
+    report_block::NoteLanded(report_block::GateFillReportData, report_block::orig_FillPlayerFullData != nullptr);
     report_block::NoteLanded(report_block::GateEndReport,      report_block::orig_EndReportPlayerPull != nullptr);
 
     //-- Anti-Login (Account tab switch, OFF by default). The whole forced-

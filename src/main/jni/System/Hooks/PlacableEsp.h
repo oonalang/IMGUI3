@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
+#include <vector>
 #include <unordered_map>
 
 // ---------------------------------------------------------------------------
@@ -12,65 +14,104 @@
 // way players are (overlay marker + label + distance).
 //
 // Every one of these is a WeaponProjectile subclass (dump.cs, GR .57 -
-// dumps/dump.cs in this repo):
+// the dumps dataset this file was checked against):
 //
-//   WeaponProjectile_TripMine         tripmine          (own Tick)
-//   WeaponProjectile_C4bomb           C4                (Stick Tick)
-//   WeaponProjectile_TankBattleC4     C4 (tank battle)  (Stick Tick)
-//   WeaponProjectile_TankMine         tank mine         (Stick Tick)
-//   WeaponProjectile_TrophySystem     trophy system     (Stick Tick)
-//   WeaponProjectile_TacTripWire      trip sensor       (Stick Tick)
-//   WeaponProjectile_TrapChipMine     trap chip mine    (own Tick)
-//   WeaponProjectile_ElectricTripWire electric wire     (own Tick)
+//   WeaponProjectile_TripMine         tripmine          (own Tick @0x9B5B850)
+//   WeaponProjectile_C4bomb           C4                (Stick, no own Tick)
+//   WeaponProjectile_TankBattleC4     C4 (tank battle)  (Stick, no own Tick)
+//   WeaponProjectile_TankMine         tank mine         (Stick, no own Tick)
+//   WeaponProjectile_TrophySystem     trophy system     (Stick, no own Tick)
+//   WeaponProjectile_TacTripWire      trip sensor       (Stick, no own Tick)
+//   WeaponProjectile_TrapChipMine     trap chip mine    (own Tick @0x9B58A10)
+//   WeaponProjectile_ElectricTripWire electric wire     (own Tick @0xB201650)
 //
-// WHERE THE INSTANCES COME FROM - two independent routes, because the first
-// report on device was "the placed ESP is not working" and a single route is a
-// single point of failure:
+// WHY THERE ARE THREE ROUTES INTO THE SAME MAP
 //
-//   1. the four Tick entry points below, which is the exact function each class
-//      dispatches to (WeaponProjectile_TripMine.Tick @0x9B5B850,
-//      _Stick.Tick @0x956D4CC, _TrapChipMine.Tick @0x9B58A10,
-//      _ElectricTripWire.Tick @0xB201650 - all four re-checked in dumps/dump.cs
-//      for this file), and
-//   2. the BASE WeaponProjectile.Tick hook ThrowableAlert already installed
-//      (PlacableOnProjectileTick, wired to it in Feats.h). A subclass
-//      override that chains into the base is seen there even if its own hook
-//      address were to drift between game builds.
-//   Feeding the same map from both is free: an instance is keyed by its pointer,
-//   so a doubled tick just writes the same entry twice.
+// The first on-device report was "the placed ESP does nothing" with four
+// subclass Tick hooks installed; the second added the base
+// WeaponProjectile.Tick hook and STILL drew nothing. Hook-only tracking has
+// two independent single points of failure - the RVA landing at all, and the
+// game actually calling that particular override on this client for a device
+// that was placed by somebody else - so the tracker now also listens to the
+// game's OWN live-projectile table:
 //
-// The runtime class name (Il2CppClass::name, klass + 0x10 - same layout as
-// Il2CppClass_1 in IL2Cpp/Il2Cpp.h) tells us which device an instance is, so a
-// thrown NA45 / thermite / grapple passing through the hooks is simply not in
-// the table and gets ignored. The name match is NORMALISED (lower-cased, every
-// non-alphanumeric character dropped) and done on substrings, so a build that
-// renames the class to "WeaponProjectile_ImprovisedTripMine" or moves it into a
-// namespace still classifies instead of silently dropping the device - the
-// exact failure that reads as "the feature does nothing".
+//   1. Tick overrides                 (four RVAs, re-verified against the dump)
+//   2. base WeaponProjectile.Tick     (owned by ThrowableAlert, calls the sink)
+//   3. BaseGame.PushProjectile        @0x9CBEE0C - every projectile that enters
+//      and BaseGame.RemoveWeaponProjectile @0x9CBDAC4 - and leaves
+//      BaseGame.m_WeaponProjectileList (dump: BaseGame @702371, field
+//      `protected List<WeaponProjectile> m_WeaponProjectileList`, getter
+//      `get_WeaponProjectileList()` @0x9CB0490).
 //
-// Tracking mirrors ThrowableAlert: hooks register live instances in a map
-// keyed by object pointer, entries expire after 360 unseen ticks, and the
-// draw pass only reads what the track pass stored (plus the local camp).
+// Route 3 is event driven and does not depend on any projectile Tick running.
+// On top of it the draw pass ALSO walks the live list once per frame
+// (PlacableScanLiveList, through the dump-verified getter - the list field's
+// offset itself is one of the obfuscated 0x46464646 decoys, the getter is
+// not). That walk needs no hook at all: even if every DobbyHook in here
+// failed, a device in the game's table is seen, classified and drawn. It also
+// refreshes the position and owner camp every frame the device is alive.
 //
-// ON-DEVICE DIAGNOSTICS (the ESP page prints all of it, see lanx_menu.h): which
-// hooks landed at install time, how many ticks were seen, how many of those
-// classified, how many are tracked right now, how many markers the last draw
-// pass emitted, and the name of the last class that classified. That line is how
-// a "not working" report is turned into a named cause instead of a guess.
+// WHERE THE POSITION COMES FROM
+//
+// WeaponProjectile.get_Position() @0xB1F087C (dump 1099578, virtual Slot 35 -
+// none of the placable subclasses override it, so the base implementation is
+// the right one). If that answers zero / NaN / a value off the map, the
+// fallback is the device's own actor collider:
+// WeaponProjectile.m_GrenadeActor @0x1C8 -> GrenadeActor.HitCollider @0x110
+// (BoxCollider) -> Component.get_transform @0x50291B0 ->
+// Transform.get_position @0x507C19C. The old code dropped a device whose
+// position read failed, which is another way "nothing is drawn" happens
+// without a crash and without a log line; now it falls back and only skips a
+// marker when BOTH reads fail.
+//
+// Tracking is keyed by object pointer, entries are refreshed by routes 1-3,
+// and they expire either after 360 unseen tracking writes (the old rule) or
+// after 240 rendered frames without a refresh (a device the game removed but
+// that never reached the Remove hook).
+//
+// THREADING. The Tick / push / remove hooks run on the game thread, the draw
+// pass (and its live-table walk) on the render thread. The map is therefore
+// guarded by a mutex, and the draw pass takes a SNAPSHOT of the entries it is
+// going to draw instead of iterating the live map while the game thread
+// inserts into it - the old code iterated and mutated the same unordered_map
+// from two threads, which is a heap-corruption crash waiting for a busy frame.
+// No game function is ever called with the lock held.
+//
+// ON-DEVICE DIAGNOSTICS (the ESP page prints all of it, see lanx_menu.h):
+// which routes landed at install time, how many calls each route delivered,
+// how many classified, how many are tracked right now, how many markers the
+// last draw pass emitted, how many positions could not be resolved, and the
+// name of the last class that classified. "Not working" then has a named
+// cause - no route, no calls, no classified name, no position, or nothing in
+// range - instead of being a guess.
 // ---------------------------------------------------------------------------
 
 namespace PlacableCfg {
-    // libunity.so RVAs, dump.cs GR .57 (dumps/dump.cs)
+    // libunity.so RVAs, dump.cs GR .57
     constexpr uintptr_t StickTickRva    = 0x956D4CC; // WeaponProjectile_Stick.Tick(float)
     constexpr uintptr_t TripMineTickRva = 0x9B5B850; // WeaponProjectile_TripMine.Tick(float)
     constexpr uintptr_t TrapChipTickRva = 0x9B58A10; // WeaponProjectile_TrapChipMine.Tick(float)
     constexpr uintptr_t TripWireTickRva = 0xB201650; // WeaponProjectile_ElectricTripWire.Tick(float)
+
+    // The game's live projectile table (route 3, no Tick involved).
+    constexpr uintptr_t ProjectileListRva   = 0x9CB0490; // BaseGame.get_WeaponProjectileList()
+    constexpr uintptr_t PushProjectileRva   = 0x9CBEE0C; // BaseGame.PushProjectile(WeaponProjectile)
+    constexpr uintptr_t RemoveProjectileRva = 0x9CBDAC4; // BaseGame.RemoveWeaponProjectile(WeaponProjectile)
+    constexpr int       MaxListScan         = 128;       // hard cap per frame
+
+    // Position fallback through the device actor (see the file head).
+    constexpr uintptr_t GrenadeActorOff          = 0x1C8; // WeaponProjectile.m_GrenadeActor
+    constexpr uintptr_t HitColliderOff           = 0x110; // GrenadeActor.HitCollider
+    constexpr uintptr_t ComponentGetTransformRva = 0x50291B0;
+    constexpr uintptr_t TransformGetPositionRva  = 0x507C19C;
+
     // WeaponProjectile field offsets, dump.cs GR .57
     constexpr uintptr_t ExplodedOff  = 0xA1;  // bHasExplode
     constexpr uintptr_t DestroyedOff = 0x18D; // mIsDestroyed
     constexpr uintptr_t OwnerCampOff = 0xB0;  // m_SpawnOwnerCamp
     constexpr float MaxDist  = 100.0f;        // draw distance cap (m)
-    constexpr float WarnDist = 12.0f;         // hostile pulse distance (m)
+    constexpr float WarnDist = 12.0f;         // hostile pulse / warning distance (m)
+    constexpr uint64_t ExpireFrames = 240;    // rendered frames without a refresh
 }
 
 // Which of the four Tick hooks this install landed. Written once by Feats.h
@@ -87,39 +128,78 @@ enum PlacableHook
 
 inline bool g_placableHookLanded[PlcHookCount] = {false, false, false, false};
 
+// Route 3's install verdict, same convention (set by Feats.h).
+inline bool g_placablePushLanded = false;
+
 inline void NotePlacableHookLanded(PlacableHook hook, bool landed)
 {
     if (landed && hook >= 0 && hook < PlcHookCount) g_placableHookLanded[hook] = true;
 }
 
+inline void NotePlacablePushLanded(bool landed)
+{
+    if (landed) g_placablePushLanded = true;
+}
+
+// Which route delivered a tracking call. Only used for the diagnostics line.
+enum PlacableRoute
+{
+    PlcRouteTick = 0,   // one of the Tick hooks / the base Tick sink
+    PlcRoutePush,       // BaseGame.PushProjectile
+    PlcRouteList,       // the per-frame walk of get_WeaponProjectileList()
+    PlcRouteCount
+};
+
 // Game thread writes, render thread reads - plain counters, racy but harmless
 // (same convention as the triggerbot's TriggerbotDiag).
 struct PlacableDiag
 {
-    int  hookCalls;      // ticks that reached the tracker (toggle ON, live ptr)
+    int  tickCalls;      // Tick routes delivered
+    int  pushed;         // BaseGame.PushProjectile registrations
+    int  scanned;        // live-list walk registrations
     int  classified;     // ... whose class name is a known device
     int  tracked;        // lifetime writes into the map
     int  drawn;          // markers emitted by the LAST draw pass
     int  nameFailed;     // class name unreadable (stale/moved object)
+    int  posFailed;      // position unreadable by BOTH sources (LAST draw pass)
     char lastClass[48];  // last class name that classified ("" = none yet)
 };
 
 inline PlacableDiag g_placableDiag{};
 
 struct PlacableInfo {
-    Vector3 pos;
     const char *label;
     int camp;
-    uint64_t seen;
+    uint64_t seen;     // value of g_PlacableSeen at the last tracking write
+    uint64_t frame;    // value of g_PlacableFrame at the last tracking write
+};
+
+// What the draw pass copies out (under the lock) and draws from (outside it).
+struct PlacableDrawItem {
+    uintptr_t key;     // the projectile instance
+    const char *label;
+    int camp;
 };
 
 inline std::unordered_map<uintptr_t, PlacableInfo> g_Placables;
+inline std::mutex g_PlacableMutex;
 inline uint64_t g_PlacableSeen = 0;
+inline uint64_t g_PlacableFrame = 0;
 
 inline void (*orig_StickTick)(void *, float) = nullptr;
 inline void (*orig_TripMineTick)(void *, float) = nullptr;
 inline void (*orig_TrapChipTick)(void *, float) = nullptr;
 inline void (*orig_TripWireTick)(void *, float) = nullptr;
+
+// Route 3 hooks (installed by Feats.h).
+inline void (*orig_PushProjectile)(void *, void *) = nullptr;
+inline bool (*orig_RemoveWeaponProjectile)(void *, void *) = nullptr;
+
+// Test seam / lazy resolver for BaseGame.get_WeaponProjectileList(). Feats.h
+// leaves it null and the first draw resolves it from the dump RVA; a host test
+// points it at a fake table (there is no libunity.so on the host, so the real
+// resolver answers 0).
+inline void *(*g_placableListGetter)(void *game) = nullptr;
 
 inline bool PlacableEspOn()
 {
@@ -222,17 +302,28 @@ inline void PlacableRememberClass(const char *className)
     g_placableDiag.lastClass[i] = '\0';
 }
 
-inline void TrackPlacable(void *proj)
+// Register / refresh one projectile. Deliberately does NOT read the position
+// here: the push hook runs inside the game's spawn path (where a half-built
+// simulator must not be dereferenced), and the Tick hooks run right after the
+// game's own Tick has possibly destroyed the object. The draw pass resolves
+// the position from the live object every frame instead (PlacableResolvePos),
+// which is both safer and self-healing.
+inline void TrackPlacable(void *proj, PlacableRoute route = PlcRouteTick)
 {
     if (!PlacableEspOn())
         return;
     if (!Tools::IsPtrValid(proj))
         return;
 
-    g_placableDiag.hookCalls++;
+    switch (route) {
+        case PlcRoutePush: g_placableDiag.pushed++; break;
+        case PlcRouteList: g_placableDiag.scanned++; break;
+        default:           g_placableDiag.tickCalls++; break;
+    }
 
     const uintptr_t base = (uintptr_t)proj;
     if (*(bool *)(base + PlacableCfg::ExplodedOff) || *(bool *)(base + PlacableCfg::DestroyedOff)) {
+        std::lock_guard<std::mutex> lock(g_PlacableMutex);
         g_Placables.erase(base);
         return;
     }
@@ -250,15 +341,14 @@ inline void TrackPlacable(void *proj)
     g_placableDiag.classified++;
     PlacableRememberClass(className);
 
-    Vector3 pos = GetThrowPos(proj); // WeaponProjectile.get_Position (ThrowableAlert)
-    if (pos == Vector3::zero())
-        return;
+    const int camp = *(int *)(base + PlacableCfg::OwnerCampOff);
 
+    std::lock_guard<std::mutex> lock(g_PlacableMutex);
     PlacableInfo &info = g_Placables[base];
-    info.pos = pos;
     info.label = label;
-    info.camp = *(int *)(base + PlacableCfg::OwnerCampOff);
+    info.camp = camp;
     info.seen = ++g_PlacableSeen;
+    info.frame = g_PlacableFrame;
     g_placableDiag.tracked++;
 }
 
@@ -267,7 +357,121 @@ inline void TrackPlacable(void *proj)
 // entry point (see the file head). Same on/off gate, same checks.
 inline void PlacableOnProjectileTick(void *proj)
 {
-    TrackPlacable(proj);
+    TrackPlacable(proj, PlcRouteTick);
+}
+
+// ---------------------------------------------------------------------------
+// Position
+// ---------------------------------------------------------------------------
+
+// A position is usable when it is finite, on the map, and not the all-zero
+// value get_Position answers for an object whose simulator is gone.
+inline bool PlacablePosUsable(const Vector3 &p)
+{
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
+        return false;
+    if (fabsf(p.x) > 20000.0f || fabsf(p.y) > 20000.0f || fabsf(p.z) > 20000.0f)
+        return false;
+    return !(p.x == 0.0f && p.y == 0.0f && p.z == 0.0f);
+}
+
+// Fallback: the device actor's own collider. WeaponProjectile.m_GrenadeActor
+// @0x1C8 -> GrenadeActor.HitCollider @0x110 -> Component.get_transform ->
+// Transform.get_position. Used only when get_Position answered nothing usable.
+inline Vector3 PlacablePosFromCollider(void *proj)
+{
+    if (!Tools::IsPtrValid(proj))
+        return Vector3::zero();
+
+    uintptr_t actor = *(uintptr_t *)((uintptr_t)proj + PlacableCfg::GrenadeActorOff);
+    if (!Tools::IsPtrValid((void *)actor))
+        return Vector3::zero();
+
+    uintptr_t collider = *(uintptr_t *)(actor + PlacableCfg::HitColliderOff);
+    if (!Tools::IsPtrValid((void *)collider))
+        return Vector3::zero();
+
+    using GetTransformFn = void *(*)(void *);
+    using GetPositionFn  = Vector3 (*)(void *);
+    static GetTransformFn getTransform = nullptr;
+    static GetPositionFn  getPosition  = nullptr;
+    // Resolve lazily and retry until it answers: a static that latched a 0
+    // before libunity.so was mapped would disable this fallback for the rest
+    // of the match.
+    if (getTransform == nullptr)
+        getTransform = (GetTransformFn)getAbsoluteAddress("libunity.so", PlacableCfg::ComponentGetTransformRva);
+    if (getPosition == nullptr)
+        getPosition = (GetPositionFn)getAbsoluteAddress("libunity.so", PlacableCfg::TransformGetPositionRva);
+    if (getTransform == nullptr || getPosition == nullptr)
+        return Vector3::zero();
+
+    void *transform = getTransform((void *)collider);
+    if (!Tools::IsPtrValid(transform))
+        return Vector3::zero();
+
+    return getPosition(transform);
+}
+
+inline Vector3 PlacableResolvePos(void *proj)
+{
+    if (!Tools::IsPtrValid(proj))
+        return Vector3::zero();
+
+    Vector3 pos = GetThrowPos(proj); // WeaponProjectile.get_Position (ThrowableAlert)
+    if (PlacablePosUsable(pos))
+        return pos;
+
+    pos = PlacablePosFromCollider(proj);
+    return PlacablePosUsable(pos) ? pos : Vector3::zero();
+}
+
+// ---------------------------------------------------------------------------
+// Route 3: the game's own live-projectile table
+// ---------------------------------------------------------------------------
+
+// One walk of BaseGame.get_WeaponProjectileList(). Called from the draw pass
+// (render thread) once per frame. Every read is validated and the count is
+// clamped, so a table mutating under us costs a skipped entry, not a crash.
+//
+// Returns -1 when the table is not readable at all (getter not resolved, no
+// match, no list) and the number of entries walked otherwise. The draw pass
+// uses that distinction: only a table that WAS walked tells us an unrefreshed
+// entry is really gone.
+inline int PlacableScanLiveList()
+{
+    if (g_placableListGetter == nullptr) {
+        using ListGetterFn = void *(*)(void *);
+        g_placableListGetter = (ListGetterFn)getAbsoluteAddress("libunity.so", PlacableCfg::ProjectileListRva);
+    }
+    if (g_placableListGetter == nullptr)
+        return -1;
+
+    void *game = (void *)GamePlay::get_MatchGame();
+    if (!Tools::IsPtrValid(game))
+        return -1;
+
+    Il2CppList<void *> *list = (Il2CppList<void *> *)g_placableListGetter(game);
+    if (!Tools::IsPtrValid((void *)list))
+        return -1;
+    if (!Tools::IsPtrValid((void *)list->items))
+        return -1;
+
+    int count = list->size;
+    if (count <= 0)
+        return 0;
+    if (count > PlacableCfg::MaxListScan)
+        count = PlacableCfg::MaxListScan;
+
+    void **items = list->items->getPointer();
+    int seen = 0;
+    for (int i = 0; i < count; ++i) {
+        void *proj = items[i];
+        if (!Tools::IsPtrValid(proj))
+            continue;
+        TrackPlacable(proj, PlcRouteList);
+        ++seen;
+    }
+    return seen;
 }
 
 inline int PlacableLocalCamp()
@@ -285,14 +489,60 @@ inline int PlacableLocalCamp()
     return *(int *)(info + 0x58); // AttackableTargetInfo.m_Camp
 }
 
+// ---------------------------------------------------------------------------
+// Draw
+// ---------------------------------------------------------------------------
+
 inline void DrawPlacableESP(ImDrawList *draw, int width, int height, const Vector3 &localPos)
 {
     g_placableDiag.drawn = 0;
+    g_placableDiag.posFailed = 0;
 
     if (!PlacableEspOn()) {
+        std::lock_guard<std::mutex> lock(g_PlacableMutex);
         if (!g_Placables.empty())
             g_Placables.clear();
         return;
+    }
+
+    ++g_PlacableFrame;
+
+    // Route 3: even with every hook dead, the game's own table still lists
+    // every live projectile. This is also what keeps label/camp fresh.
+    const bool listWalked = PlacableScanLiveList() >= 0;
+
+    // Expire, then copy out what is left: the game thread keeps writing the
+    // live map (Tick / push / remove hooks), so iteration and drawing happen
+    // on a snapshot instead of on the map itself.
+    std::vector<PlacableDrawItem> items;
+    {
+        std::lock_guard<std::mutex> lock(g_PlacableMutex);
+        for (auto it = g_Placables.begin(); it != g_Placables.end();) {
+            PlacableInfo &info = it->second;
+            const uintptr_t key = it->first;
+
+            // Expiry: 360 tracking writes (the original rule) or - only when
+            // the game's table was actually walked this frame - 4 s of rendered
+            // frames without a refresh, which catches a device the game removed
+            // without ever reaching the Remove hook. When the table is NOT
+            // readable the frame rule is skipped, so a push-only route never
+            // loses a live device just because nothing re-observed it.
+            if (g_PlacableSeen > info.seen + 360 ||
+                (listWalked && g_PlacableFrame > info.frame + PlacableCfg::ExpireFrames)) {
+                it = g_Placables.erase(it);
+                continue;
+            }
+
+            // The device itself says whether it is gone. Cheaper and safer than
+            // calling get_Position on an object the game has already exploded.
+            if (*(bool *)(key + PlacableCfg::ExplodedOff) || *(bool *)(key + PlacableCfg::DestroyedOff)) {
+                it = g_Placables.erase(it);
+                continue;
+            }
+
+            items.push_back(PlacableDrawItem{key, info.label, info.camp});
+            ++it;
+        }
     }
 
     Camera *cam = Camera::get_main();
@@ -300,82 +550,129 @@ inline void DrawPlacableESP(ImDrawList *draw, int width, int height, const Vecto
         return;
 
     const int localCamp = PlacableLocalCamp();
-    (void)width;
 
-    for (auto it = g_Placables.begin(); it != g_Placables.end();) {
-        PlacableInfo &info = it->second;
-        if (g_PlacableSeen > info.seen + 360) {
-            it = g_Placables.erase(it);
+    // Nearest hostile device for the on-screen warning below.
+    const char *warnLabel = nullptr;
+    float warnDist = 0.0f;
+
+    for (const PlacableDrawItem &item : items) {
+        const Vector3 pos = PlacableResolvePos((void *)item.key);
+        if (pos == Vector3::zero()) {
+            g_placableDiag.posFailed++;
             continue;
         }
 
-        float dist = Vector3::Distance(localPos, info.pos);
-        if (dist > PlacableCfg::MaxDist) {
-            ++it;
+        const float dist = Vector3::Distance(localPos, pos);
+        if (dist > PlacableCfg::MaxDist)
+            continue;
+
+        const bool friendly = (localCamp > 0 && item.camp == localCamp);
+        if (!friendly && dist <= PlacableCfg::WarnDist && (warnLabel == nullptr || dist < warnDist)) {
+            warnLabel = item.label;
+            warnDist = dist;
+        }
+
+        ImVec2 screen;
+        if (!ThrowToScreen(cam, pos, height, screen)) {
             continue;
         }
 
-        ImVec2 pos;
-        if (!ThrowToScreen(cam, info.pos, height, pos)) {
-            ++it;
-            continue;
-        }
-
-        const bool friendly = (localCamp > 0 && info.camp == localCamp);
         const ImU32 color = friendly ? IM_COL32(90, 255, 170, 255) : IM_COL32(255, 96, 48, 255);
         const ImU32 fill  = friendly ? IM_COL32(90, 255, 170, 190) : IM_COL32(255, 96, 48, 190);
 
         // Diamond marker: the through-wall highlight for the device.
-        const float r = 7.0f;
-        const ImVec2 top(pos.x, pos.y - r), right(pos.x + r, pos.y);
-        const ImVec2 bottom(pos.x, pos.y + r), left(pos.x - r, pos.y);
+        const float r = friendly ? 6.0f : 8.0f;
+        const ImVec2 top(screen.x, screen.y - r), right(screen.x + r, screen.y);
+        const ImVec2 bottom(screen.x, screen.y + r), left(screen.x - r, screen.y);
         draw->AddQuadFilled(top, right, bottom, left, fill);
         draw->AddQuad(top, right, bottom, left, IM_COL32(0, 0, 0, 255), 1.5f);
-        draw->AddCircleFilled(pos, 2.0f, IM_COL32(255, 255, 255, 255));
+        draw->AddCircleFilled(screen, 2.0f, IM_COL32(255, 255, 255, 255));
 
         // Nearby hostile devices pulse so they register in peripheral vision.
         if (!friendly && dist <= PlacableCfg::WarnDist) {
             float pulse = 11.0f + 3.5f * sinf((float)ImGui::GetTime() * 6.0f);
-            draw->AddCircle(pos, pulse, color, 28, 1.6f);
+            draw->AddCircle(screen, pulse, color, 28, 1.6f);
         }
 
         char text[80];
-        snprintf(text, sizeof(text), "%s | %dm", info.label, (int)dist);
+        snprintf(text, sizeof(text), "%s | %dm", item.label, (int)dist);
         const float fontSize = 16.0f;
         ImVec2 textSize = ImGui::CalcTextSize(text);
         textSize.x *= (fontSize / ImGui::GetFontSize());
-        DrawTextWithBorder1(draw, text, {pos.x - textSize.x * 0.5f, pos.y - 28.0f},
+        DrawTextWithBorder1(draw, text, {screen.x - textSize.x * 0.5f, screen.y - 28.0f},
                             color, IM_COL32(0, 0, 0, 255), fontSize);
 
         g_placableDiag.drawn++;
-        ++it;
+    }
+
+    // A device under your feet still warns when it is off-screen or behind
+    // you - which is exactly the trip sensor / C4 case that "nothing showed"
+    // ended with a respawn. Fixed position under the crosshair, one line.
+    if (warnLabel != nullptr) {
+        char warn[96];
+        snprintf(warn, sizeof(warn), "%s  %.0fm", warnLabel, warnDist);
+        const float fontSize = 20.0f;
+        ImVec2 textSize = ImGui::CalcTextSize(warn);
+        textSize.x *= (fontSize / ImGui::GetFontSize());
+        DrawTextWithBorder1(draw, warn,
+                            {((float)width - textSize.x) * 0.5f, (float)height * 0.5f + 70.0f},
+                            IM_COL32(255, 96, 48, 255), IM_COL32(0, 0, 0, 255), fontSize);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Hooks
+// ---------------------------------------------------------------------------
 
 inline void hook_StickTick(void *instance, float deltaTime)
 {
     if (orig_StickTick)
         orig_StickTick(instance, deltaTime);
-    TrackPlacable(instance);
+    TrackPlacable(instance, PlcRouteTick);
 }
 
 inline void hook_TripMineTick(void *instance, float deltaTime)
 {
     if (orig_TripMineTick)
         orig_TripMineTick(instance, deltaTime);
-    TrackPlacable(instance);
+    TrackPlacable(instance, PlcRouteTick);
 }
 
 inline void hook_TrapChipTick(void *instance, float deltaTime)
 {
     if (orig_TrapChipTick)
         orig_TrapChipTick(instance, deltaTime);
-    TrackPlacable(instance);
+    TrackPlacable(instance, PlcRouteTick);
 }
 
 inline void hook_TripWireTick(void *instance, float deltaTime)
 {
     if (orig_TripWireTick)
         orig_TripWireTick(instance, deltaTime);
-    TrackPlacable(instance);
+    TrackPlacable(instance, PlcRouteTick);
+}
+
+// BaseGame.PushProjectile(WeaponProjectile): the game's own registration point
+// for the live-projectile table. Runs after the original so the object is
+// fully in the table; reads nothing that the spawn path might not have built
+// yet (see TrackPlacable).
+inline void hook_PushProjectile(void *game, void *projectile)
+{
+    if (orig_PushProjectile)
+        orig_PushProjectile(game, projectile);
+    TrackPlacable(projectile, PlcRoutePush);
+}
+
+// BaseGame.RemoveWeaponProjectile(WeaponProjectile): drop the marker the
+// moment the game drops the projectile, instead of waiting for expiry.
+inline bool hook_RemoveWeaponProjectile(void *game, void *projectile)
+{
+    const bool removed = orig_RemoveWeaponProjectile
+                             ? orig_RemoveWeaponProjectile(game, projectile)
+                             : false;
+    if (removed && projectile != nullptr) {
+        std::lock_guard<std::mutex> lock(g_PlacableMutex);
+        g_Placables.erase((uintptr_t)projectile);
+    }
+    return removed;
 }

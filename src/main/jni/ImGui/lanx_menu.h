@@ -781,12 +781,15 @@ namespace lanx
                 Checkbox("Grenade Warning", &Config.ESPMenu.GrenadeWarn);
                 Checkbox("Placed Items ESP", &Config.ESPMenu.Placables);
                 // On-device proof for the device ESP, printed right under its
-                // switch: which of the four Tick hooks installed, how many ticks
-                // the tracker saw, how many of those classified as a device, how
-                // many are tracked and what the LAST draw pass emitted. Written by
-                // the game thread and read here (racy, harmless - same as the
-                // triggerbot panel). "Nothing on screen" then has a named cause:
-                // no hook, no tick, no classified name, or nothing in range.
+                // switch: which routes installed, how many calls each route
+                // delivered, how many classified as a device, how many are
+                // tracked and what the LAST draw pass emitted (plus positions it
+                // could not resolve). Written by the game thread and read here
+                // (racy, harmless - same as the triggerbot panel). "Nothing on
+                // screen" then has a named cause: no route, no calls, no
+                // classified name, no position, or nothing in range. The list
+                // route needs no hook at all - if it shows calls, the feature
+                // works even with every Tick/push hook dead.
                 {
                     const PlacableDiag &pd = g_placableDiag;
                     const ImVec4 okc(0.45f, 0.95f, 0.60f, 1.0f);
@@ -795,16 +798,20 @@ namespace lanx
                                          g_placableHookLanded[PlcHookTripMine] ||
                                          g_placableHookLanded[PlcHookTrapChip] ||
                                          g_placableHookLanded[PlcHookTripWire];
-                    char hooks[80];
-                    snprintf(hooks, sizeof(hooks), "device hooks %s%s%s%s+base",
+                    char hooks[96];
+                    snprintf(hooks, sizeof(hooks), "routes %s%s%s%s%slist",
                              g_placableHookLanded[PlcHookStick]    ? "stick " : "- ",
                              g_placableHookLanded[PlcHookTripMine] ? "mine "  : "- ",
                              g_placableHookLanded[PlcHookTrapChip] ? "chip "  : "- ",
-                             g_placableHookLanded[PlcHookTripWire] ? "wire "  : "- ");
-                    ImGui::TextColored(anyHook ? okc : offc, "%s", hooks);
+                             g_placableHookLanded[PlcHookTripWire] ? "wire "   : "- ",
+                             g_placablePushLanded                  ? "push "  : "- ");
+                    ImGui::TextColored((anyHook || g_placablePushLanded) ? okc : offc, "%s", hooks);
                     ImGui::TextColored(pd.drawn > 0 ? okc : offc,
-                                       "devices %d ticks / %d named / %d tracked / %d drawn",
-                                       pd.hookCalls, pd.classified, pd.tracked, pd.drawn);
+                                       "devices %d tick / %d push / %d list / %d named",
+                                       pd.tickCalls, pd.pushed, pd.scanned, pd.classified);
+                    ImGui::TextColored(pd.drawn > 0 ? okc : offc,
+                                       "        %d tracked / %d drawn / %d no-pos",
+                                       pd.tracked, pd.drawn, pd.posFailed);
                     if (pd.lastClass[0] != '\0')
                         ImGui::TextColored(offc, "last device: %s", pd.lastClass);
                     else if (pd.nameFailed > 0)
@@ -903,6 +910,10 @@ namespace lanx
                 Checkbox("Block Report Evidence", &Config.ExtraMenu.BlockReportEvidence);
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "On: your client never builds or");
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "sends evidence when reported.");
+                if (Config.ExtraMenu.BlockReportEvidence)
+                    ImGui::TextColored(ImVec4(0.45f, 0.95f, 0.60f, 1), "pulls %d / payloads %d / sends %d",
+                                       report_block::g_pullsSeen, report_block::g_payloadsDropped,
+                                       report_block::g_sendsDropped);
                 Separator_line();
                 Checkbox("Anti-Login", &Config.ExtraMenu.AntiLogin);
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "On: if your account is accessed from");

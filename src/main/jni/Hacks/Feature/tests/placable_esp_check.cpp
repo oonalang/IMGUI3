@@ -83,8 +83,14 @@ struct Pawn {
     unsigned char bytes[0x100];
 };
 static Pawn *g_testLocalPawn = nullptr;
+// The live-projectile route resolves BaseGame.get_WeaponProjectileList() from
+// libunity.so on device; on the host getAbsoluteAddress() answers 0 and the
+// scan exits before touching this. The fake-match-game pointer only has to
+// pass Tools::IsPtrValid for the test that installs g_placableListGetter.
+static void *g_testMatchGame = nullptr;
 struct GamePlay {
     static Pawn *get_LocalPawn() { return g_testLocalPawn; }
+    static void *get_MatchGame() { return g_testMatchGame; }
 };
 
 // Same offset the real define carries (Hacks/StructGame/Defines.h: 0x78).
@@ -146,6 +152,33 @@ struct FakeProj {
     void setDestroyed(bool v) { *(bool *)(mem + 0x18D) = v; }
     void setCamp(int c) { *(int *)(mem + 0xB0) = c; }
 };
+
+// --- Route 3 fakes: the game's live-projectile table ----------------------
+// Same layout as Il2CppList<void*> / Il2CppArray<void*> (klass 0x00,
+// monitor 0x08, items 0x10, size 0x18, version 0x1C; array payload 0x20).
+struct FakeProjArray {
+    void *klass;
+    void *monitor;
+    void *bounds;
+    int max_length;
+    void *items[8];
+};
+
+struct FakeProjList {
+    void *klass;
+    void *monitor;
+    FakeProjArray *items;
+    int size;
+    int version;
+};
+
+static FakeProjList *g_fakeProjList = nullptr;
+static void *FakeProjListGetter(void *) { return g_fakeProjList; }
+
+static int g_fakePushCalls = 0;
+static void FakePush(void *, void *) { g_fakePushCalls++; }
+static bool g_fakeRemoveResult = true;
+static bool FakeRemove(void *, void *) { return g_fakeRemoveResult; }
 
 static int g_checks = 0;
 static int g_failures = 0;
@@ -247,7 +280,7 @@ int main()
     CHECK(g_Placables[(uintptr_t)c4.ptr()].camp == 2, "owner camp stored");
 
     // --- The on-device diagnostic line (the ESP page prints exactly this) ----
-    CHECK(g_placableDiag.hookCalls >= 5 && g_placableDiag.classified >= 4,
+    CHECK(g_placableDiag.tickCalls >= 5 && g_placableDiag.classified >= 4,
           "the diagnosis counts every tick it saw and every device it classified");
     CHECK(g_placableDiag.tracked >= 4, "... and every write into the map");
     CHECK(strcmp(g_placableDiag.lastClass, "WeaponProjectile_TacTripWire") == 0,
@@ -295,9 +328,13 @@ int main()
     FakeProj badName("WeaponProjectile_TripMine");
     badName.klass.name = "\x01\x02garbage";
     TrackPlacable(badName.ptr());
+    // A device is REGISTERED from its pointer alone: the position is resolved
+    // at draw time now (it used to be read inside the Tick hook, and a device
+    // whose get_Position answered zero was dropped there - silently).
     FakeProj noPos("WeaponProjectile_TankMine"); // no fake position -> zero
     TrackPlacable(noPos.ptr());
-    CHECK(g_Placables.size() == 2, "null/corrupt/positionless instances ignored, no crash");
+    CHECK(g_Placables.size() == 3 && g_Placables.count((uintptr_t)noPos.ptr()),
+          "null/corrupt instances ignored, no crash; a positionless device is still tracked");
 
     // -- Draw pass (headless ImGui) --------------------------------------------
     static unsigned char pawnMem[0x100] = {};
@@ -326,6 +363,8 @@ int main()
     CHECK(AnyVertexColor(drawList, kFriendlyFill), "same-camp trophy drawn friendly (green)");
     CHECK(AnyVertexColor(drawList, kHostileFill), "enemy-camp sensor drawn hostile (orange)");
     CHECK(g_placableDiag.drawn >= 2, "the diagnosis reports what the draw pass actually emitted");
+    CHECK(g_placableDiag.posFailed >= 1,
+          "a device whose position resolves to nothing is counted as no-pos, not drawn");
 
     *(int *)(infoMem + 0x58) = 7; // local camp unknown to both owners now
     ImDrawList drawList2(ImGui::GetDrawListSharedData());
@@ -364,6 +403,55 @@ int main()
     Config.ESPMenu.Placables = false;
     DrawPlacableESP(&drawList5, 1920, 1080, Vector3::zero());
     CHECK(g_Placables.empty(), "toggling OFF clears tracked placables");
+
+    // --- Route 3: PushProjectile / RemoveWeaponProjectile hooks -------------
+    Config.ESPMenu.Placables = true;
+    FakeProj pushedC4("WeaponProjectile_C4bomb");
+    pushedC4.setCamp(2);
+    g_fakePos[pushedC4.ptr()] = Vector3(1.0f, 0.0f, 2.0f);
+    orig_PushProjectile = FakePush;
+    hook_PushProjectile((void *)&g_fakeProjList, pushedC4.ptr());
+    CHECK(g_fakePushCalls == 1 && g_Placables.count((uintptr_t)pushedC4.ptr()),
+          "PushProjectile registers a device the game adds to its own table");
+    CHECK(g_placableDiag.pushed >= 1, "the diagnosis counts push-route registrations");
+
+    orig_RemoveWeaponProjectile = FakeRemove;
+    CHECK(hook_RemoveWeaponProjectile((void *)&g_fakeProjList, pushedC4.ptr()) == true &&
+          !g_Placables.count((uintptr_t)pushedC4.ptr()),
+          "RemoveWeaponProjectile drops the marker with the game's own removal");
+    g_fakeRemoveResult = false;
+    hook_PushProjectile((void *)&g_fakeProjList, pushedC4.ptr());
+    CHECK(hook_RemoveWeaponProjectile((void *)&g_fakeProjList, pushedC4.ptr()) == false &&
+          g_Placables.count((uintptr_t)pushedC4.ptr()),
+          "a refused removal keeps the marker");
+
+    // --- Route 3: the per-frame walk of the live table ----------------------
+    FakeProj listMine("WeaponProjectile_TripMine");
+    g_fakePos[listMine.ptr()] = Vector3(4.0f, 0.0f, 6.0f);
+    FakeProjArray arr = {};
+    arr.max_length = 2;
+    arr.items[0] = listMine.ptr();
+    arr.items[1] = nullptr; // a hole the walk must skip
+    FakeProjList list = {};
+    list.items = &arr;
+    list.size = 2;
+    g_fakeProjList = &list;
+    g_testMatchGame = &arr; // any readable pointer for the IsPtrValid stub
+    g_placableListGetter = &FakeProjListGetter;
+    const int scanned = PlacableScanLiveList();
+    CHECK(scanned == 1 && g_Placables.count((uintptr_t)listMine.ptr()),
+          "the live-projectile table is walked WITHOUT any hook: device tracked");
+    CHECK(g_placableDiag.scanned >= 1, "the diagnosis counts list-route registrations");
+
+    // A table that is gone costs nothing (no crash, no entries) and reports
+    // "not walked" (-1), which is what keeps the frame-expiry rule off.
+    g_fakeProjList = nullptr;
+    CHECK(PlacableScanLiveList() == -1, "a null live table is ignored and reported as unreadable");
+
+    ImDrawList drawList6(ImGui::GetDrawListSharedData());
+    drawList6.AddDrawCmd();
+    DrawPlacableESP(&drawList6, 1920, 1080, Vector3::zero());
+    CHECK(AnyVertexColor(drawList6, kHostileFill), "a list-route trip mine is drawn like any other");
 
     ImGui::EndFrame();
     ImGui::DestroyContext();
