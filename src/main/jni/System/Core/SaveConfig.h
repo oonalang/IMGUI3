@@ -59,7 +59,6 @@ void SaveConfiguration(const std::string& filename) {
     config["ExtraMenu"]["MythicAttachments"] = Config.ExtraMenu.MythicAttachments;
     config["ExtraMenu"]["BlockReportEvidence"] = Config.ExtraMenu.BlockReportEvidence;
     config["ExtraMenu"]["BlockAceReport"] = Config.ExtraMenu.BlockAceReport;
-    config["ExtraMenu"]["Blueprints"] = Config.ExtraMenu.Blueprints;
     config["ExtraMenu"]["AntiLogin"] = Config.ExtraMenu.AntiLogin;
 
     config["isJumpAdjustmentEnabled"] = isJumpAdjustmentEnabled;
@@ -162,8 +161,6 @@ bool LoadConfiguration(const std::string& filename) {
                 Config.ExtraMenu.BlockReportEvidence = config["ExtraMenu"]["BlockReportEvidence"].get<bool>();
             if (config["ExtraMenu"].contains("BlockAceReport"))
                 Config.ExtraMenu.BlockAceReport = config["ExtraMenu"]["BlockAceReport"].get<bool>();
-            if (config["ExtraMenu"].contains("Blueprints"))
-                Config.ExtraMenu.Blueprints = config["ExtraMenu"]["Blueprints"].get<bool>();
             if (config["ExtraMenu"].contains("AntiLogin"))
                 Config.ExtraMenu.AntiLogin = config["ExtraMenu"]["AntiLogin"].get<bool>();
     if (config.contains("NewFeatures")) {

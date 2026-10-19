@@ -227,7 +227,7 @@ int main()
         sConfig fresh{0};                // exactly what Init_Hacks.h declares
         CHECK(fresh.ExtraMenu.MythicAttachments,
               "M1 a fresh config has Mythic Attachments ON (as-if-owned default)");
-        CHECK(!fresh.ExtraMenu.Attachment && !fresh.ExtraMenu.Blueprints,
+        CHECK(!fresh.ExtraMenu.Attachment,
               "M1 ... and no other unlock flag is silently on");
     }
 

@@ -1,39 +1,7 @@
 #pragma once
 
-// ============================================================================
-//  MythicAttachmentSystem.h
-//
-//  Ported from the user-supplied VARIANT4 build
-//  (github.com/oonalang/VARIANT4, MythicAttachmentSystem.h), which is the
-//  "fixed" mythic-attachment implementation: instead of only answering the
-//  unlock questions (what System/Hooks/MythicAttachments.h does), it resolves
-//  the mythic skin id that every attachment of the applied skin really uses
-//  from the game's own config tables and writes it into the AttachmentGroupNew
-//  / AttachItem / AttachSkinData records. That is what makes an applied mythic
-//  show its own attachments instead of the stock ones.
-//
-//  Every address in this file was checked against the .57 dump before it was
-//  brought over, and all of them resolve to the expected members:
-//    0x8719E4C  AttachmentGroupNew..ctor(attachId, attachSkinId, mythicSkinId,
-//                                       weaponId, ownState, ...)
-//    0x8449500  AttachItem..ctor(itemID, skinId, mythicSkinID)
-//    0x75D7DE4  AttachSkinData..ctor(blueprintWeaponId, skinId, mythicSkinId)
-//    0xB83F1C0  LoadoutWeaponsAttachmentItemController.SetData(AttachmentGroupNew,
-//                                                              out object)
-//    0x517C4D0  Weapon.InitOneWeaponPart(WeaponPartInfo, bool, bool)
-//    0xAF85628 / 0xAF8B4D4 / 0x6FE9168  the WeaponPartAsset / WeaponSkin /
-//               AttachmentConf constructors whose instances build the tables.
-//
-//  INTEGRATION NOTE: this file owns 0xB83F1C0 (LoadoutWeaponsAttachmentItem
-//  .SetData). MythicAttachments.h used to hook that same address for its
-//  layer-2 OwnState write; that hook is now disabled there so exactly one
-//  trampoline exists per prologue. Its four "is it unlocked" answers stay.
-//
-//  The whole implementation lives in namespace mythic_attachment_system so its
-//  file-scope tables cannot collide with Skin/Thread.h (both carry
-//  activeWeaponSkins-style state, and this project builds as one translation
-//  unit).
-// ============================================================================
+// Mythic attachment resolver: writes the real mythic skin id into the
+// attachment records so an applied mythic shows its own attachments.
 
 #include <algorithm>
 #include <array>

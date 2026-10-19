@@ -1392,13 +1392,18 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         Config.sColorsESPBOT.SkeletonBOT = CREATE_COLOR(0, 255, 0, 180);
         Config.sColorsESPOTHERS.PovOTHERS = CREATE_COLOR(225, 0, 0, 180);
         Config.ExtraMenu.NoGravityScale = 1.0f;
-        // Mythic Attachments is ON by default: an applied skin behaves as if it
-        // were really owned, so the weapon's attachments (the mythic's own ones
-        // included) are not locked. Every other ExtraMenu option stays off; the
-        // checkbox that turns this one off is in the HOME tab, directly
-        // above No Slide Fatigue; its live counters are in the SKINS tab, next to
-        // Unlock Blueprints. See System/Hooks/MythicAttachments.h.
+        Config.ExtraMenu.StretchAspect = 1.7778f;
+        // Defaults that the memset above would otherwise wipe.
         Config.ExtraMenu.MythicAttachments = true;
+        Config.ExtraMenu.BlockReportEvidence = true;
+        Config.Crosshair.Enabled = true;
+        Config.Crosshair.Color[0] = 1.0f;
+        Config.Crosshair.Color[1] = 1.0f;
+        Config.Crosshair.Color[2] = 1.0f;
+        Config.Crosshair.Color[3] = 0.95f;
+        Config.Crosshair.Size = 6.0f;
+        Config.NewFeaturesMenu.TriggerbotRadius = 40;
+        Config.Aim.FpsLevelUltra1 = 240.0f;
         Config.Aim.AimAssistSize = 0.0f;
         Config.Aim.Cross = 45.0f;
         Config.Aim.Target = EAimTarget::Heads;

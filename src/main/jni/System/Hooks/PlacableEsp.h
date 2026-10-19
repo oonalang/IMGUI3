@@ -8,83 +8,8 @@
 #include <vector>
 #include <unordered_map>
 
-// ---------------------------------------------------------------------------
-// Placed Items ESP: tripmines, C4, trophy systems, trip sensors and every
-// other place-and-stay tactical/lethal, highlighted through walls the same
-// way players are (overlay marker + label + distance).
-//
-// Every one of these is a WeaponProjectile subclass (dump.cs, GR .57 -
-// the dumps dataset this file was checked against):
-//
-//   WeaponProjectile_TripMine         tripmine          (own Tick @0x9B5B850)
-//   WeaponProjectile_C4bomb           C4                (Stick, no own Tick)
-//   WeaponProjectile_TankBattleC4     C4 (tank battle)  (Stick, no own Tick)
-//   WeaponProjectile_TankMine         tank mine         (Stick, no own Tick)
-//   WeaponProjectile_TrophySystem     trophy system     (Stick, no own Tick)
-//   WeaponProjectile_TacTripWire      trip sensor       (Stick, no own Tick)
-//   WeaponProjectile_TrapChipMine     trap chip mine    (own Tick @0x9B58A10)
-//   WeaponProjectile_ElectricTripWire electric wire     (own Tick @0xB201650)
-//
-// WHY THERE ARE THREE ROUTES INTO THE SAME MAP
-//
-// The first on-device report was "the placed ESP does nothing" with four
-// subclass Tick hooks installed; the second added the base
-// WeaponProjectile.Tick hook and STILL drew nothing. Hook-only tracking has
-// two independent single points of failure - the RVA landing at all, and the
-// game actually calling that particular override on this client for a device
-// that was placed by somebody else - so the tracker now also listens to the
-// game's OWN live-projectile table:
-//
-//   1. Tick overrides                 (four RVAs, re-verified against the dump)
-//   2. base WeaponProjectile.Tick     (owned by ThrowableAlert, calls the sink)
-//   3. BaseGame.PushProjectile        @0x9CBEE0C - every projectile that enters
-//      and BaseGame.RemoveWeaponProjectile @0x9CBDAC4 - and leaves
-//      BaseGame.m_WeaponProjectileList (dump: BaseGame @702371, field
-//      `protected List<WeaponProjectile> m_WeaponProjectileList`, getter
-//      `get_WeaponProjectileList()` @0x9CB0490).
-//
-// Route 3 is event driven and does not depend on any projectile Tick running.
-// On top of it the draw pass ALSO walks the live list once per frame
-// (PlacableScanLiveList, through the dump-verified getter - the list field's
-// offset itself is one of the obfuscated 0x46464646 decoys, the getter is
-// not). That walk needs no hook at all: even if every DobbyHook in here
-// failed, a device in the game's table is seen, classified and drawn. It also
-// refreshes the position and owner camp every frame the device is alive.
-//
-// WHERE THE POSITION COMES FROM
-//
-// WeaponProjectile.get_Position() @0xB1F087C (dump 1099578, virtual Slot 35 -
-// none of the placable subclasses override it, so the base implementation is
-// the right one). If that answers zero / NaN / a value off the map, the
-// fallback is the device's own actor collider:
-// WeaponProjectile.m_GrenadeActor @0x1C8 -> GrenadeActor.HitCollider @0x110
-// (BoxCollider) -> Component.get_transform @0x50291B0 ->
-// Transform.get_position @0x507C19C. The old code dropped a device whose
-// position read failed, which is another way "nothing is drawn" happens
-// without a crash and without a log line; now it falls back and only skips a
-// marker when BOTH reads fail.
-//
-// Tracking is keyed by object pointer, entries are refreshed by routes 1-3,
-// and they expire either after 360 unseen tracking writes (the old rule) or
-// after 240 rendered frames without a refresh (a device the game removed but
-// that never reached the Remove hook).
-//
-// THREADING. The Tick / push / remove hooks run on the game thread, the draw
-// pass (and its live-table walk) on the render thread. The map is therefore
-// guarded by a mutex, and the draw pass takes a SNAPSHOT of the entries it is
-// going to draw instead of iterating the live map while the game thread
-// inserts into it - the old code iterated and mutated the same unordered_map
-// from two threads, which is a heap-corruption crash waiting for a busy frame.
-// No game function is ever called with the lock held.
-//
-// ON-DEVICE DIAGNOSTICS (the ESP page prints all of it, see lanx_menu.h):
-// which routes landed at install time, how many calls each route delivered,
-// how many classified, how many are tracked right now, how many markers the
-// last draw pass emitted, how many positions could not be resolved, and the
-// name of the last class that classified. "Not working" then has a named
-// cause - no route, no calls, no classified name, no position, or nothing in
-// range - instead of being a guess.
-// ---------------------------------------------------------------------------
+// Placed Items ESP: tripmines, C4, trophy systems and trip sensors.
+// Tracked from the projectile ticks and the game's live projectile list.
 
 namespace PlacableCfg {
     // libunity.so RVAs, dump.cs GR .57

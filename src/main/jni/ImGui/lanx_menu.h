@@ -660,15 +660,12 @@ namespace lanx
                 Checkbox("Triggerbot", &Config.NewFeaturesMenu.Triggerbot);
                 if (Config.NewFeaturesMenu.Triggerbot)
                     Combo("Mode", &Config.NewFeaturesMenu.TriggerbotMode, trigger_modes, IM_ARRAYSIZE(trigger_modes));
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "Zone = the dot crosshair");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "re-press rate = weapon fire interval");
                 EndChild();
 
                 ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 3);
 
                 Child("Dot Crosshair##R1", ImVec2(col_w, full_h), true);
                 Checkbox("Dot Crosshair", &Config.Crosshair.Enabled);
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "The triggerbot aims through this dot");
                 SliderFloat("Opacity", &Config.Crosshair.Color[3], 0.0f, 1.0f, "%.2f");
                 SliderFloat("Size (trigger zone)", &Config.Crosshair.Size, 1.0f, 40.0f, "%.0f px");
                 SliderFloat("Offset X", &Config.Crosshair.OffsetX, -400.0f, 400.0f, "%.0f px");
@@ -708,7 +705,6 @@ namespace lanx
                 Child("Items & Movement##R2", ImVec2(col_w, full_h), true);
                 Checkbox("Weapon Kinetic", &Config.ExtraMenu.Kinetic);
                 Checkbox("Mythic Attachments", &Config.ExtraMenu.MythicAttachments);
-                Checkbox("Equippable Blueprints", &Config.ExtraMenu.Blueprints);
                 Checkbox("Unlimited Fly", &UnlimitedFly);
                 Separator_line();
                 SliderFloat("Snowboard Speed", &SnowBsize, 0.0f, 100.0f, "%.1f");
@@ -780,59 +776,11 @@ namespace lanx
                 Checkbox("Armor ESP", &Config.ESPMenu.Armor);
                 Checkbox("Grenade Warning", &Config.ESPMenu.GrenadeWarn);
                 Checkbox("Placed Items ESP", &Config.ESPMenu.Placables);
-                // On-device proof for the device ESP, printed right under its
-                // switch: which routes installed, how many calls each route
-                // delivered, how many classified as a device, how many are
-                // tracked and what the LAST draw pass emitted (plus positions it
-                // could not resolve). Written by the game thread and read here
-                // (racy, harmless - same as the triggerbot panel). "Nothing on
-                // screen" then has a named cause: no route, no calls, no
-                // classified name, no position, or nothing in range. The list
-                // route needs no hook at all - if it shows calls, the feature
-                // works even with every Tick/push hook dead.
-                {
-                    const PlacableDiag &pd = g_placableDiag;
-                    const ImVec4 okc(0.45f, 0.95f, 0.60f, 1.0f);
-                    const ImVec4 offc(0.62f, 0.62f, 0.70f, 1.0f);
-                    const bool anyHook = g_placableHookLanded[PlcHookStick] ||
-                                         g_placableHookLanded[PlcHookTripMine] ||
-                                         g_placableHookLanded[PlcHookTrapChip] ||
-                                         g_placableHookLanded[PlcHookTripWire];
-                    char hooks[96];
-                    snprintf(hooks, sizeof(hooks), "routes %s%s%s%s%slist",
-                             g_placableHookLanded[PlcHookStick]    ? "stick " : "- ",
-                             g_placableHookLanded[PlcHookTripMine] ? "mine "  : "- ",
-                             g_placableHookLanded[PlcHookTrapChip] ? "chip "  : "- ",
-                             g_placableHookLanded[PlcHookTripWire] ? "wire "   : "- ",
-                             g_placablePushLanded                  ? "push "  : "- ");
-                    ImGui::TextColored((anyHook || g_placablePushLanded) ? okc : offc, "%s", hooks);
-                    ImGui::TextColored(pd.drawn > 0 ? okc : offc,
-                                       "devices %d tick / %d push / %d list / %d named",
-                                       pd.tickCalls, pd.pushed, pd.scanned, pd.classified);
-                    ImGui::TextColored(pd.drawn > 0 ? okc : offc,
-                                       "        %d tracked / %d drawn / %d no-pos",
-                                       pd.tracked, pd.drawn, pd.posFailed);
-                    if (pd.lastClass[0] != '\0')
-                        ImGui::TextColored(offc, "last device: %s", pd.lastClass);
-                    else if (pd.nameFailed > 0)
-                        ImGui::TextColored(offc, "class name unreadable x%d", pd.nameFailed);
-                }
                 Checkbox("BR Class", &Config.ESPMenu.BRClass);
                 Checkbox("Vehicle ESP", &Config.ESPMenu.Vehicle);
                 Checkbox("Vehicle Health", &Config.ESPMenu.VehicleHealth);
                 EndChild();
 
-                ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 3);
-
-                Child("Snapshots##R4", ImVec2(col_w, full_h), true);
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "ESP extras draw through the");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "player ESP pass - toggles apply");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "on the next frame.");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "Hide Stream keeps them out of");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "captured screenshots.");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "(its toggle is on the Player");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "ESP page).");
-                EndChild();
             }
 
             if (p_tabs.IsTabActive(5))
@@ -875,10 +823,6 @@ namespace lanx
                 Separator_line();
                 Checkbox("Clear Display", &Config.ExtraMenu.ClearDisplay);
                 Checkbox("VSync Mode", &Config.ExtraMenu.Grap);
-                Separator_line();
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "Camera / interface changes are");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "applied by the world runtime and");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "restore when switched back off.");
                 EndChild();
             }
 
@@ -903,32 +847,13 @@ namespace lanx
 
                 Child("Account & Data##R6", ImVec2(col_w, full_h), true);
                 Checkbox("Attachment Unlock", &Config.ExtraMenu.Attachment);
-                // Equippable Blueprints lives on the Weapons page only - a
-                // second switch here was the same flag drawn twice.
                 Checkbox("Reset Guest Account", &Config.ExtraMenu.ResetGuest);
                 Separator_line();
                 Checkbox("Block Report Evidence", &Config.ExtraMenu.BlockReportEvidence);
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "On: no evidence is filled in and");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "nothing is sent when reported.");
-                if (Config.ExtraMenu.BlockReportEvidence)
-                    ImGui::TextColored(ImVec4(0.45f, 0.95f, 0.60f, 1), "pulls %d / payloads %d / sends %d",
-                                       report_block::g_pullsSeen, report_block::g_payloadsDropped,
-                                       report_block::g_sendsDropped);
                 Separator_line();
-                Checkbox("Scrub ACE Report Data", &Config.ExtraMenu.BlockAceReport);
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "On: the anti-cheat's own evidence");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "reaches the game empty - the channel");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "a report is judged on.");
-                ImGui::TextColored(ImVec4(0.90f, 0.62f, 0.35f, 1), "Off by default: a client that never");
-                ImGui::TextColored(ImVec4(0.90f, 0.62f, 0.35f, 1), "reports anything is itself odd.");
-                if (Config.ExtraMenu.BlockAceReport)
-                    ImGui::TextColored(ImVec4(0.45f, 0.95f, 0.60f, 1), "blobs %d / bytes %d",
-                                       report_block::g_aceBlobsScrubbed, report_block::g_aceBytesScrubbed);
+                Checkbox("Block ACE Report Data", &Config.ExtraMenu.BlockAceReport);
                 Separator_line();
                 Checkbox("Anti-Login", &Config.ExtraMenu.AntiLogin);
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "On: if your account is accessed from");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "another location (0E100004), that kick");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "is blocked - no popup, you stay in.");
                 EndChild();
             }
 
@@ -943,27 +868,6 @@ namespace lanx
                 Checkbox("No Slide Fatigue (patched)", &Config.NewFeaturesMenu.NoSlideFatigue);
                 Checkbox("No Hipfire Delay (patched)", &Config.NewFeaturesMenu.NoHipfireDelay);
                 Checkbox("No Sprint Fire Delay (patched)", &Config.NewFeaturesMenu.NoSprintToFireDelay);
-                if (Config.NewFeaturesMenu.NoSprintToFireDelay)
-                {
-                    ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "  %s",
-                        NewFeatures::g_noSprintFireDelayWeapon.load() != nullptr
-                            ? "armed: local weapon cached"
-                            : "waiting for the local pawn tick");
-                }
-                EndChild();
-
-                ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 3);
-
-                Child("Patch Status##R7", ImVec2(col_w, full_h), true);
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "These toggles write game code at");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "runtime. Each one is written once");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "per state change and restored the");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "moment you switch it back off, so");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "an idle menu writes nothing.");
-                Separator_line();
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "No Drift also needs the patched");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "weapon, so apply it while holding");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "the weapon you want to keep steady.");
                 EndChild();
             }
 
@@ -976,12 +880,6 @@ namespace lanx
                 // menu; it is a page again.
                 ImGui::SetCursorPos(ImVec2(200.f, 85 + page_offset));
                 Child("Skins##L8", ImVec2(col_w * 2.0f + col_gap, full_h), true);
-                if (Config.ExtraMenu.Blueprints)
-                    ImGui::TextColored(ImVec4(0.55f, 0.85f, 0.55f, 1.0f),
-                        "Equippable Blueprints ON - pick any blueprint in the selection to apply it");
-                else
-                    ImGui::TextColored(ImVec4(0.90f, 0.70f, 0.35f, 1.0f),
-                        "Enable Equippable Blueprints (Weapons page) to equip any blueprint");
                 RenderTab4Content();
                 EndChild();
             }
@@ -1003,8 +901,6 @@ namespace lanx
                         ? "loaded configs/ethnir.json"
                         : "configs/ethnir.json not found";
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "%s", config_status.c_str());
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "Stored in the game's own files dir,");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "so it survives app updates.");
                 Separator_line();
                 if (Button("RESET TARGETING", ImVec2(ImGui::GetContentRegionAvail().x, 47)))
                 {

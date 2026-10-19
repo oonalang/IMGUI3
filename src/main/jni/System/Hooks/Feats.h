@@ -638,23 +638,12 @@ inline float DisperseBase(void * instance) {
     return orig_DisperseBase(instance);
 } 
 
-// Equippable Blueprints: the equip-path gates + observers behind the same
-// SKINS-tab switch. IsUnlocked below is its gate 0 and counts into its
-// diagnostics table, so the header lands first. See BlueprintEquip.h.
-#include "BlueprintEquip.h"
-
-// Unlock Blueprints (SKINS tab switch). BlueprintWeaponInfo.IsUnlocked()
-// @0x901F988 takes no parameters, so this pointer's shape is the method's own.
-inline bool (*orig_IsUnlocked)(void *instance);
+// BlueprintWeaponInfo.IsUnlocked() @0x901F988 - no parameters.
+inline bool (*orig_IsUnlocked)(void *instance) = nullptr;
 inline bool IsUnlocked(void *instance) {
-    blueprint_equip::NoteAsk(blueprint_equip::GateUnlock);
-    if (instance != NULL) {
-        if (Config.ExtraMenu.Blueprints) {
-            blueprint_equip::NoteGrant(blueprint_equip::GateUnlock);
-            return true;
-        }
-    }
-    return orig_IsUnlocked(instance);
+    if (instance != NULL && Config.ExtraMenu.MythicAttachments)
+        return true;
+    return orig_IsUnlocked != nullptr ? orig_IsUnlocked(instance) : false;
 }
 
 // Mythic Attachments (unlock-as-if-owned) lives in its own header: the four
@@ -1052,32 +1041,9 @@ inline void InitializeAllHooks() {
   ///Camera Pov
   DobbyHook((void *) getAbsoluteAddress("libunity.so", 0xC347950), (void *)  &InputSettingConfig_Instant_GetMainCameraFov_3p, (void **) &oInputSettingConfig_Instant_GetMainCameraFov_3p); 
 
-    //-- Unlock Blueprints (SKINS tab) at BlueprintWeaponInfo.IsUnlocked()
+    //-- Blueprint / skin display unlock: BlueprintWeaponInfo.IsUnlocked()
     //   @0x901F988 - no parameters.
-    //-- Mythic attachments (HOME tab switch, ON by default) installs its four
-    //   gates itself: see MythicAttachments.h. WeaponPromotionInfo.
-    //   IsWeaponAttachmentUnlock(int attachment) @0xA61AA00 is the first of them.
     HOOK_LIB("libunity.so", "0x901F988", IsUnlocked, orig_IsUnlocked);
-
-    //-- Equippable Blueprints (see BlueprintEquip.h): the two equip verdicts
-    //   the selection's Equip can still refuse on (special-forbid list, the
-    //   loadout's can-equip validator), plus three observers that only count
-    //   - owned-weapon resolution, SI-weapon lookup, and the tap itself - so
-    //   the SKINS tab shows where an equip of an unowned blueprint dies.
-    HOOK_LIB("libunity.so", "0x6DCE594", IsSpecialForbid, orig_IsSpecialForbid);
-    HOOK_LIB("libunity.so", "0x5D34E50", IsWeaponCanEquipItem, orig_IsWeaponCanEquipItem);
-    HOOK_LIB("libunity.so", "0x6DCCFD0", GetOwnedMostSimilarWeaponID, orig_GetOwnedMostSimilarWeaponID);
-    HOOK_LIB("libunity.so", "0x6DCD3FC", GetSiWeaponByBluePrintWeaponId, orig_GetSiWeaponByBluePrintWeaponId);
-    HOOK_LIB("libunity.so", "0x5D2D420", OnEasyListItemClick_Weapon, orig_OnEasyListItemClick_Weapon);
-    blueprint_equip::NoteLanded(blueprint_equip::GateUnlock,   orig_IsUnlocked != nullptr);
-    blueprint_equip::NoteLanded(blueprint_equip::GateForbid,   orig_IsSpecialForbid != nullptr);
-    blueprint_equip::NoteLanded(blueprint_equip::GateCanEquip, orig_IsWeaponCanEquipItem != nullptr);
-    blueprint_equip::NoteLanded(blueprint_equip::GateSimilar,  orig_GetOwnedMostSimilarWeaponID != nullptr);
-    blueprint_equip::NoteLanded(blueprint_equip::GateSiWeapon, orig_GetSiWeaponByBluePrintWeaponId != nullptr);
-    blueprint_equip::NoteLanded(blueprint_equip::GateClick,    orig_OnEasyListItemClick_Weapon != nullptr);
-    // The ownership resolver: an unowned blueprint tap resolves to an OWNED
-    // sibling of the same base gun (see BlueprintEquip.h).
-    blueprint_equip::SetOwnerSimilarResolver(&blueprint_equip::ResolveOwnedSibling);
 
     //-- Unlock Attachments / Mythic Attachments (see MythicAttachments.h). The
     //   RVAs are the dump's, same convention as every hook above.
@@ -1116,29 +1082,20 @@ inline void InitializeAllHooks() {
         mythic_attachment_system::mythicRuntimeInstalled.load(std::memory_order_acquire));
     mythic_attachments::NoteLanded(mythic_attachments::GateCell,       orig_AttachmentCellSetData != nullptr);
 
-    //-- Block Report Evidence (HOME tab switch, ON by default). The four
-    //   report-path RVAs were verified against the current dump
-    //   (0xB23D358 / 0x8FB4B60 / 0x5620BAC / 0x5620F9C). The SKINS tab's
-    //   diagnostics table reports the same landed bits here.
+    //-- Block Report Evidence.
     report_block::InstallReportBlockHooks();
     report_block::NoteLanded(report_block::GateDoReport,       report_block::orig_DoReport != nullptr);
     report_block::NoteLanded(report_block::GateDoReportPlayer, report_block::orig_DoReportPlayer != nullptr);
     report_block::NoteLanded(report_block::GateBeginReport,    report_block::orig_BeginReportPlayerPull != nullptr);
     report_block::NoteLanded(report_block::GateFillReportData, report_block::orig_FillPlayerFullData != nullptr);
     report_block::NoteLanded(report_block::GateEndReport,      report_block::orig_EndReportPlayerPull != nullptr);
-    //-- Scrub ACE Report Data (HOME tab switch, OFF by default): the four
-    //   managed wrappers the game pulls the anti-cheat's evidence through.
-    //   See System/Hooks/ReportBlock.h - the native libanogs exports are
-    //   flattened thunks, the managed wrappers are the choke point.
+    //-- Block ACE Report Data.
     report_block::NoteLanded(report_block::GateAceGetData,  report_block::orig_AceGetReportData != nullptr);
     report_block::NoteLanded(report_block::GateAceGetData2, report_block::orig_AceGetReportData2 != nullptr);
     report_block::NoteLanded(report_block::GateAceGetData3, report_block::orig_AceGetReportData3 != nullptr);
     report_block::NoteLanded(report_block::GateAceGetData4, report_block::orig_AceGetReportData4 != nullptr);
 
-    //-- Anti-Login (Account tab switch, OFF by default). The whole forced-
-    //   relogin path (heartbeat executor, relogin-state verdict, popup
-    //   callback, forced logout, loading-flow callback) is swallowed while
-    //   the switch is on; manual logout is untouched. See AntiLogin.h.
+    //-- Anti-Login.
     anti_login::InstallAntiLoginHooks();
     anti_login::NoteLanded(anti_login::GateHeartbeatExec,  anti_login::orig_ExecuteReloginByRandomDelay != nullptr);
     anti_login::NoteLanded(anti_login::GateCheckState,     anti_login::orig_CheckReloginState != nullptr);

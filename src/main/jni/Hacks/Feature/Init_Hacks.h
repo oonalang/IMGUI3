@@ -197,29 +197,14 @@ sColorsESPBOT sColorsESPBOT{0};
         bool EnhanceFPS;
         bool Spectatex;
         bool Attachment;
-        // "Mythic Attachments": with an applied weapon skin, the client answers
-        // YES to the skin's own unlock question and to every attachment unlock
-        // question (see System/Hooks/MythicAttachments.h). ON by default - this
-        // is what makes an applied mythic behave as if it were really owned.
+        // Unlocks skins + attachments as if owned. ON by default.
         bool MythicAttachments = true;
-        // "Block Report Evidence": YOUR client never builds or sends report
-        // evidence when another player reports you
-        // (see System/Hooks/ReportBlock.h). ON by default.
+        // Drops player-report evidence. ON by default.
         bool BlockReportEvidence = true;
-        // "Scrub ACE Report Data": the anti-cheat (libanogs / ACE) evidence the
-        // client hands to the game is emptied before the game can send it - the
-        // channel that makes a report stick rather than just be filed
-        // (see System/Hooks/ReportBlock.h). OFF by default ON PURPOSE: unlike
-        // the on-demand player-report pull, ACE's blob is a steady stream, so a
-        // client that never produces one is itself the anomaly. Turn it on per
-        // device, ideally test accounts first.
+        // Empties ACE's report blob. OFF by default.
         bool BlockAceReport = false;
-        // "Anti-Login": refuses the forced relogin the client performs when
-        // the account is accessed from another location (the 0E100004
-        // CONNECT popup) - no popup, no self-logout (see
-        // System/Hooks/AntiLogin.h). OFF by default.
+        // Blocks the forced relogin on location change. OFF by default.
         bool AntiLogin;
-		bool Blueprints;
 		bool ClearDisplay;
 		bool ResetGuest;
 		bool RedWallhack;
