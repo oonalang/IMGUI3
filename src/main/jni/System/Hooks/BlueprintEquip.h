@@ -56,16 +56,17 @@
 //        not) BEFORE the original runs, so even a tap the game refuses is
 //        on record: last tapped blueprint id + whether it was owned.
 //
-//  Gate 0 of the diagnostics is the pre-existing IsUnlocked hook in Feats.h,
-//  which counts into the same table.
+//  Gate 0 is the pre-existing IsUnlocked hook in Feats.h, which counts into
+//  the same internal table. These counters are deliberately not rendered in
+//  the menu; they remain available to host tests and development builds.
 //
 //  WHAT THIS IS NOT: like the mythic system, these are CLIENT answers, not
-//  server grants. If the counters show canEquip asked AND granted and the
-//  game still answers 11305, the verdict is the server's, and the next layer
-//  is a local record write (the equipped skin id lives in the client's own
-//  WeaponAttrConf record: attr_conf @0x38 -> LoadoutWeaponAttr.skin @0x80 ->
-//  EquippedItem.id @0x3C) driven by the click observer above. The counters
-//  on the SKINS tab say which world we are in; nothing here guesses.
+//  server grants. If an internal development counter showed canEquip asked
+//  AND granted and the game still answered 11305, the verdict would be the
+//  server's, and the next layer would be a local record write (the equipped
+//  skin id lives in the client's own WeaponAttrConf record: attr_conf @0x38
+//  -> LoadoutWeaponAttr.skin @0x80 -> EquippedItem.id @0x3C) driven by the
+//  click observer above; nothing here guesses.
 //
 //  Config: Config.ExtraMenu.Blueprints - the same SKINS-tab switch that
 //  already drives IsUnlocked, so one toggle is the whole feature, and off
@@ -95,8 +96,8 @@ namespace blueprint_equip
         constexpr uintptr_t OnBlueprintItemClick    = 0x5D2D420;
     }
 
-    // The questions / observation points, as an index. Used by the counters
-    // below and by the SKINS tab's diagnostic lines.
+    // The questions / observation points, as an index. Used only by the
+    // internal counters below; no menu diagnostic lines are rendered.
     enum Gate
     {
         GateUnlock = 0,  // BlueprintWeaponInfo.IsUnlocked (hooked in Feats.h)
@@ -108,9 +109,10 @@ namespace blueprint_equip
         GateCount
     };
 
-    // On-device instrument. The loadout asks these questions by itself when it
-    // draws and when a blueprint is tapped, so the SKINS tab prints how often
-    // each point was asked and how often this feature granted it. For the
+    // Internal instrument. The loadout asks these questions by itself when it
+    // draws and when a blueprint is tapped; these counters record how often
+    // each point was asked and how often this feature granted it, without
+    // rendering any diagnostic text in the menu. For the
     // observers "granted" means the game got a usable answer on its own
     // (similar resolved non-zero / SI weapon found / an UNOWNED blueprint was
     // tapped) - it marks the events worth looking at, not an override.
@@ -222,8 +224,8 @@ namespace blueprint_equip
     }
 
     // The resolver itself. Given the WeaponDataStore the game asked (its
-    // instance argument is recorded for diagnostics only - the store's tables
-    // are server-seeded and read nothing here) and the blueprint id it could
+    // instance argument is ignored - the store's tables are server-seeded
+    // and read nothing here) and the blueprint id it could
     // not resolve, find the tapped popup's OWNED sibling of the same base gun
     // and answer that sibling's BlueprintWeaponId. 0 = no answer (the caller
     // falls back to the original's 0, stock behaviour).

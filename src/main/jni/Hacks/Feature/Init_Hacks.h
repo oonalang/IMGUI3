@@ -206,6 +206,11 @@ sColorsESPBOT sColorsESPBOT{0};
         // evidence when another player reports you
         // (see System/Hooks/ReportBlock.h). ON by default.
         bool BlockReportEvidence = true;
+        // "Anti-Login": refuses the forced relogin the client performs when
+        // the account is accessed from another location (the 0E100004
+        // CONNECT popup) - no popup, no self-logout (see
+        // System/Hooks/AntiLogin.h). OFF by default.
+        bool AntiLogin;
 		bool Blueprints;
 		bool ClearDisplay;
 		bool ResetGuest;
@@ -224,8 +229,6 @@ sColorsESPBOT sColorsESPBOT{0};
         bool Parachute;
 		bool WallHack;
 		bool Kinetic;
-        bool CamoTest;
-        int CamoTestMode;
 
         // Stretch Screen: forces UnityEngine.Camera.aspect, which widens the
         // horizontal field of view without touching the vertical one. 1.0-3.0.

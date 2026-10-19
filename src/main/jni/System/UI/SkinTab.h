@@ -957,41 +957,6 @@ case 3:
         ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "Camo - replaces the equipped camo on every gun");
         ImGui::Dummy(ImVec2(0, 10));
 
-        // Skin / kill-decoration diagnostics: each count is a stage of the
-        // pipeline, so a zero names the stage that failed without another build.
-        // KillIcon cfg/map = SPKillIcon configs captured / weapons mapped;
-        // KillFx = weapons mapped to an effect asset / effect items identified;
-        // Active = what the menu has switched on; Hooks = live getter traffic
-        // (AttrData = WeaponAttrData, Group = Weapon.get_KillEffectGroupIDOverride).
-        {
-            const ImVec4 dim(0.65f, 0.65f, 0.72f, 1);
-            ImGui::TextColored(dim, "KillIcon cfg=%d map=%d active=%d",
-                g_killDecorationDiag.killIconConfigs,
-                g_killDecorationDiag.killIconWeapons,
-                (int)activeKillIcons.size());
-            ImGui::TextColored(dim, "KillFx map=%d items=%d active=%d/%d",
-                g_killDecorationDiag.killEffectWeapons,
-                g_killDecorationDiag.killEffectItemIDs,
-                (int)activeKillEffects.size(), (int)activeKillEffectItems.size());
-            ImGui::TextColored(dim, "Hooks attr=%d/%d item=%d/%d grp=%d/%d",
-                g_killDecorationDiag.iconHookHits, g_killDecorationDiag.iconHookCalls,
-                g_killDecorationDiag.effectItemHookHits, g_killDecorationDiag.effectItemHookCalls,
-                g_killDecorationDiag.effectGroupHookHits, g_killDecorationDiag.effectGroupHookCalls);
-            ImGui::TextColored(dim, "HookInstalled %s%s%s key=%d res=%d",
-                g_killIconHookInstalled ? "icon " : "-icon ",
-                g_killEffectItemHookInstalled ? "item " : "-item ",
-                g_killEffectGroupHookInstalled ? "grp" : "-grp",
-                g_killDecorationDiag.lastAttrKey, (int)itemData.size());
-            // InventoryInfo writes: the record the kill feed reads, filled from
-            // the local player's held weapon (Weapon : Inventory, info @0x98).
-            // Non-zero here means the mythic kill icon reached the HUD even if
-            // the getter hooks were never called at all (attr=0/0).
-            ImGui::TextColored(dim, "InventoryInfo icon=%d lvl=%d",
-                g_killDecorationDiag.inventoryKillIconWrites,
-                g_killDecorationDiag.inventoryLevelWrites);
-        }
-        ImGui::Dummy(ImVec2(0, 6));
-
         // --- Every camo in the build, one search field, no filter dropdown ---
         // The list is camoData, filled by LoadCamos() (Skin/Thread.h) from the
         // game's own WeaponCamosConfig table - one row per camo the build has,
@@ -1030,20 +995,6 @@ case 3:
                 selectedCamoItemID = -1;
                 applyCamoEverywhere(0);
             }
-        }
-
-        // Diagnostic for the picked camo. `id` is the game's own CamoItemID and
-        // `apply` the value actually written: the proven constant for the seven
-        // camos this build already equips correctly, otherwise the row's own id.
-        // Seeing both is what makes a wrong id obvious on device.
-        for (const auto &camo : camoData) {
-            if (camo.camoItemID != selectedCamoItemID) continue;
-            ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1),
-                "Selected: %s  id=%08X apply=%08X%s  confs=%d skins=%d",
-                camo.camoName.c_str(), (unsigned)camo.camoItemID, (unsigned)camo.applyID,
-                camo.applyID == camo.camoItemID ? "" : " (proven)",
-                (int)camoConfs.size(), (int)camoSkinConfs.size());
-            break;
         }
 
         ImGui::Separator();
