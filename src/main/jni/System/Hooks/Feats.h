@@ -672,6 +672,10 @@ inline bool IsUnlocked(void *instance) {
 // report-path entries your client uses to send evidence when you get reported.
 // See System/Hooks/ReportBlock.h.
 #include "ReportBlock.h"
+// Anti-Login (Account tab switch): refuses the forced relogin the client
+// performs when the account is accessed from another location (the
+// 0E100004 CONNECT popup). See System/Hooks/AntiLogin.h.
+#include "AntiLogin.h"
 
 // No Spectate Deelay
 inline bool (*o_NeedDelayProcess)(void *instance, int a, int b);
@@ -1106,4 +1110,15 @@ inline void InitializeAllHooks() {
     report_block::NoteLanded(report_block::GateDoReportPlayer, report_block::orig_DoReportPlayer != nullptr);
     report_block::NoteLanded(report_block::GateBeginReport,    report_block::orig_BeginReportPlayerPull != nullptr);
     report_block::NoteLanded(report_block::GateEndReport,      report_block::orig_EndReportPlayerPull != nullptr);
+
+    //-- Anti-Login (Account tab switch, OFF by default). The whole forced-
+    //   relogin path (heartbeat executor, relogin-state verdict, popup
+    //   callback, forced logout, loading-flow callback) is swallowed while
+    //   the switch is on; manual logout is untouched. See AntiLogin.h.
+    anti_login::InstallAntiLoginHooks();
+    anti_login::NoteLanded(anti_login::GateHeartbeatExec,  anti_login::orig_ExecuteReloginByRandomDelay != nullptr);
+    anti_login::NoteLanded(anti_login::GateCheckState,     anti_login::orig_CheckReloginState != nullptr);
+    anti_login::NoteLanded(anti_login::GateReloginCallback, anti_login::orig_ReloginCallback != nullptr);
+    anti_login::NoteLanded(anti_login::GateLogout,         anti_login::orig_Logout != nullptr);
+    anti_login::NoteLanded(anti_login::GateLoadCallback,   anti_login::orig_OnNotifyNeedReloginCallback != nullptr);
 }

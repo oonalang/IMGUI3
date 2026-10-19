@@ -904,10 +904,10 @@ namespace lanx
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "On: your client never builds or");
                 ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "sends evidence when reported.");
                 Separator_line();
-                Checkbox("Camo Diagnostics (test)", &Config.ExtraMenu.CamoTest);
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "Diagnostics only reports what the");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "camo hooks resolve - it changes");
-                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "nothing in a match.");
+                Checkbox("Anti-Login", &Config.ExtraMenu.AntiLogin);
+                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "On: if your account is accessed from");
+                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "another location (0E100004), that kick");
+                ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1), "is blocked - no popup, you stay in.");
                 EndChild();
             }
 
@@ -961,23 +961,6 @@ namespace lanx
                 else
                     ImGui::TextColored(ImVec4(0.90f, 0.70f, 0.35f, 1.0f),
                         "Enable Equippable Blueprints (Weapons page) to equip any blueprint");
-                {
-                    // Equip-path diagnostics (System/Hooks/BlueprintEquip.h):
-                    // asked/granted per gate, so a refused equip shows which
-                    // question the game asked and what it was answered.
-                    const blueprint_equip::DiagStats &bd = blueprint_equip::g_diag;
-                    const bool *bl = blueprint_equip::g_landed;
-                    ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1.0f),
-                        "landed u%d f%d c%d s%d w%d k%d - asked/granted: unlock %d/%d forbid %d/%d canEquip %d/%d (last item %u)",
-                        bl[0] ? 1 : 0, bl[1] ? 1 : 0, bl[2] ? 1 : 0, bl[3] ? 1 : 0, bl[4] ? 1 : 0, bl[5] ? 1 : 0,
-                        bd.asked[0], bd.granted[0], bd.asked[1], bd.granted[1], bd.asked[2], bd.granted[2],
-                        (unsigned)bd.canEquipLastItemId);
-                    ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.72f, 1.0f),
-                        "observed: similar %d/%d (last %u -> %u), siWeapon %d/%d (null %d), clicks %d (last %u, %s)",
-                        bd.asked[3], bd.granted[3], (unsigned)bd.similarLastIn, (unsigned)bd.similarLastOut,
-                        bd.asked[4], bd.granted[4], bd.siNullResults,
-                        bd.asked[5], (unsigned)bd.lastClickBlueprintId, bd.lastClickOwned ? "owned" : "UNOWNED");
-                }
                 RenderTab4Content();
                 EndChild();
             }
