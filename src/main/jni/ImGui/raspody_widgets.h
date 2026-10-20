@@ -57,6 +57,8 @@ namespace raspody
     void  BeginCard(const char* title, ImVec2 pos, float width);
     float EndCard();                 // returns the card's bottom y
     float CardInnerWidth();
+    // Start of the next row: the card's content x with the ImGui cursor's y.
+    ImVec2 RowOrigin();
     void  SetColumnWidth(float width);
     void  Spacer(float height);
     void  SectionLabel(const char* text);

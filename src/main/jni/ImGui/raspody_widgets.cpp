@@ -86,6 +86,15 @@ namespace raspody
             return avail > 1.0f ? avail : 220.0f;
         }
 
+        // Where the next row starts.
+        //
+        // ImGui resets the cursor's x to the window's content start after every
+        // item (it lays items out as lines), so a row that read the cursor
+        // directly jumped to the child window's left edge after the first row.
+        // Both page columns share that child, which is why every card in the
+        // right column painted itself on top of the left column. Rows inside a
+        // card now take their x from the card frame and only the y from ImGui;
+        // popups stay on the plain cursor because they are their own window.
         void FinishRow(ImVec2 pos, float width, float height)
         {
             ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -625,6 +634,14 @@ namespace raspody
         return RowWidth();
     }
 
+    ImVec2 RowOrigin()
+    {
+        const ImVec2 cursor = ImGui::GetCursorScreenPos();
+        if (!g_cards.empty() && g_popupDepth == 0)
+            return ImVec2(g_cards.back().pos.x + g_cards.back().padding, cursor.y);
+        return cursor;
+    }
+
     void SetColumnWidth(float width)
     {
         g_columnWidth = width;
@@ -638,7 +655,7 @@ namespace raspody
     void SectionLabel(const char* text)
     {
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = RowOrigin();
         DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(11),
                  ImVec2(pos.x + S(2), pos.y + S(10)), Col(clr.text2), text, ImVec2(0.0f, 0.5f));
         ImGui::Dummy(ImVec2(RowWidth(), S(22)));
@@ -709,7 +726,7 @@ namespace raspody
 
         const bool hasDesc = description && *description;
         const float width = RowWidth();
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = RowOrigin();
         const float height = RowTextHeight(bodyFont, smallFont, label, hasDesc ? description : nullptr, S(30));
         const float toggleW = S(36);
         const float toggleH = S(20);
@@ -840,9 +857,9 @@ namespace raspody
 
         const bool hasDesc = description && *description;
         const float width = RowWidth();
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = RowOrigin();
         const float height = RowTextHeight(bodyFont, smallFont, label, hasDesc ? description : nullptr, S(32));
-        const float barW = S(120);
+        const float barW = S(104);
         const float barH = S(10);
         const ImVec2 barMin(pos.x + width - barW, pos.y + (height - barH) * 0.5f);
         const ImVec2 barMax(barMin.x + barW, barMin.y + barH);
@@ -950,9 +967,9 @@ namespace raspody
 
         const bool hasDesc = description && *description;
         const float width = RowWidth();
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = RowOrigin();
         const float height = RowTextHeight(bodyFont, smallFont, label, hasDesc ? description : nullptr, S(34));
-        const float barW = S(120);
+        const float barW = S(104);
         const float barH = S(10);
         const ImVec2 barMin(pos.x + width - barW, pos.y + (height - barH) * 0.5f);
         const ImVec2 barMax(barMin.x + barW, barMin.y + barH);
@@ -1052,9 +1069,9 @@ namespace raspody
 
         const bool hasDesc = description && *description;
         const float width = RowWidth();
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = RowOrigin();
         const float height = RowTextHeight(bodyFont, smallFont, label, hasDesc ? description : nullptr, S(34));
-        const float buttonW = S(140);
+        const float buttonW = S(124);
         const float buttonH = S(24);
         const ImVec2 buttonMin(pos.x + width - buttonW, pos.y + (height - buttonH) * 0.5f);
         const ImVec2 buttonMax(buttonMin.x + buttonW, buttonMin.y + buttonH);
@@ -1140,7 +1157,7 @@ namespace raspody
 
         const bool hasDesc = description && *description;
         const float width = RowWidth();
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = RowOrigin();
         const float height = hasDesc ? S(42) : S(32);
         const float swatchW = S(38);
         const float swatchH = S(20);
@@ -1376,9 +1393,9 @@ namespace raspody
     bool Selectable(const char* label, bool selected)
     {
         ImFont* bodyFont = fonts::body ? fonts::body : ImGui::GetFont();
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = RowOrigin();
         const float width = g_popupDepth > 0 ? ImGui::GetContentRegionAvail().x : RowWidth();
-        const float height = S(24);
+        const float height = ImMax(S(24), TextSize(bodyFont, 16.0f, label).y + S(9));
 
         ImGui::PushID(label);
         ImGui::SetCursorScreenPos(pos);
@@ -1428,9 +1445,10 @@ namespace raspody
         ImFont* bodyFont = fonts::body ? fonts::body : ImGui::GetFont();
         ImFont* smallFont = fonts::small ? fonts::small : ImGui::GetFont();
 
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = RowOrigin();
         const float width = RowWidth();
-        const float height = S(58);
+        const float height = ImMax(S(58), TextSize(bodyFont, 20.0f, name).y +
+                                          TextSize(smallFont, 16.0f, created).y + S(26));
 
         ImGui::PushID(name);
         ImGui::SetCursorScreenPos(pos);

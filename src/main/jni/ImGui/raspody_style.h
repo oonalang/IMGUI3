@@ -241,7 +241,7 @@ namespace raspody
         { "Weapon", "Movement", nullptr },
         { "Patches", "Crosshair", nullptr },
         { "Profiles", "Account", nullptr },
-        { "Game", "System", nullptr }
+        { "Menu", "System", nullptr }
     };
 
     inline const char* kSubtabDescriptions[Tab_Count][3] = {
@@ -249,8 +249,8 @@ namespace raspody
         { "Everything drawn on players and bots.", "World, camera and awareness toggles.", nullptr },
         { "Handling, recoil and attachments.", "Speed, flight and slide tuning.", nullptr },
         { "Firing-timing patches and movement fixes.", "The dot that the trigger aims through.", nullptr },
-        { "Write, load and manage your profiles.", "License, build and menu appearance.", nullptr },
-        { "World physics, smoke and camera.", "Reports, input and performance.", nullptr }
+        { "Write, load and manage your profiles.", "License and build of the session.", nullptr },
+        { "Menu appearance and build info.", "Reports, account and performance switches.", nullptr }
     };
 
     // Popup bookkeeping shared by the widgets and the render loop.

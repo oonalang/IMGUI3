@@ -4333,12 +4333,16 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     if (is_multiline) // Open group before calling GetID() because groups tracks id created within their scope (including the scrollbar)
         BeginGroup();
     const ImGuiID id = window->GetID(label);
-    const float w = GetContentRegionMax().x - GetStyle().WindowPadding.x;
+    // The field takes the width of *this item* (SetNextItemWidth / PushItemWidth,
+    // falling back to the content region) and starts at the cursor. The old
+    // form measured the whole window and pushed the frame half a width to the
+    // right, so a field inside a card drew - and hit-tested - far outside it.
+    const float w = CalcItemWidth();
     const ImVec2 label_size = CalcTextSize(label, NULL, true);
     const ImVec2 frame_size = CalcItemSize(size_arg, w, (is_multiline ? g.FontSize * 8.0f : 32));
     const ImVec2 total_size = ImVec2(frame_size.x + (label_size.x > 0.0f ? label_size.x : 0.0f), 32);
 
-    const ImRect frame_bb(window->DC.CursorPos + ImVec2(w / 2, -1), window->DC.CursorPos + ImVec2(w, 32));
+    const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, 32));
     const ImRect total_bb(frame_bb.Min, frame_bb.Min + total_size);
 
     ImGuiWindow* draw_window = window;

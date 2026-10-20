@@ -471,7 +471,9 @@ inline Result DrawModel(ImDrawList *draw, const ImVec2 &pos, const ImVec2 &size)
     g_clock += dt;
     if (!g_dragging)
     {
-        g_yaw += (0.32f + g_yawVel) * dt;
+        // No idle turntable: the model only turns while a finger drags it, then
+        // coasts to a stop. Pitch settles back to level on its own.
+        g_yaw += g_yawVel * dt;
         g_yawVel *= powf(0.08f, dt);
         g_pitch += (0.04f - g_pitch) * dt * 1.6f;
     }

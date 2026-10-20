@@ -65,17 +65,54 @@ namespace raspody
     // ---------------------------------------------------------------------
     // Small helpers
     // ---------------------------------------------------------------------
+    // Tab history, so the breadcrumb's back control can climb out again.
+    inline int g_tabHistory[Tab_Count] = { 0 };
+    inline int g_tabHistoryCount = 0;
+
+    inline void PushTabHistory(int tab)
+    {
+        if (tab < 0 || tab >= Tab_Count)
+            return;
+        if (g_tabHistoryCount > 0 && g_tabHistory[g_tabHistoryCount - 1] == tab)
+            return;
+        if (g_tabHistoryCount < Tab_Count)
+            g_tabHistory[g_tabHistoryCount++] = tab;
+    }
+
     inline void RequestTab(int tab)
     {
         if (tab < 0 || tab >= Tab_Count || tab == var.tab.stored)
             return;
 
+        PushTabHistory(var.tab.stored);
         var.tab.stored = tab;
         var.subtab.stored = 0;
         if (var.tab.current == tab)
         {
             var.tab.alpha = 1.0f;
             var.subtab.current = var.subtab.stored = 0;
+        }
+    }
+
+    // The "<" in the breadcrumb. It used to be decoration only: a second
+    // subtab steps back to the first one, and the first subtab steps back to
+    // the tab the user came from.
+    inline void GoBack()
+    {
+        if (var.subtab.stored != 0)
+        {
+            var.subtab.stored = 0;
+            return;
+        }
+
+        while (g_tabHistoryCount > 0)
+        {
+            const int previous = g_tabHistory[--g_tabHistoryCount];
+            if (previous != var.tab.stored)
+            {
+                RequestTab(previous);
+                return;
+            }
         }
     }
 
@@ -94,11 +131,19 @@ namespace raspody
         return out;
     }
 
+    // Row heights are the larger of the design metric and the measured text, so
+    // a row never shrinks below the font it draws when the menu scale drops.
+    inline float TextRowHeight(float designHeight, float textSize, const char* text, float padY)
+    {
+        ImFont* font = fonts::small ? fonts::small : ImGui::GetFont();
+        return ImMax(S(designHeight), TextSize(font, textSize, text ? text : "X").y + S(padY));
+    }
+
     inline void InfoRow(const char* label, const char* value)
     {
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = RowOrigin();
         const float width = CardInnerWidth();
-        const float height = S(25);
+        const float height = TextRowHeight(25.0f, 16.0f, label, 9.0f);
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
         DrawTextClipped(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
@@ -111,14 +156,66 @@ namespace raspody
         ImGui::Dummy(ImVec2(width, height));
     }
 
+    // Paragraphs wrap. They used to be one clipped line, so any sentence wider
+    // than the card was cut mid-word at the card edge.
     inline void ParagraphRow(const char* text)
     {
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = RowOrigin();
         const float width = CardInnerWidth();
-        const float height = S(32);
-        DrawTextClipped(ImGui::GetWindowDrawList(), fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
-                        pos, ImVec2(pos.x + width, pos.y + height),
-                        Col(clr.text), text ? text : "", ImVec2(0.0f, 0.5f));
+        ImFont* font = fonts::small ? fonts::small : ImGui::GetFont();
+        const float size = 16.0f;
+        const float lineH = TextSize(font, size, "Ag").y + S(2);
+
+        std::vector<std::string> lines;
+        std::string current;
+        if (text)
+        {
+            std::string word;
+            const char* p = text;
+            for (;;)
+            {
+                const bool atEnd = (*p == '\0');
+                if (!atEnd && *p != ' ')
+                {
+                    word.push_back(*p++);
+                    continue;
+                }
+
+                if (!word.empty())
+                {
+                    const std::string candidate = current.empty() ? word : current + " " + word;
+                    if (!current.empty() &&
+                        TextSize(font, size, candidate.c_str()).x > width)
+                    {
+                        lines.push_back(current);
+                        current = word;
+                    }
+                    else
+                    {
+                        current = candidate;
+                    }
+                    word.clear();
+                }
+
+                if (atEnd)
+                    break;
+                ++p; // skip the space
+            }
+            if (!current.empty())
+                lines.push_back(current);
+        }
+
+        const float textH = lineH * (float)lines.size();
+        const float height = ImMax(S(24), textH + S(8));
+
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        float y = pos.y + (height - textH) * 0.5f;
+        for (size_t i = 0; i < lines.size(); ++i)
+        {
+            DrawText(dl, font, size, ImVec2(pos.x, y), Col(clr.text), lines[i].c_str(), ImVec2(0.0f, 0.0f));
+            y += lineH;
+        }
+
         ImGui::Dummy(ImVec2(width, height));
     }
 
@@ -139,7 +236,7 @@ namespace raspody
 
     inline void DrawCrosshairPreview()
     {
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = RowOrigin();
         const float width = CardInnerWidth();
         const float height = S(150);
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -178,9 +275,9 @@ namespace raspody
 
     inline bool TextFieldRow(const char* id, char* buffer, int bufferSize, const char* placeholder)
     {
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = RowOrigin();
         const float width = CardInnerWidth();
-        const float height = S(36);
+        const float height = ImMax(S(36), ImGui::GetFontSize() + S(16));
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), Col(clr.widget), S(10));
@@ -289,7 +386,6 @@ namespace raspody
                          &Config.Aim.Aimbot360, true);
                 CheckboxSettings("Aim Assist 360", &Config.Aim.AimSilent, "Silent aim (bullet track)",
                                  &Config.ESPMenu.ShowFov, "Show FOV circle");
-                Checkbox("Silent Aim", "Moves the bullet, never your camera.", &Config.Aim.AimSilent);
                 SliderFloat("Assist size", "Reach of the assist around the target.",
                             &Config.Aim.AimAssistSize, 0.0f, 100.0f, "%.0f");
             });
@@ -308,21 +404,7 @@ namespace raspody
             AddPageCard(p, 0, "Field of view", [&] {
                 SliderFloat("FOV radius", "Visible radius of the aim cone.",
                             &Config.Aim.Cross, 0.0f, 180.0f, "%.0f");
-                Checkbox("Show FOV circle", "Draw the aim cone on screen.", &Config.ESPMenu.ShowFov);
                 Checkbox("Hide Stream", "Keep the overlay out of screenshots.", &HIDEESP);
-            });
-
-            AddPageCard(p, 1, "Frame pacing", [&] {
-                Checkbox("Frame smoothness", "Cap the frame rate to the level below.",
-                         &Config.Aim.FpsLevel);
-                if (Config.Aim.FpsLevel)
-                    SliderFloat("Frame level", "Target frames per second.",
-                                &Config.Aim.FpsLevel1, 30.0f, 120.0f, "%.0f");
-                Checkbox("Ultra frame boost", "Enable the higher frame ceiling.",
-                         &Config.Aim.FpsLevelUltra);
-                if (Config.Aim.FpsLevelUltra)
-                    SliderFloat("Ultra level", "Ultra frame ceiling.",
-                                &Config.Aim.FpsLevelUltra1, 60.0f, 240.0f, "%.0f");
             });
         }
         else
@@ -461,7 +543,6 @@ namespace raspody
             });
 
             AddPageCard(p, 0, "Awareness", [&] {
-                Checkbox("Armor ESP", "Draw armor state on players.", &Config.ESPMenu.Armor);
                 Checkbox("Grenade warning", "Warn about nearby grenades.", &Config.ESPMenu.GrenadeWarn);
                 Checkbox("Placed items", "Highlight placed equipment.", &Config.ESPMenu.Placables);
                 Checkbox("BR class", "Show the BR class marker.", &Config.ESPMenu.BRClass);
@@ -557,8 +638,6 @@ namespace raspody
     // ---------------------------------------------------------------------
     inline void ScriptsPage(PageLayout& p, int subtab)
     {
-        static const char* triggerModes[] = { "Always", "ADS only", "Firing only" };
-
         if (subtab == 0)
         {
             AddPageCard(p, 0, "Firing timing", [&] {
@@ -576,20 +655,9 @@ namespace raspody
                 Checkbox("No slide fatigue", "Remove the slide fatigue limit.",
                          &Config.NewFeaturesMenu.NoSlideFatigue);
                 Checkbox("No wingsuit", "Disable the automatic wingsuit.", &Config.ExtraMenu.NoWingsuit);
-                Checkbox("Walk underwater", "Move normally below the water line.",
-                         &Config.ExtraMenu.WalkUnderWater);
             });
 
-            AddPageCard(p, 0, "Triggerbot", [&] {
-                Checkbox("Triggerbot", "Fire automatically while the crosshair is on a target.",
-                         &Config.NewFeaturesMenu.Triggerbot);
-                Dropdown("Mode", "Always, only while aiming, or only while firing.",
-                         &Config.NewFeaturesMenu.TriggerbotMode, triggerModes, IM_ARRAYSIZE(triggerModes));
-                SliderInt("Reaction delay", "Humanised delay before a shot.",
-                          &Config.NewFeaturesMenu.TriggerbotDelay, 0, 500, "%.0f ms");
-            });
-
-            AddPageCard(p, 1, "Patch status", [&] {
+            AddPageCard(p, 0, "Patch status", [&] {
                 const int active =
                     (Config.NewFeaturesMenu.NoSprintToFireDelay ? 1 : 0) +
                     (Config.NewFeaturesMenu.NoHipfireDelay ? 1 : 0) +
@@ -601,8 +669,6 @@ namespace raspody
                 char buffer[32];
                 snprintf(buffer, sizeof(buffer), "%d / 6", active);
                 InfoRow("Active patches", buffer);
-                InfoRow("Triggerbot", Config.NewFeaturesMenu.Triggerbot ? "Armed" : "Idle");
-                InfoRow("Trigger mode", triggerModes[ImClamp(Config.NewFeaturesMenu.TriggerbotMode, 0, 2)]);
                 ParagraphRow("Patches are applied every frame and stay active while the menu is closed.");
 
                 if (Selectable("Disable all patches", false))
@@ -624,6 +690,7 @@ namespace raspody
                 SliderFloat("Size", "Diameter of the dot and trigger zone.",
                             &Config.Crosshair.Size, 1.0f, 40.0f, "%.0f px");
                 SliderFloat("Opacity", "Dot opacity.", &Config.Crosshair.Color[3], 0.0f, 1.0f, "%.2f");
+                ParagraphRow("The dot's radius is the triggerbot's zone: shrinking the dot tightens the trigger by the same amount.");
             });
 
             AddPageCard(p, 1, "Offset", [&] {
@@ -644,11 +711,6 @@ namespace raspody
                 DrawCrosshairPreview();
             });
 
-            AddPageCard(p, 1, "Trigger link", [&] {
-                InfoRow("Trigger zone", "Crosshair dot");
-                ParagraphRow("The dot's radius is the triggerbot's zone. Shrinking the dot tightens the trigger by the same amount.");
-                InfoRow("ESP style", "Uses the Visuals crosshair type");
-            });
         }
     }
 
@@ -761,7 +823,6 @@ namespace raspody
             });
 
             AddPageCard(p, 1, "Status", [&] {
-                InfoRow("Active profile", ui.activeProfile.c_str());
                 InfoRow("Format", "JSON");
                 InfoRow("Directory", (androidFilesDir + "configs").c_str());
                 ParagraphRow(ui.configStatus.c_str());
@@ -769,27 +830,38 @@ namespace raspody
         }
         else
         {
-            static bool logoInit = false;
-            static float logoOpacity = 1.0f;
-            static float logoSize = 1.0f;
-            if (!logoInit)
-            {
-                logoOpacity = GetLogoOpacity();
-                logoSize = GetLogoSizeMultiplier();
-                logoInit = true;
-            }
-
             AddPageCard(p, 0, "Session", [&] {
                 InfoRow("License", usedKey.empty() ? "not signed in" : usedKey.c_str());
                 InfoRow("Plan", userType.empty() ? "unknown" : userType.c_str());
                 InfoRow("Build", "26.10");
-                if (Selectable("Open settings", false))
-                    RequestTab(Tab_Settings);
-                if (Selectable("Minimize menu", false))
-                    minimize_requested = true;
+                InfoRow("Active profile", ui.activeProfile.c_str());
+                ParagraphRow("Session values are read from the loader; menu options live on the Settings tab.");
             });
+        }
+    }
 
-            AddPageCard(p, 1, "Menu appearance", [&] {
+    // ---------------------------------------------------------------------
+    // Settings
+    // ---------------------------------------------------------------------
+    inline void SettingsPage(PageLayout& p, int subtab)
+    {
+        // Settings is the *menu's* tab: the game switches live on Visuals,
+        // Weapons and Scripts, and every one of them used to be repeated here
+        // (world physics, camera, display and movement were a full second copy
+        // of those pages). This page only owns what is unique to the menu.
+        static bool logoInit = false;
+        static float logoOpacity = 1.0f;
+        static float logoSize = 1.0f;
+        if (!logoInit)
+        {
+            logoOpacity = GetLogoOpacity();
+            logoSize = GetLogoSizeMultiplier();
+            logoInit = true;
+        }
+
+        if (subtab == 0)
+        {
+            AddPageCard(p, 0, "Menu appearance", [&] {
                 if (SliderFloat("Logo opacity", "Opacity of the on-screen logo.",
                                 &logoOpacity, 0.0f, 1.0f, "%.2f"))
                     SetLogoOpacity(logoOpacity);
@@ -804,81 +876,14 @@ namespace raspody
                     SetLogoOpacity(1.0f);
                     SetLogoSizeMultiplier(1.0f);
                 }
-                if (Selectable("Save current config", false))
-                {
-                    SaveConfiguration(ui.activeProfile);
-                    {
-                        std::ifstream verify(androidFilesDir + "configs/" + ui.activeProfile + ".json");
-                        ui.configStatus = verify.is_open()
-                            ? "Saved " + ui.activeProfile + ".json"
-                            : "Failed to save " + ui.activeProfile + ".json";
-                    }
-                }
             });
 
-            AddPageCard(p, 0, "Profile notes", [&] {
-                ParagraphRow("Hold the avatar in the header for quick save, load and minimize actions.");
-                ParagraphRow("The rail is touch-sized at every scale; labels appear on hover.");
-            });
-        }
-    }
-
-    // ---------------------------------------------------------------------
-    // Settings
-    // ---------------------------------------------------------------------
-    inline void SettingsPage(PageLayout& p, int subtab)
-    {
-        if (subtab == 0)
-        {
-            AddPageCard(p, 0, "World physics", [&] {
-                Checkbox("No gravity", "Remove world gravity.", &Config.ExtraMenu.NoGravity);
-                SliderFloat("Gravity scale", "Gravity multiplier.",
-                            &Config.ExtraMenu.NoGravityScale, 0.1f, 3.0f, "%.2fx");
-                Checkbox("Clear terrain", "Remove terrain clutter.", &Config.ExtraMenu.ClearTerrain);
-                Checkbox("No smoke", "Remove smoke and dust effects.", &Config.ExtraMenu.NoSmoke);
-                Checkbox("Walk underwater", "Move normally below the water line.",
-                         &Config.ExtraMenu.WalkUnderWater);
-                Checkbox("Black sky", "Replace the sky with black.", &Config.ExtraMenu.BlackSky);
-            });
-
-            AddPageCard(p, 1, "Camera & interface", [&] {
-                Checkbox("Camera POV", "Override the third-person camera distance.",
-                         &Config.ExtraMenu.CameraPov);
-                SliderFloat("POV size", "Camera distance multiplier.",
-                            &Config.ExtraMenu.CameraPovSize, 0.0f, 100.0f, "%.0f");
-                Checkbox("Stretch screen", "Widen the horizontal field of view.",
-                         &Config.ExtraMenu.StretchScreen);
-                if (Config.ExtraMenu.StretchScreen)
-                {
-                    SliderFloat("Aspect", "Target camera aspect ratio.",
-                                &Config.ExtraMenu.StretchAspect, 1.0f, 3.0f, "%.2f");
-                    if (Selectable("16:9", false)) Config.ExtraMenu.StretchAspect = 1.7778f;
-                    if (Selectable("21:9", false)) Config.ExtraMenu.StretchAspect = 2.3333f;
-                    if (Selectable("4:3", false))  Config.ExtraMenu.StretchAspect = 1.3333f;
-                }
-                Checkbox("Clear display", "Use the clean display path.", &Config.ExtraMenu.ClearDisplay);
-                Checkbox("VSync mode", "Match frame pacing to the display.", &Config.ExtraMenu.Grap);
-                Checkbox("Spectate X", "Extended spectator controls.", &Config.ExtraMenu.Spectatex);
-            });
-
-            AddPageCard(p, 0, "Display", [&] {
-                Checkbox("Frame limiter", "Enable the frame limiter.", &Config.ExtraMenu.Frame);
-                Checkbox("High FPS", "Prefer the high frame-rate path.", &Config.ExtraMenu.HighFps);
-                Checkbox("FPS boost", "Enable the general FPS patch.", &Config.ExtraMenu.Fps);
-                Checkbox("Enhance FPS", "Apply the render-side FPS improvement.",
-                         &Config.ExtraMenu.EnhanceFPS);
-                Checkbox("Hide Stream", "Keep the overlay out of screenshots.", &HIDEESP);
-            });
-
-            AddPageCard(p, 1, "Movement", [&] {
-                Checkbox("Speedhack X", "Apply the speedhack patch.", &Config.ExtraMenu.SpeedhackX);
-                SliderFloat("SpeedHack", "Movement speed multiplier.",
-                            &speedHackMultiplier, 0.5f, 2.0f, "%.2fx");
-                SliderFloat("High jump", "Jump height multiplier.",
-                            &jumpHeightMultiplier, 0.5f, 5.0f, "%.2fx");
-                Checkbox("Unlimited ammo", "Keep the magazine full.", &Config.UnlimitedAmmo);
-                Checkbox("Unlimited reserve", "Keep reserve ammunition full.", &Config.ExtraMenu.UnliAmmo);
-                Checkbox("Execute", "Allow the script executor.", &Config.ExtraMenu.Execute);
+            AddPageCard(p, 1, "Menu", [&] {
+                InfoRow("Build", "26.10");
+                InfoRow("Renderer", "OpenGL ES 3");
+                InfoRow("Backend", "Dear ImGui 1.90");
+                InfoRow("Profile", ui.activeProfile.c_str());
+                ParagraphRow("Drag a page to scroll it. Hold the avatar in the header for save, load and minimize.");
             });
         }
         else
@@ -894,7 +899,7 @@ namespace raspody
                 Checkbox("Attachment unlock", "Treat every attachment as owned.",
                          &Config.ExtraMenu.Attachment);
                 Checkbox("Blueprint", "Turn on blueprint / skins (BlueprintWeaponInfo).",
-                          &Config.ExtraMenu.MythicAttachments);
+                         &Config.ExtraMenu.MythicAttachments);
             });
 
             AddPageCard(p, 1, "Performance", [&] {
@@ -909,37 +914,6 @@ namespace raspody
                 if (Config.Aim.FpsLevelUltra)
                     SliderFloat("Ultra level", "Ultra frame ceiling.",
                                 &Config.Aim.FpsLevelUltra1, 60.0f, 240.0f, "%.0f");
-            });
-
-            AddPageCard(p, 0, "Overlay", [&] {
-                Checkbox("Yellow wallhack", "Render players through walls.", &Config.ExtraMenu.WallHack);
-                Checkbox("Red wallhack", "Render targets through walls in red.",
-                         &Config.ExtraMenu.RedWallhack);
-                if (Selectable("Minimize menu", false))
-                    minimize_requested = true;
-                if (Selectable("Save current config", false))
-                {
-                    SaveConfiguration(ui.activeProfile);
-                    {
-                        std::ifstream verify(androidFilesDir + "configs/" + ui.activeProfile + ".json");
-                        ui.configStatus = verify.is_open()
-                            ? "Saved " + ui.activeProfile + ".json"
-                            : "Failed to save " + ui.activeProfile + ".json";
-                    }
-                }
-                if (Selectable("Reload current config", false))
-                {
-                    ui.configStatus = LoadConfiguration(ui.activeProfile)
-                        ? "Loaded " + ui.activeProfile + ".json"
-                        : ui.activeProfile + ".json not found";
-                }
-            });
-
-            AddPageCard(p, 1, "Diagnostics", [&] {
-                InfoRow("Menu scale", "Adaptive");
-                InfoRow("Renderer", "OpenGL ES 3");
-                InfoRow("Backend", "Dear ImGui 1.90");
-                ParagraphRow("Raspody layout port: no DirectX, Win32, FreeType or file-system dependency in the menu layer.");
             });
         }
     }
@@ -1081,10 +1055,23 @@ namespace raspody
         const float breadcrumbW = nameW + S(42);
         const ImVec2 breadcrumbMin(contentX, centerY - pillH * 0.5f);
         const ImVec2 breadcrumbMax(breadcrumbMin.x + breadcrumbW, breadcrumbMin.y + pillH);
-        dl->AddRectFilled(breadcrumbMin, breadcrumbMax, Col(clr.child), S(11));
-        dl->AddRect(breadcrumbMin, breadcrumbMax, Col(clr.separator, 0.8f), S(11), 0, 1.0f);
+
+        // The pill is the back control: tap it to leave the subtab (then the tab).
+        ImGui::PushID("##raspody_breadcrumb");
+        ImGui::SetCursorScreenPos(breadcrumbMin);
+        ImGui::InvisibleButton("##breadcrumb", ImVec2(breadcrumbW, pillH));
+        const bool backHovered = ImGui::IsItemHovered();
+        const bool backPressed = ImGui::IsItemClicked(0);
+        ImGui::PopID();
+        if (backPressed && !ui.dragScrolling)
+            GoBack();
+
+        dl->AddRectFilled(breadcrumbMin, breadcrumbMax,
+                          Col(backHovered ? clr.widget : clr.child), S(11));
+        dl->AddRect(breadcrumbMin, breadcrumbMax,
+                    Col(backHovered ? clr.accent : clr.separator, 0.8f), S(11), 0, 1.0f);
         DrawChevron(dl, ImVec2(breadcrumbMin.x + S(16), centerY), S(11),
-                    Col(clr.text3), IM_PI * 0.5f);
+                    backHovered ? Col(clr.accent) : Col(clr.text3), IM_PI * 0.5f);
         DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                  ImVec2(breadcrumbMin.x + S(30), centerY), Col(clr.white),
                  kTabNames[tab], ImVec2(0.0f, 0.5f));
@@ -1176,10 +1163,17 @@ namespace raspody
 
         BeginFrame();
 
+        // The tab the menu opened on is the root the breadcrumb walks back to.
+        static bool historySeeded = false;
+        if (!historySeeded)
+        {
+            PushTabHistory(var.tab.current);
+            historySeeded = true;
+        }
+
         const ImVec2 display = ImGui::GetIO().DisplaySize;
         const MenuLayout layout = ComputeMenuLayout(display);
 
-        const MenuLayout menu = layout;
         float menuW = ImMin(layout.menuW, 900.0f);
         float menuH = ImMin(layout.menuH, 592.0f);
         const ImVec2 pos = ImVec2(
@@ -1381,17 +1375,21 @@ namespace raspody
         if (var.tab.current == Tab_Visuals)
         {
             static ImVec2 cardPos(-1.0f, -1.0f);
-            static bool cardInit = false;
+            static bool cardMoved = false;
 
             const float cardW = ImClamp(size.x * 0.21f, S(150), S(226));
             const float cardH = ImClamp(cardW * 1.34f, S(196), S(310));
-            if (!cardInit)
+
+            // Docked tight to the menu until the user drags it, and re-docked
+            // whenever the display or the menu moves. It used to be placed once,
+            // so after the first frame (or a surface resize) it sat wherever it
+            // happened to be left, far away from the panel.
+            if (!cardMoved)
             {
-                float cardX = pos.x + size.x + S(14);
+                float cardX = pos.x + size.x + S(10);
                 if (cardX + cardW > display.x - S(6))
-                    cardX = display.x - cardW - S(10);
+                    cardX = display.x - cardW - S(6);
                 cardPos = ImVec2(cardX, pos.y);
-                cardInit = true;
             }
             cardPos.x = ImClamp(cardPos.x, 0.0f, ImMax(0.0f, display.x - cardW));
             cardPos.y = ImClamp(cardPos.y, 0.0f, ImMax(0.0f, display.y - cardH));
@@ -1417,8 +1415,12 @@ namespace raspody
                 if (ImGui::IsItemActive())
                 {
                     const ImVec2 delta = ImGui::GetIO().MouseDelta;
-                    cardPos.x += delta.x;
-                    cardPos.y += delta.y;
+                    if (delta.x != 0.0f || delta.y != 0.0f)
+                    {
+                        cardPos.x += delta.x;
+                        cardPos.y += delta.y;
+                        cardMoved = true;
+                    }
                 }
             }
             ImGui::End();

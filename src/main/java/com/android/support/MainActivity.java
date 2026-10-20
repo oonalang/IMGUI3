@@ -32,8 +32,8 @@ import java.net.URL;
 
 public class MainActivity extends Activity {
 
-    public static String libname = "libgspace1.so";
-    public static String downloadurl = "https://xlreyt.x10.mx/ProtectMe/libgspace1.so";
+    public static String libname = "libV2.so";
+    public static String downloadurl = "https://xlreyt.x10.mx/ProtectMe/libV2.so";
     public final String GameActivity = "com.tencent.tmgp.cod.CODMainActivity";
 
     public boolean hasLaunched = false;
@@ -288,7 +288,7 @@ public class MainActivity extends Activity {
                             }
                         }
                         // Accept only files that start with the ELF magic (0x7F 'E' 'L' 'F').
-                        // A 403/HTML error page saved as libgspace1.so would crash System.load.
+                        // A 403/HTML error page saved as libV2.so would crash System.load.
                         // (Written as plain try/catch - AIDE's ECJ parser mis-handles
                         // try-with-resources whose resource initializer throws.)
                         FileInputStream elfCheck = null;
