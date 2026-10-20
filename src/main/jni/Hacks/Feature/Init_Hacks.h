@@ -196,7 +196,7 @@ sColorsESPBOT sColorsESPBOT{0};
         bool Grapss;
         bool EnhanceFPS;
         bool Spectatex;
-        bool Attachment;
+        bool Attachment = true;
         // Unlocks skins + attachments as if owned. ON by default.
         bool MythicAttachments = true;
         // Drops player-report evidence. ON by default.

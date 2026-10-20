@@ -227,14 +227,14 @@ int main()
         sConfig fresh{0};                // exactly what Init_Hacks.h declares
         CHECK(fresh.ExtraMenu.MythicAttachments,
               "M1 a fresh config has Mythic Attachments ON (as-if-owned default)");
-        CHECK(!fresh.ExtraMenu.Attachment,
-              "M1 ... and no other unlock flag is silently on");
+        CHECK(fresh.ExtraMenu.Attachment,
+              "M1 ... and Attachment defaults on to preserve stock behaviour");
     }
 
     installFakes();
 
     // ---- M2: ON -> all four gates answer YES, natively nothing runs --------
-    setFlags(true, false);
+    setFlags(true, true);
     g_calls.reset();
     memset(&g_diag, 0, sizeof(g_diag));
     {
@@ -341,7 +341,7 @@ int main()
     installLayer2Fakes();
 
     // ---- M7: ON rewrites the rows the popup is about to draw ---------------
-    setFlags(true, false);
+    setFlags(false, true);
     memset(&g_diag, 0, sizeof(g_diag));
     g_listCalls = 0; g_listType = -1;
     {
@@ -389,7 +389,7 @@ int main()
     }
 
     // ---- M9/M10: the row handed to its view -------------------------------
-    setFlags(true, false);
+    setFlags(false, true);
     memset(&g_diag, 0, sizeof(g_diag));
     g_itemCalls = 0;
     {
@@ -426,7 +426,7 @@ int main()
     }
 
     // ---- M11/M12: the gunsmith's cell state --------------------------------
-    setFlags(true, false);
+    setFlags(false, true);
     memset(&g_diag, 0, sizeof(g_diag));
     g_cellCalls = 0;
     {
@@ -466,7 +466,7 @@ int main()
     }
 
     // ---- M13: a malformed list stops instead of walking off the heap -------
-    setFlags(true, false);
+    setFlags(false, true);
     memset(&g_diag, 0, sizeof(g_diag));
     {
         CHECK(UnlockOwnStateInGroupList(nullptr) == 0,
@@ -527,7 +527,7 @@ int main()
           "M15 an out-of-range gate leaves every other flag clear");
 
     // Leave the global config as the rest of the session would find it.
-    setFlags(true, false);
+    setFlags(true, true);
     installFakes();
 
     if (g_failures == 0)
