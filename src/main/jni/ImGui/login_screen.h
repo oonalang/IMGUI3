@@ -56,24 +56,25 @@
 namespace login_screen
 {
     // -----------------------------------------------------------------------
-    // Palette - the reference's light page
+    // Palette - dark page, violet accent
     // -----------------------------------------------------------------------
-    // Plain constants rather than the app's purple theme: this screen is the
-    // one place the reference's own light look is the point, and the values are
-    // the ones picked off the screenshot.
-    constexpr ImU32 kPanel   = IM_COL32(255, 255, 255, 255);
-    constexpr ImU32 kHeader  = IM_COL32(250, 251, 252, 255);
-    // What is behind the artwork, and what the JPEG's own background is baked
-    // to: white, so the picture sits on the page instead of in a column.
-    constexpr ImU32 kArtBg   = IM_COL32(255, 255, 255, 255);
-    constexpr ImU32 kHair    = IM_COL32(231, 234, 239, 255);
-    constexpr ImU32 kLine    = IM_COL32(212, 217, 224, 255);
-    constexpr ImU32 kInk     = IM_COL32( 17,  20,  24, 255);
-    constexpr ImU32 kInkSoft = IM_COL32(107, 114, 128, 255);
-    constexpr ImU32 kInkMute = IM_COL32(154, 161, 172, 255);
-    constexpr ImU32 kBlue    = IM_COL32( 29, 155, 240, 255);
-    constexpr ImU32 kBlueDn  = IM_COL32( 21, 131, 206, 255);
-    constexpr ImU32 kDanger  = IM_COL32(214,  48,  66, 255);
+    // The reference's layout with the app's own colours: a near-black violet
+    // page, off-white type, and one saturated violet for everything the finger
+    // is meant to find (the pill, the checked box, the focused underline).
+    constexpr ImU32 kPanel   = IM_COL32( 18,  11,  29, 255);   // #120B1D
+    constexpr ImU32 kHeader  = IM_COL32( 22,  14,  35, 255);   // a shade up from the page
+    // What is behind the artwork - and, because a JPEG carries no alpha, the
+    // colour IMAGE/miku.h is baked onto. The two must stay in step or the
+    // picture shows up as a rectangle.
+    constexpr ImU32 kArtBg   = kPanel;
+    constexpr ImU32 kHair    = IM_COL32( 58,  42,  86, 255);   // rules and dividers
+    constexpr ImU32 kLine    = IM_COL32( 64,  48,  94, 255);   // field underline
+    constexpr ImU32 kInk     = IM_COL32(244, 240, 252, 255);
+    constexpr ImU32 kInkSoft = IM_COL32(172, 160, 198, 255);
+    constexpr ImU32 kInkMute = IM_COL32(140, 128, 168, 255);
+    constexpr ImU32 kPurple  = IM_COL32(139,  92, 246, 255);   // #8B5CF6
+    constexpr ImU32 kPurpleDn= IM_COL32(109,  40, 217, 255);   // #6D28D9
+    constexpr ImU32 kDanger  = IM_COL32(255, 122, 148, 255);
 
     // -----------------------------------------------------------------------
     // Typeface - Poppins at the reference's sizes
@@ -359,9 +360,9 @@ namespace login_screen
             textActive  = c::text::text_active;
 
             c::elements::background = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);   // the panel draws the underline
-            c::text::text           = ImVec4(0.604f, 0.631f, 0.675f, 1.0f);  // hint
-            c::text::text_hov       = ImVec4(0.604f, 0.631f, 0.675f, 1.0f);
-            c::text::text_active    = ImVec4(0.067f, 0.078f, 0.094f, 1.0f);  // typed key + caret
+            c::text::text           = ImVec4(0.541f, 0.498f, 0.643f, 1.0f);  // hint #8A7FA4
+            c::text::text_hov       = ImVec4(0.541f, 0.498f, 0.643f, 1.0f);
+            c::text::text_active    = ImVec4(0.957f, 0.941f, 0.988f, 1.0f);  // typed key + caret #F4F0FC
 
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, padY));
             ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
@@ -429,8 +430,10 @@ namespace login_screen
         const char* brand = (p.brand && p.brand[0]) ? p.brand : "ethnir.cc";
 
         // ---- the panel -----------------------------------------------------
+        // Opaque: the reference sits on a blurred page, this sits on the game,
+        // and a translucent panel over a bright map washes the type out.
         dl->AddRectFilled(L.cardMin, L.cardMax, kPanel, L.cardRound);
-        dl->AddRect(L.cardMin, L.cardMax, IM_COL32(0, 0, 0, 20), L.cardRound, 0, 1.0f);
+        dl->AddRect(L.cardMin, L.cardMax, IM_COL32(139, 92, 246, 54), L.cardRound, 0, 1.0f);
 
         // ---- title bar ------------------------------------------------------
         {
@@ -453,7 +456,7 @@ namespace login_screen
             const ImVec2 cc = L.closeCenter();
             const float cr = ImMin(7.0f * s, (L.closeMax.x - L.closeMin.x) * 0.24f);
             if (hover)
-                dl->AddCircleFilled(cc, cr * 1.9f, IM_COL32(0, 0, 0, 10));
+                dl->AddCircleFilled(cc, cr * 1.9f, IM_COL32(255, 255, 255, 16));
             DrawClose(dl, cc, cr, hover ? kInk : kInkSoft, ImMax(1.4f * s, 1.0f));
             if (tapped)
                 out.close = true;
@@ -545,8 +548,8 @@ namespace login_screen
             const bool hovered = ImGui::IsItemHovered();
             ImGui::PopFont();
 
-            // The underline: grey until something happens to the field, then blue.
-            const ImU32 lineCol = focused ? kBlue : (hovered ? ImU32(IM_COL32(150, 160, 172, 255)) : kLine);
+            // The underline: dim until something happens to the field, then violet.
+            const ImU32 lineCol = focused ? kPurple : (hovered ? ImU32(IM_COL32(108, 84, 152, 255)) : kLine);
             dl->AddLine(ImVec2(L.fieldL, L.fieldBot), ImVec2(L.fieldR, L.fieldBot),
                         lineCol, (focused ? 1.8f : 1.2f) * ImMax(s, 0.8f));
 
@@ -570,8 +573,8 @@ namespace login_screen
                 line[n++] = (*c == '\n' || *c == '\r') ? ' ' : *c;
             line[n] = '\0';
 
-            dl->AddRectFilled(L.errorMin, L.errorMax, IM_COL32(255, 240, 242, 255), 6.0f * s);
-            dl->AddRect(L.errorMin, L.errorMax, IM_COL32(246, 196, 202, 255), 6.0f * s, 0, 1.0f);
+            dl->AddRectFilled(L.errorMin, L.errorMax, IM_COL32(58, 20, 34, 255), 6.0f * s);
+            dl->AddRect(L.errorMin, L.errorMax, IM_COL32(126, 52, 74, 255), 6.0f * s, 0, 1.0f);
             dl->AddText(fMicro, ImClamp(11.0f * s, 9.0f, 15.0f),
                         ImVec2(L.errorMin.x + 8.0f * s, (L.errorMin.y + L.errorMax.y) * 0.5f -
                                                        TextSize(fMicro, 11.0f * s, line).y * 0.5f),
@@ -598,7 +601,7 @@ namespace login_screen
 
             if (*p.remember)
             {
-                dl->AddRectFilled(L.rememberMin, L.rememberMax, hover ? kBlueDn : kBlue, box * 0.26f);
+                dl->AddRectFilled(L.rememberMin, L.rememberMax, hover ? kPurpleDn : kPurple, box * 0.26f);
                 dl->AddLine(ImVec2(L.rememberMin.x + box * 0.24f, L.rememberMin.y + box * 0.53f),
                             ImVec2(L.rememberMin.x + box * 0.44f, L.rememberMin.y + box * 0.72f),
                             IM_COL32(255, 255, 255, 255), 1.8f * s);
@@ -623,7 +626,11 @@ namespace login_screen
             const bool active = ImGui::IsItemActive();
             if (hover) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
 
-            dl->AddRectFilled(L.pillMin, L.pillMax, active ? kBlueDn : (hover ? kBlueDn : kBlue), round);
+            dl->AddRectFilled(L.pillMin, L.pillMax, active ? kPurpleDn : (hover ? kPurpleDn : kPurple), round);
+            // A hint of light across the top, the way the reference's pill reads.
+            dl->AddRectFilledMultiColor(L.pillMin, L.pillMax,
+                IM_COL32(255, 255, 255, 34), IM_COL32(255, 255, 255, 8),
+                IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0), round);
 
             const float buttonSize = ImClamp(17.0f * s, 13.0f, 24.0f);
             const ImVec2 ts = TextSize(fButton, buttonSize, "sign in");
@@ -653,7 +660,7 @@ namespace login_screen
             DrawTracked(dl, fMicro, labelSize,
                         ImVec2(L.pasteMin.x + (L.fieldW - lw) * 0.5f,
                                L.pasteMin.y + (pasteH - lsz.y) * 0.5f - 1.0f * s),
-                        hover ? kBlue : kInkMute, label, tracking);
+                        hover ? kPurple : kInkMute, label, tracking);
 
             if (clicked)
                 out.paste = true;
