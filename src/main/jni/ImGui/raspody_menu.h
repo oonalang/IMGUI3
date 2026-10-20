@@ -110,10 +110,10 @@ namespace raspody
         const float height = S(25);
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        DrawTextClipped(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(11),
+        DrawTextClipped(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                         pos, ImVec2(pos.x + width * 0.52f, pos.y + height),
                         Col(clr.text2), label, ImVec2(0.0f, 0.5f));
-        DrawTextClipped(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(11),
+        DrawTextClipped(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                         ImVec2(pos.x + width * 0.48f, pos.y), ImVec2(pos.x + width, pos.y + height),
                         Col(clr.white), value ? value : "", ImVec2(1.0f, 0.5f));
 
@@ -125,7 +125,7 @@ namespace raspody
         const ImVec2 pos = ImGui::GetCursorScreenPos();
         const float width = CardInnerWidth();
         const float height = S(32);
-        DrawTextClipped(ImGui::GetWindowDrawList(), fonts::small ? fonts::small : ImGui::GetFont(), S(10.5f),
+        DrawTextClipped(ImGui::GetWindowDrawList(), fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                         pos, ImVec2(pos.x + width, pos.y + height),
                         Col(clr.text), text ? text : "", ImVec2(0.0f, 0.5f));
         ImGui::Dummy(ImVec2(width, height));
@@ -174,11 +174,11 @@ namespace raspody
         {
             const ImVec4 dot(Config.Crosshair.Color[0], Config.Crosshair.Color[1],
                              Config.Crosshair.Color[2], 1.0f);
-            dl->AddCircleFilled(ImVec2(cx, cy), radius + S(2), Col(clr.black, 0.35f), 20);
+            dl->AddCircleFilled(ImVec2(cx, cy), radius + S(0.5f), Col(clr.black, 0.35f), 20);
             dl->AddCircleFilled(ImVec2(cx, cy), radius, Col(dot), 20);
         }
 
-        DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(10),
+        DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                  ImVec2(pos.x + S(14), pos.y + S(13)), Col(clr.text2),
                  Config.Crosshair.Enabled ? "LIVE CROSSHAIR" : "CROSSHAIR DISABLED", ImVec2(0.0f, 0.5f));
 
@@ -436,10 +436,10 @@ namespace raspody
                            Config.sColorsESPBOT.SkeletonBOT);
             });
 
-            AddPageCard(p, 0, "ESP preview", [&] {
+            AddPageCard(p, 1, "ESP preview", [&] {
                 const ImVec2 pos = ImGui::GetCursorScreenPos();
-                const float width = CardInnerWidth();
-                const float height = S(230);
+                const float width = CardInnerWidth() * 0.9f;
+                const float height = width * 0.85f;
                 DrawEspPreview(ImGui::GetWindowDrawList(), pos, width, height);
                 ImGui::Dummy(ImVec2(width, height + S(8)));
             });
@@ -1058,7 +1058,7 @@ namespace raspody
         dl->AddRect(breadcrumbMin, breadcrumbMax, Col(clr.separator, 0.8f), S(11), 0, 1.0f);
         DrawChevron(dl, ImVec2(breadcrumbMin.x + S(16), centerY), S(11),
                     Col(clr.text3), IM_PI * 0.5f);
-        DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(11),
+        DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                  ImVec2(breadcrumbMin.x + S(30), centerY), Col(clr.white),
                  kTabNames[tab], ImVec2(0.0f, 0.5f));
         nextX = breadcrumbMax.x + S(10);
@@ -1070,7 +1070,7 @@ namespace raspody
             if (!label)
                 continue;
 
-            const float width = TextSize(fonts::small ? fonts::small : ImGui::GetFont(), S(11), label).x + S(24);
+            const float width = TextSize(fonts::small ? fonts::small : ImGui::GetFont(), 16.0f, label).x + S(24);
             if (nextX + width > contentX + contentW - searchSize - S(20))
                 break;
 
@@ -1097,7 +1097,7 @@ namespace raspody
                                        : Col(hovered ? clr.widget : clr.child, 0.95f), S(11));
             if (selected)
                 dl->AddRect(min, max, Col(clr.accent, 0.55f), S(11), 0, 1.0f);
-            DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(11),
+            DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                      ImVec2((min.x + max.x) * 0.5f, centerY),
                      selected ? Col(clr.white) : (hovered ? Col(clr.text3) : Col(clr.text2)),
                      label, ImVec2(0.5f, 0.5f));
@@ -1152,8 +1152,13 @@ namespace raspody
         const MenuLayout layout = ComputeMenuLayout(display);
 
         const MenuLayout menu = layout;
-        const ImVec2 pos = menu.menuPos;
-        const ImVec2 size(menu.menuW, menu.menuH);
+        float menuW = ImMin(layout.menuW, 900.0f);
+        float menuH = ImMin(layout.menuH, 592.0f);
+        const ImVec2 pos = ImVec2(
+            ImClamp((display.x - menuW) * 0.5f, 0.0f, ImMax(0.0f, display.x - menuW)),
+            ImClamp((display.y - menuH) * 0.5f, 0.0f, ImMax(0.0f, display.y - menuH))
+        );
+        const ImVec2 size(menuW, menuH);
 
         const float scale = ImClamp(ImMin(size.x / 900.0f, size.y / 592.0f), 0.70f, 1.45f);
         SetScale(scale);
@@ -1161,7 +1166,7 @@ namespace raspody
         const float pad = ImClamp(size.x * 0.017f, S(10), S(18));
         const float headerH = ImClamp(size.y * 0.088f, S(40), S(56));
         const float gap = S(13);
-        const float tabW = ImClamp(size.x * 0.095f, S(58), S(92));
+        const float tabW = ImClamp(size.x * 0.095f, S(58), S(120));
         const float contentY = pos.y + pad + headerH + gap;
         const float contentH = ImMax(S(80), size.y - (contentY - pos.y) - pad);
         const float contentX = pos.x + pad + tabW + gap;

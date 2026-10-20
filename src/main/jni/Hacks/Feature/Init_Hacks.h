@@ -202,7 +202,7 @@ sColorsESPBOT sColorsESPBOT{0};
         // Drops player-report evidence. ON by default.
         bool BlockReportEvidence = true;
         // Empties ACE's report blob. OFF by default.
-        bool BlockAceReport = false;
+        bool BlockAceReport = true;
         // Blocks the forced relogin on location change. OFF by default.
         bool AntiLogin;
 		bool ClearDisplay;

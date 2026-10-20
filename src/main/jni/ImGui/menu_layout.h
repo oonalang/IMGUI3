@@ -79,8 +79,8 @@ inline SidebarLayout ComputeSidebarLayout(const ImVec2 &hostSize, float anim)
     // A fifth of the window, clamped, folded away with the animation. On a
     // narrow window (the 320 px minimum menu) the 96 px floor would take more
     // than half of it, so the floor itself scales with the window.
-    const float panelMin = ImMin(96.0f, hostSize.x * 0.28f);
-    S.panelW = ImClamp(hostSize.x * 0.20f, panelMin, 148.0f) * ImClamp(anim, 0.0f, 1.0f);
+    const float panelMin = ImMin(120.0f, hostSize.x * 0.28f);
+    S.panelW = ImClamp(hostSize.x * 0.20f, panelMin, 200.0f) * ImClamp(anim, 0.0f, 1.0f);
     if (S.panelW < 1.0f) S.panelW = 0.0f;
     S.gap = (S.panelW > 0.0f) ? 10.0f : 0.0f;
 

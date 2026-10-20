@@ -416,9 +416,9 @@ namespace raspody
         ImFont* descFont = fonts::small ? fonts::small : ImGui::GetFont();
         ImFont* logoFont = fonts::brand ? fonts::brand : titleFont;
 
-        const float titleSize = S(15);
-        const float descSize = S(11);
-        const float logoSize = S(29);
+        const float titleSize = 30.0f;
+        const float descSize = 16.0f;
+        const float logoSize = 40.0f;
         const float titleW = TextSize(titleFont, titleSize, name).x;
         const float descW = TextSize(descFont, descSize, tagline).x;
         const float textW = ImMax(titleW, descW);
@@ -452,8 +452,8 @@ namespace raspody
         ImFont* bodyFont = fonts::body ? fonts::body : ImGui::GetFont();
         ImFont* smallFont = fonts::small ? fonts::small : ImGui::GetFont();
 
-        const float nameSize = S(14);
-        const float subSize = S(10.5f);
+        const float nameSize = 20.0f;
+        const float subSize = 16.0f;
         const float avatar = S(38);
         const float gap = S(10);
         const float textW = ImMax(TextSize(bodyFont, nameSize, name).x,
@@ -554,7 +554,7 @@ namespace raspody
         if (hovered)
         {
             ImFont* font = fonts::small ? fonts::small : ImGui::GetFont();
-            const float textW = TextSize(font, S(11), label).x;
+            const float textW = TextSize(font, 16.0f, label).x;
             const ImVec2 chipMin(pos.x + size.x + S(16), center.y - S(14));
             const ImVec2 chipMax(chipMin.x + textW + S(22), center.y + S(14));
             ImDrawList* fg = ImGui::GetForegroundDrawList();
@@ -700,11 +700,11 @@ namespace raspody
 
         const ImU32 titleColor = *value ? Col(clr.white)
                               : hovered ? Col(clr.text3) : Col(clr.text2);
-        DrawTextClipped(dl, bodyFont, S(14), pos,
+        DrawTextClipped(dl, bodyFont, 20.0f, pos,
                         ImVec2(pos.x + width - toggleW - (settings ? S(38) : S(8)), pos.y + height),
                         titleColor, label, ImVec2(0.0f, hasDesc ? 0.34f : 0.5f));
         if (hasDesc)
-            DrawTextClipped(dl, smallFont, S(11), pos,
+            DrawTextClipped(dl, smallFont, 16.0f, pos,
                             ImVec2(pos.x + width - toggleW - (settings ? S(38) : S(8)), pos.y + height),
                             Col(clr.text), description, ImVec2(0.0f, 0.72f));
 
@@ -839,17 +839,17 @@ namespace raspody
 
         const ImU32 titleColor = active ? Col(clr.white)
                               : hovered ? Col(clr.text3) : Col(clr.text2);
-        DrawTextClipped(dl, bodyFont, S(14), pos,
+        DrawTextClipped(dl, bodyFont, 20.0f, pos,
                         ImVec2(pos.x + width - barW - S(12), pos.y + height),
                         titleColor, label, ImVec2(0.0f, hasDesc ? 0.34f : 0.5f));
         if (hasDesc)
-            DrawTextClipped(dl, smallFont, S(11), pos,
+            DrawTextClipped(dl, smallFont, 16.0f, pos,
                             ImVec2(pos.x + width - barW - S(12), pos.y + height),
                             Col(clr.text), description, ImVec2(0.0f, 0.72f));
 
         char buffer[64];
         snprintf(buffer, sizeof(buffer), format ? format : "%.0f", display);
-        DrawTextClipped(dl, smallFont, S(11),
+        DrawTextClipped(dl, smallFont, 16.0f,
                         ImVec2(pos.x, pos.y), ImVec2(barMin.x - S(8), pos.y + height),
                         Col(clr.white), buffer, ImVec2(1.0f, hasDesc ? 0.34f : 0.5f));
 
@@ -968,11 +968,11 @@ namespace raspody
                               : hovered ? Col(clr.text3) : Col(clr.text2);
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        DrawTextClipped(dl, bodyFont, S(14), pos,
+        DrawTextClipped(dl, bodyFont, 20.0f, pos,
                         ImVec2(pos.x + width - barW - S(12), pos.y + height),
                         titleColor, label, ImVec2(0.0f, hasDesc ? 0.34f : 0.5f));
         if (hasDesc)
-            DrawTextClipped(dl, smallFont, S(11), pos,
+            DrawTextClipped(dl, smallFont, 16.0f, pos,
                             ImVec2(pos.x + width - barW - S(12), pos.y + height),
                             Col(clr.text), description, ImVec2(0.0f, 0.72f));
 
@@ -981,7 +981,7 @@ namespace raspody
         snprintf(highBuf, sizeof(highBuf), format ? format : "%.0f", highAnim);
         char combined[80];
         snprintf(combined, sizeof(combined), "(%s, %s)", lowBuf, highBuf);
-        DrawTextClipped(dl, smallFont, S(11),
+        DrawTextClipped(dl, smallFont, 16.0f,
                         ImVec2(barMin.x - S(150), pos.y), ImVec2(barMin.x - S(8), pos.y + height),
                         Col(clr.white), combined, ImVec2(1.0f, hasDesc ? 0.34f : 0.5f));
 
@@ -1056,12 +1056,12 @@ namespace raspody
 
         const ImU32 titleColor = open ? Col(clr.white)
                               : hovered ? Col(clr.text3) : Col(clr.text2);
-        DrawTextClipped(dl, bodyFont, S(14), pos,
-                        ImVec2(pos.x + width - buttonW - S(12), pos.y + height),
+        DrawTextClipped(dl, bodyFont, 20.0f, pos,
+                        ImVec2(pos.x + width - barW - S(12), pos.y + height),
                         titleColor, label, ImVec2(0.0f, hasDesc ? 0.34f : 0.5f));
         if (hasDesc)
-            DrawTextClipped(dl, smallFont, S(11), pos,
-                            ImVec2(pos.x + width - buttonW - S(12), pos.y + height),
+            DrawTextClipped(dl, smallFont, 16.0f, pos,
+                            ImVec2(pos.x + width - barW - S(12), pos.y + height),
                             Col(clr.text), description, ImVec2(0.0f, 0.72f));
 
         dl->AddRectFilled(buttonMin, buttonMax,
@@ -1137,12 +1137,12 @@ namespace raspody
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const ImU32 titleColor = hovered ? Col(clr.text3) : Col(clr.text2);
-        DrawTextClipped(dl, bodyFont, S(14), pos,
-                        ImVec2(pos.x + width - swatchW - S(12), pos.y + height),
+        DrawTextClipped(dl, bodyFont, 20.0f, pos,
+                        ImVec2(pos.x + width - barW - S(12), pos.y + height),
                         titleColor, label, ImVec2(0.0f, hasDesc ? 0.34f : 0.5f));
         if (hasDesc)
-            DrawTextClipped(dl, smallFont, S(11), pos,
-                            ImVec2(pos.x + width - swatchW - S(12), pos.y + height),
+            DrawTextClipped(dl, smallFont, 16.0f, pos,
+                            ImVec2(pos.x + width - barW - S(12), pos.y + height),
                             Col(clr.text), description, ImVec2(0.0f, 0.72f));
 
         if (color)
@@ -1377,7 +1377,7 @@ namespace raspody
 
         if (selected)
             DrawCheckGlyph(dl, ImVec2(pos.x + S(10), pos.y + height * 0.5f), S(11), Col(clr.accent));
-        DrawTextClipped(dl, bodyFont, S(12),
+        DrawTextClipped(dl, bodyFont, 16.0f,
                         ImVec2(pos.x + S(22), pos.y), ImVec2(pos.x + width - S(6), pos.y + height),
                         selected ? Col(clr.white) : Col(clr.text3), label, ImVec2(0.0f, 0.5f));
 
@@ -1440,21 +1440,21 @@ namespace raspody
                               ImVec2(pos.x + S(4), pos.y + height - S(12)),
                               Col(clr.accent), S(99));
 
-        DrawTextClipped(dl, bodyFont, S(14),
+        DrawTextClipped(dl, bodyFont, 20.0f,
                         ImVec2(pos.x + S(16), pos.y + S(8)),
                         ImVec2(pos.x + width - S(150), pos.y + height),
                         Col(clr.white), name, ImVec2(0.0f, 0.34f));
-        DrawTextClipped(dl, smallFont, S(10.5f),
+        DrawTextClipped(dl, smallFont, 16.0f,
                         ImVec2(pos.x + S(16), pos.y + S(8)),
                         ImVec2(pos.x + width - S(150), pos.y + height),
                         Col(clr.text), created, ImVec2(0.0f, 0.75f));
 
         dl->AddRectFilled(loadMin, loadMax, Col(clr.accent, loaded ? 1.0f : 0.85f), S(8));
-        DrawText(dl, smallFont, S(10), ImVec2((loadMin.x + loadMax.x) * 0.5f, (loadMin.y + loadMax.y) * 0.5f),
+        DrawText(dl, smallFont, 16.0f, ImVec2((loadMin.x + loadMax.x) * 0.5f, (loadMin.y + loadMax.y) * 0.5f),
                  Col(clr.layout), "LOAD", ImVec2(0.5f, 0.5f));
 
         dl->AddRectFilled(saveMin, saveMax, Col(clr.widget), S(8));
-        DrawText(dl, smallFont, S(10), ImVec2((saveMin.x + saveMax.x) * 0.5f, (saveMin.y + saveMax.y) * 0.5f),
+        DrawText(dl, smallFont, 16.0f, ImVec2((saveMin.x + saveMax.x) * 0.5f, (saveMin.y + saveMax.y) * 0.5f),
                  Col(clr.white), "SAVE", ImVec2(0.5f, 0.5f));
 
         ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + height + S(8)));
@@ -1508,9 +1508,9 @@ namespace raspody
 
         if (buffer && *buffer == '\0' && !active)
         {
-            DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(11),
-                     ImVec2(pos.x + S(34), pos.y + height * 0.5f),
-                     Col(clr.text), "Search settings...", ImVec2(0.0f, 0.5f));
+        DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
+                 ImVec2(pos.x + S(34), pos.y + height * 0.5f),
+                 Col(clr.text), "Search settings...", ImVec2(0.0f, 0.5f));
         }
 
         ImGui::PopFont();
@@ -1557,7 +1557,7 @@ namespace raspody
 
         dl->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height),
                           Col(clr.layout, 0.9f), S(12));
-        DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(11),
+        DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                  ImVec2(pos.x + width * 0.5f, pos.y + height * 0.5f),
                  Col(clr.text2), "ESP preview unavailable", ImVec2(0.5f, 0.5f));
     }
