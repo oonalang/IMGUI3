@@ -60,25 +60,7 @@ namespace raspody
     // thin restore bar (`windowCollapsed`) and clears the flag.
     inline bool minimize_requested = false;
 
-    struct UiState
-    {
-        bool  searchOpen = false;
-        float searchAnim = 0.0f;
-        char  search[64] = { 0 };
-        char  newProfile[64] = "ethnir";
-        std::string activeProfile = "ethnir";
-        std::string configStatus = "Ready";
-        float blackout = 0.0f;
-        bool  scrollToTop = false;
-        // On-screen keyboard (RenderVirtualKeyboard) state. Two independent
-        // fields so the search box and the profile-name box never share a
-        // buffer or a flag.
-        bool  searchKeyboard = false;
-        bool  profileKeyboard = false;
-        std::string activeKeyboardId;
-    };
-
-    inline UiState ui;
+    // UiState and the shared `ui` instance live in raspody_widgets.h.
 
     // ---------------------------------------------------------------------
     // Small helpers

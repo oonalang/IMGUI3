@@ -687,7 +687,7 @@ namespace raspody
         const bool pressed = ImGui::IsItemClicked(0);
         ImGui::PopID();
 
-        if (pressed && !overSettings && !raspody::dragScrolling)
+        if (pressed && !overSettings && !ui.dragScrolling)
             *value = !*value;
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -1383,7 +1383,7 @@ namespace raspody
                         selected ? Col(clr.white) : Col(clr.text3), label, ImVec2(0.0f, 0.5f));
 
         ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + height + S(3)));
-        return pressed && !raspody::dragScrolling;
+        return pressed && !ui.dragScrolling;
     }
 
     void KeybindChip(const char* key, ImVec2 pos, float width)

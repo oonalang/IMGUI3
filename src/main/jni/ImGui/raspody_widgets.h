@@ -103,6 +103,22 @@ namespace raspody
     void SetEspPreview(EspPreviewFn fn);
     void DrawEspPreview(ImDrawList* dl, ImVec2 pos, float width, float height);
 
-    // Shared drag-scroll flag (set by the menu content child).
-    inline bool dragScrolling = false;
+    // Shared UI state (search, profiles, drag-scroll, keyboard) used by the menu.
+    struct UiState
+    {
+        bool  searchOpen = false;
+        float searchAnim = 0.0f;
+        char  search[64] = { 0 };
+        char  newProfile[64] = "ethnir";
+        std::string activeProfile = "ethnir";
+        std::string configStatus = "Ready";
+        float blackout = 0.0f;
+        bool  scrollToTop = false;
+        bool  searchKeyboard = false;
+        bool  profileKeyboard = false;
+        std::string activeKeyboardId;
+        bool  dragScrolling = false;
+    };
+
+    inline UiState ui;
 }
