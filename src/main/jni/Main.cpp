@@ -4,8 +4,6 @@
 #include "Includes/Utils.h"
 #include "ImGui/Call_ImGui.h"
 #include "ImGui/menu_layout.h"
-#include "ImGui/lanx_font.h"
-#include "ImGui/lanx_style.h"
 #include "IL2CppSDKGenerator/BasicStructs/Call_BasicStructs.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Call_IL2Cpp.h"
 #include "Hacks/Hacks.h"
@@ -41,11 +39,11 @@
 #include "Hacks/Feature/Crosshair.h"
 #include "MainFeatureIncludes.h"
 
-// The LANX port's pages bind straight to Config / the app's own feature state
-// (Config, SaveConfiguration/LoadConfiguration, NewFeatures, the ESP preview),
-// so it has to be included after MainFeatureIncludes.h instead of with the
-// other ImGui headers above.
-#include "ImGui/lanx_menu.h"
+// The Raspody port's pages bind straight to Config / the app's own feature
+// state (Config, SaveConfiguration/LoadConfiguration, NewFeatures, the ESP
+// preview), so it has to be included after MainFeatureIncludes.h instead of
+// with the other ImGui headers above.
+#include "ImGui/raspody_menu.h"
 
 #include <jni.h>
 #include <android/log.h>
@@ -945,8 +943,7 @@ static std::string err;
 static std::string storedKey = "";
 static char s[256];
 static bool g_LoginTextLoaded = false;
-static lanx::State g_lanxState;
-static bool g_lanxOpen = true;
+static bool g_raspodyOpen = true;
 
 
 
@@ -1372,8 +1369,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         F50 = io.Fonts->AddFontFromMemoryTTF((void *)F50_data, F50_size, 30.0f, NULL, io.Fonts->GetGlyphRangesDefault());
         if (!F107) F107 = font::inter_semibold;
         if (font::inter_semibold) io.FontDefault = font::inter_semibold;
-        lanx::LoadFonts();
-        lanx::Style();
+        raspody::LoadFonts();
+        raspody::Style();
         io.Fonts->Build();
         ImGui_ImplOpenGL3_CreateFontsTexture();
 
@@ -1664,13 +1661,14 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             ImGui::SetNextWindowSize(ImVec2(menuW, menuH), ImGuiCond_Always);
             ImGui::SetNextWindowBgAlpha(0.0f);
 
-            lanx::Render(g_lanxState, &g_lanxOpen);
+            raspody::SetEspPreview(&DrawEspPreview);
+            raspody::Render(&g_raspodyOpen);
 
-            // The LANX header's minimize control collapses the panel to the
+            // The Raspody header's minimize control collapses the panel to the
             // thin restore bar drawn above (tap the bar to bring it back).
-            if (g_lanxState.minimize_requested)
+            if (raspody::minimize_requested)
             {
-                g_lanxState.minimize_requested = false;
+                raspody::minimize_requested = false;
                 windowCollapsed = true;
                 isMenuVisible = false;
                 collapseBarLastActiveTime = ImGui::GetTime();
@@ -1717,9 +1715,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     // Menu toggles that write game memory, applied every frame so they hold
     // with the menu closed too.
     ApplyMenuFeaturePatches();
-
-    // The LANX Visuals page previews the real ESP pass.
-    g_lanxState.draw_esp_preview = &DrawEspPreview;
 
     auto currentTime = std::chrono::steady_clock::now();
     if (currentTime - lastScreenshotTime >= screenshotInterval) {
