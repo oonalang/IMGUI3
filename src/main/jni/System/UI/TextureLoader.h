@@ -6,7 +6,13 @@
 static GLuint astralTextureID = 0;
 static bool astralLoaded = false;
 
-inline GLuint LoadTextureFromMemory(const unsigned char* imageData, int imageSize)
+// outWidth / outHeight are optional. GLES3's gl3.h exposes no
+// GL_TEXTURE_WIDTH / GL_TEXTURE_HEIGHT pname (and glGetTexLevelParameteriv is
+// not part of the ES 3.0 core profile the NDK headers describe), so callers
+// that need the pixel size take it from stbi here instead of querying the
+// texture back from the driver.
+inline GLuint LoadTextureFromMemory(const unsigned char* imageData, int imageSize,
+                                    int* outWidth = nullptr, int* outHeight = nullptr)
 {
     if (!imageData || imageSize <= 0) {
         printf("Invalid image data provided!\n");
@@ -36,7 +42,10 @@ inline GLuint LoadTextureFromMemory(const unsigned char* imageData, int imageSiz
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     stbi_image_free(data);
-    
+
+    if (outWidth)  *outWidth  = width;
+    if (outHeight) *outHeight = height;
+
     printf("Texture loaded successfully! ID: %u, Size: %dx%d\n", texID, width, height);
     return texID;
 }

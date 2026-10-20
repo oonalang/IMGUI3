@@ -1236,18 +1236,11 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             const float WH = ImMin(loginLayout.menuH, 592.0f);
             ImVec2 center = ImGui::GetMainViewport()->GetCenter();
 
-            // Artwork: the background the loading screen already uses. Only GL
-            // knows its size, so ask once and cache - the texture is created
-            // once for the life of the context.
-            static int artW = 0, artH = 0;
-            if (artW == 0 && runtime_preview_menu::g_menuBackground.id != 0) {
-                GLint prevTex = 0;
-                glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex);
-                glBindTexture(GL_TEXTURE_2D, runtime_preview_menu::g_menuBackground.id);
-                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &artW);
-                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &artH);
-                glBindTexture(GL_TEXTURE_2D, (GLuint)prevTex);
-            }
+            // Artwork: the background the loading screen already uses. The
+            // pixel size is captured when the texture is decoded (GLES3's
+            // gl3.h has no GL_TEXTURE_WIDTH/GL_TEXTURE_HEIGHT pname to query).
+            const int artW = runtime_preview_menu::g_menuBackground.width;
+            const int artH = runtime_preview_menu::g_menuBackground.height;
 
             ImGui::SetNextWindowPos(center, ImGuiCond_Always, {0.5f, 0.5f});
             ImGui::SetNextWindowSize({WW, WH}, ImGuiCond_Always);
