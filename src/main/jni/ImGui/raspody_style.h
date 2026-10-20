@@ -5,8 +5,9 @@
 //
 // Ported from github.com/eliwoahzja/raspody framework/settings (colors.h,
 // elements.h, variables.h), stripped of every Win32 / DirectX field and wrapped
-// in namespace raspody. The look is the one in the reference screenshot: deep
-// charcoal panels, muted grey text and the raspody coral accent (255, 87, 90).
+// in namespace raspody. The look is the one in the reference screenshot, moved
+// from the raspody coral to a violet scheme: deep purple-charcoal panels, muted
+// lilac text and the accent (168, 104, 255).
 //
 // All sizes below are the 900x592 design-space values. The menu computes a
 // single scale from ComputeMenuLayout() and multiplies them with S(), so the
@@ -71,23 +72,23 @@ namespace raspody
     // ---------------------------------------------------------------------
     struct Palette
     {
-        ImVec4 layout              = Rgb(20, 20, 23);
-        ImVec4 child               = Rgb(24, 24, 28);
-        ImVec4 widget              = Rgb(33, 33, 39);
-        ImVec4 checkboxHover       = Rgb(44, 44, 52);
-        ImVec4 circleCheckboxHover = Rgb(95, 95, 117);
+        ImVec4 layout              = Rgb(19, 16, 27);
+        ImVec4 child               = Rgb(26, 22, 36);
+        ImVec4 widget              = Rgb(39, 33, 52);
+        ImVec4 checkboxHover       = Rgb(53, 45, 70);
+        ImVec4 circleCheckboxHover = Rgb(124, 105, 162);
         ImVec4 white               = Rgb(255, 255, 255);
         ImVec4 black               = Rgb(0, 0, 0);
-        ImVec4 accent              = Rgb(255, 87, 90);
-        ImVec4 accentSoft          = Rgb(255, 121, 123);
-        ImVec4 text                = Rgb(79, 79, 96);
-        ImVec4 text2               = Rgb(111, 111, 135);
-        ImVec4 text3               = Rgb(151, 151, 179);
-        ImVec4 popup               = Rgb(28, 28, 33);
-        ImVec4 popupScrollBg       = Rgb(32, 32, 38);
-        ImVec4 popupScrollThumb    = Rgb(40, 40, 49);
-        ImVec4 avatarBorder        = Rgb(26, 26, 30);
-        ImVec4 separator           = Rgb(35, 35, 43);
+        ImVec4 accent              = Rgb(168, 104, 255);
+        ImVec4 accentSoft          = Rgb(196, 150, 255);
+        ImVec4 text                = Rgb(108, 100, 134);
+        ImVec4 text2               = Rgb(141, 132, 171);
+        ImVec4 text3               = Rgb(180, 172, 206);
+        ImVec4 popup               = Rgb(29, 25, 40);
+        ImVec4 popupScrollBg       = Rgb(35, 30, 47);
+        ImVec4 popupScrollThumb    = Rgb(48, 41, 63);
+        ImVec4 avatarBorder        = Rgb(27, 23, 36);
+        ImVec4 separator           = Rgb(46, 39, 61);
     };
 
     inline Palette clr;
@@ -193,7 +194,7 @@ namespace raspody
             ImVec2 lineMaxStored = ImVec2(0, 0);
         } tabBar;
 
-        ImVec4 accent = Rgb(255, 87, 90);
+        ImVec4 accent = Rgb(168, 104, 255);
     };
 
     inline Variables var;

@@ -433,10 +433,10 @@ namespace raspody
         dl->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height),
                           Col(clr.child, 0.92f), S(20));
 
-        // The coral "R" mark from the reference header.
+        // Brand mark: the accent "E" that opens the ETHNIR wordmark.
         DrawText(dl, logoFont, logoSize,
                  ImVec2(pos.x + left + logoBox * 0.5f, pos.y + height * 0.5f),
-                 Col(clr.accent), "R", ImVec2(0.5f, 0.5f));
+                 Col(clr.accent), "E", ImVec2(0.5f, 0.5f));
 
         const float textX = pos.x + left + logoBox + spacing;
         DrawText(dl, titleFont, titleSize,

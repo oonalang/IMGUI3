@@ -974,8 +974,8 @@ static void DrawEspPreview(ImDrawList* draw, ImVec2 pos, float width, float heig
 
     draw->AddRectFilled(cardMin, cardMax, IM_COL32(14, 15, 20, 242), cardRounding);
     draw->AddRectFilledMultiColor(cardMin, ImVec2(cardMax.x, cardMin.y + height * 0.45f),
-        IM_COL32(224, 96, 88, 34), IM_COL32(224, 96, 88, 0),
-        IM_COL32(224, 96, 88, 0), IM_COL32(224, 96, 88, 34));
+        IM_COL32(168, 104, 255, 38), IM_COL32(168, 104, 255, 0),
+        IM_COL32(168, 104, 255, 0), IM_COL32(168, 104, 255, 38));
     draw->AddRect(cardMin, cardMax, IM_COL32(120, 112, 118, 140), cardRounding, 0, 1.2f);
 
     const float pad = 9.0f;
@@ -1094,7 +1094,7 @@ static void DrawEspPreview(ImDrawList* draw, ImVec2 pos, float width, float heig
     if (Config.ESPMenu.ShowFov) {
         const float radius = Config.Aim.Cross * 0.6f;
         if (radius > 0.0f)
-            draw->AddCircle(model.center, radius, IM_COL32(200, 96, 88, 100), 0, 1.5f);
+            draw->AddCircle(model.center, radius, IM_COL32(168, 104, 255, 110), 0, 1.5f);
     }
 
     if (!spinning) {
