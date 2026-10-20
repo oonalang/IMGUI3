@@ -5009,7 +5009,10 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         GetWindowDrawList()->AddRectFilled(frame_bb.Min, frame_bb.Max, GetColorU32(c::elements::background), c::elements::rounding);
     }
 
-    const ImVec4 clip_rect(frame_bb.Min.x, frame_bb.Min.y, frame_bb.Min.x + inner_size.x - (w / 2), frame_bb.Min.y + inner_size.y);
+    // The frame is w wide, so the text may use all of it. This used to clip at
+    // half the item width, which cut a long licence key (and a long search
+    // query) off mid-field while the right half of the box sat empty.
+    const ImVec4 clip_rect(frame_bb.Min.x, frame_bb.Min.y, frame_bb.Min.x + inner_size.x, frame_bb.Min.y + inner_size.y);
     ImVec2 draw_pos = is_multiline ? draw_window->DC.CursorPos : frame_bb.Min + ImVec2((32 - CalcTextSize(hint).y) / 2, (32 - CalcTextSize(hint).y) / 2 + 1);
     ImVec2 text_size(0.0f, 0.0f);
 
