@@ -32,6 +32,8 @@ namespace runtime_preview_menu {
 
 struct Texture {
     GLuint id = 0;
+    int    width = 0;   // pixel size, captured at decode time
+    int    height = 0;  // (GLES3 has no GL_TEXTURE_WIDTH/HEIGHT pname)
 };
 
 struct StateRefs {
@@ -66,7 +68,7 @@ inline void EnsureTexture(Texture &texture, const unsigned char *bytes, int size
     if (texture.id != 0) {
         return;
     }
-    texture.id = LoadTextureFromMemory(bytes, size);
+    texture.id = LoadTextureFromMemory(bytes, size, &texture.width, &texture.height);
 }
 
 inline void EnsureTexturesLoaded() {
