@@ -1,3 +1,9 @@
 # Downloaded il2cpp dumps (e.g. https://huggingface.co/datasets/jeudhehs/dump).
 # Reference material for verifying RVA/offsets, not a build input - ~80 MB.
 dumps/
+
+# Scratch space for the headless ImGui harnesses (render/input checks) and the
+# PNG dumps they produce. The checks that belong in the repo live in
+# src/main/jni/ImGui/tests/; this is only their scratch directory.
+.tmp_harness/
+artifacts/
