@@ -531,8 +531,8 @@ namespace raspody
             AddPageCard(p, 1, "Ammo & attachments", [&] {
                 Checkbox("Unlimited ammo", "Keep the magazine full.", &Config.UnlimitedAmmo);
                 Checkbox("Unlimited reserve", "Keep reserve ammunition full.", &Config.ExtraMenu.UnliAmmo);
-                Checkbox("Mythic attachments", "Unlock and apply mythic attachments.",
-                         &Config.ExtraMenu.MythicAttachments);
+                Checkbox("Blueprint", "Turn on blueprint / skins (BlueprintWeaponInfo).",
+                          &Config.ExtraMenu.MythicAttachments);
                 Checkbox("Attachment unlock", "Treat every attachment as owned.",
                          &Config.ExtraMenu.Attachment);
                 Checkbox("Smart reload", "Reload only when it is safe.", &Config.ExtraMenu.SmartReload);
@@ -876,8 +876,8 @@ namespace raspody
                 Checkbox("Reset guest", "Reset the guest account state.", &Config.ExtraMenu.ResetGuest);
                 Checkbox("Attachment unlock", "Treat every attachment as owned.",
                          &Config.ExtraMenu.Attachment);
-                Checkbox("Mythic attachments", "Unlock and apply mythic attachments.",
-                         &Config.ExtraMenu.MythicAttachments);
+                Checkbox("Blueprint", "Turn on blueprint / skins (BlueprintWeaponInfo).",
+                          &Config.ExtraMenu.MythicAttachments);
             });
 
             AddPageCard(p, 1, "Performance", [&] {
