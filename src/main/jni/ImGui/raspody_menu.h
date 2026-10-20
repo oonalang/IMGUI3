@@ -1343,7 +1343,7 @@ namespace raspody
                     const float dy = io.MousePos.y - dragOrigin.y;
                     if (fabsf(dy) > S(10))
                     {
-                        dragScrolling = true;
+                        ui.dragScrolling = true;
                         ImGui::SetScrollY(dragOriginScroll - dy);
                     }
                 }
@@ -1351,7 +1351,7 @@ namespace raspody
             else
             {
                 dragging = false;
-                dragScrolling = false;
+                ui.dragScrolling = false;
             }
         }
 
