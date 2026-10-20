@@ -1228,21 +1228,26 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
         if (!isLogin && !ui_loading::IsActive()) {
-            // The login card is the menu: same layout size, same centre, so the
-            // app opens on the thing the key unlocks. Presentation lives in
-            // ImGui/login_screen.h; the auth flow below is unchanged.
-            const MenuLayout loginLayout = ComputeMenuLayout(ioDisplaySize);
-            const float WW = ImMin(loginLayout.menuW, 900.0f);
-            const float WH = ImMin(loginLayout.menuH, 592.0f);
-            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+            // The login screen is a page, not a card: it takes the whole render
+            // surface and draws its own panel inside it, the way the cloudy-ui
+            // reference does. Presentation lives in ImGui/login_screen.h; the
+            // auth flow below is unchanged.
+            const float WW = ioDisplaySize.x;
+            const float WH = ioDisplaySize.y;
+            const ImVec2 origin(0.0f, 0.0f);
 
-            // Artwork: the background the loading screen already uses. The
-            // pixel size is captured when the texture is decoded (GLES3's
-            // gl3.h has no GL_TEXTURE_WIDTH/GL_TEXTURE_HEIGHT pname to query).
-            const int artW = runtime_preview_menu::g_menuBackground.width;
-            const int artH = runtime_preview_menu::g_menuBackground.height;
+            // Artwork: IMAGE/astral.h, the anime picture the app already ships
+            // (the loading screen's logo is cut from the same one). Decoded on
+            // the first login frame - the GL context is current here - and kept
+            // for the life of the process. The pixel size comes back from the
+            // decode because GLES3's gl3.h has no GL_TEXTURE_WIDTH pname.
+            static GLuint loginArtTex = 0;
+            static int loginArtW = 0, loginArtH = 0;
+            if (loginArtTex == 0)
+                loginArtTex = LoadTextureFromMemory(astral_data, (int)sizeof(astral_data),
+                                                    &loginArtW, &loginArtH);
 
-            ImGui::SetNextWindowPos(center, ImGuiCond_Always, {0.5f, 0.5f});
+            ImGui::SetNextWindowPos(origin, ImGuiCond_Always);
             ImGui::SetNextWindowSize({WW, WH}, ImGuiCond_Always);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
@@ -1259,7 +1264,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 static bool rememberKey = true;
 
                 login_screen::Params lp;
-                lp.pos = ImGui::GetWindowPos();
+                lp.pos = origin;
                 lp.W = WW;
                 lp.H = WH;
                 lp.key = s;
@@ -1267,11 +1272,17 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 lp.reveal = &revealKey;
                 lp.remember = &rememberKey;
                 lp.error = err.c_str();
-                lp.art = (ImTextureID)(intptr_t)runtime_preview_menu::g_menuBackground.id;
-                lp.artW = artW;
-                lp.artH = artH;
+                lp.art = (ImTextureID)(intptr_t)loginArtTex;
+                lp.artW = loginArtW;
+                lp.artH = loginArtH;
 
                 const login_screen::Result loginUi = login_screen::Render(lp);
+
+                // The title bar's X folds the screen away; the collapse bar at
+                // the bottom of the display brings it straight back.
+                if (loginUi.close) {
+                    windowCollapsed = true;
+                }
 
                 if (loginUi.paste) {
                     std::string clip = getClipboard();

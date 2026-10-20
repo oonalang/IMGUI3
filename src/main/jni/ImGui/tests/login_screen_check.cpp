@@ -8,9 +8,10 @@
 //       -o login_screen_check && ./login_screen_check
 //
 // Drives the shipped header the way a finger would: tap the field and type, tap
-// the reveal eye, tap the pill, tap paste, press Enter. Every tap aims at a
-// rectangle from the card's own ComputeLayout(), so if a control moves without
-// its hit box the check fails instead of the screenshot merely looking off.
+// the reveal eye, tap the pill, tap paste, press Enter, tap the title bar's X.
+// Every tap aims at a rectangle from the card's own ComputeLayout(), so if a
+// control moves without its hit box the check fails instead of the screenshot
+// merely looking off.
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -97,6 +98,7 @@ static void Tap(const ImVec2& pos, float W, float H, const ImVec2& at, login_scr
     {
         tapped->authenticate = r.authenticate || r2.authenticate;
         tapped->paste = r.paste || r2.paste;
+        tapped->close = r.close || r2.close;
     }
     Frame(pos, W, H);
 }
@@ -155,6 +157,14 @@ int main()
     login_screen::Result paste;
     Tap(pos, W, H, L.pasteCenter(), &paste);
     Check("the paste row reports paste", paste.paste);
+
+    // ---- title bar close ------------------------------------------------------
+    // The X folds the screen away; Main.cpp collapses the menu on it, and the
+    // restore bar brings it back, so the tap has to be reported rather than
+    // swallowed by the header.
+    login_screen::Result closed;
+    Tap(pos, W, H, L.closeCenter(), &closed);
+    Check("the title bar's X reports close", closed.close);
 
     // ---- Enter in a focused field -------------------------------------------
     Tap(pos, W, H, L.fieldHitCenter());
