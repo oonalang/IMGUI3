@@ -19,12 +19,13 @@
 
 namespace mythic_attachment_system
 {
-// The menu toggle gates the whole system: with "Mythic Attachments" (and the
-// legacy Attachment flag) off, no mythic id is ever resolved or written, so the
-// game behaves exactly like stock.
+// The menu toggle gates the whole system: with "Attachment unlock" off, no mythic
+// id is ever resolved or written, so the game behaves exactly like stock.
+// (MythicAttachments/Blueprint no longer gates this - the two toggles are
+// independent.)
 inline bool MythicAttachmentsEnabled()
 {
-    return Config.ExtraMenu.MythicAttachments || Config.ExtraMenu.Attachment;
+    return Config.ExtraMenu.Attachment;
 }
 
 

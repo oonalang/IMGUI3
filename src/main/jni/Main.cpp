@@ -958,6 +958,8 @@ int TABG = 1;
 EGLBoolean (*old_eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
 
 static void DrawEspPreview(ImDrawList* draw, ImVec2 pos, float width, float height) {
+    if (!draw || width <= 0.0f || height <= 0.0f)
+        return;
     draw->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), IM_COL32(10, 12, 18, 245));
     draw->AddRect(pos, ImVec2(pos.x + width, pos.y + height), IM_COL32(70, 70, 82, 180), 8.0f, 0, 1.0f);
 
@@ -1392,6 +1394,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         Config.ExtraMenu.StretchAspect = 1.7778f;
         // Defaults that the memset above would otherwise wipe.
         Config.ExtraMenu.MythicAttachments = true;
+        Config.ExtraMenu.Attachment = true;
         Config.ExtraMenu.BlockReportEvidence = true;
         Config.Crosshair.Enabled = true;
         Config.Crosshair.Color[0] = 1.0f;
@@ -1651,11 +1654,16 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, openAlpha);
 
             // Position and size both come from the display, so the window fits
-            // whatever the render surface is (ImGui/menu_layout.h).
+            // whatever the render surface is (ImGui/menu_layout.h). Raspody's
+            // Render() recomputes and overrides these, so cap here too so the
+            // pre-pass never sizes the window larger than the 900x592 design.
             const MenuLayout menuLayout = ComputeMenuLayout(ioDisplaySize);
-            const float menuW = menuLayout.menuW;
-            const float menuH = menuLayout.menuH;
-            ImVec2 menuPos = menuLayout.menuPos;
+            float menuW = ImMin(menuLayout.menuW, 900.0f);
+            float menuH = ImMin(menuLayout.menuH, 592.0f);
+            ImVec2 menuPos = ImVec2(
+                ImClamp((ioDisplaySize.x - menuW) * 0.5f, 0.0f, ImMax(0.0f, ioDisplaySize.x - menuW)),
+                ImClamp((ioDisplaySize.y - menuH) * 0.5f, 0.0f, ImMax(0.0f, ioDisplaySize.y - menuH))
+            );
 
             ImGui::SetNextWindowPos(menuPos, ImGuiCond_Always, ImVec2(0.0f, 0.0f));
             ImGui::SetNextWindowSize(ImVec2(menuW, menuH), ImGuiCond_Always);

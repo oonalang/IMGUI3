@@ -3,6 +3,11 @@
 #include <iomanip>
 #include <sstream>
 #include <ctime>
+#include <fstream>
+#include <vector>
+#include <algorithm>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include "../foxcheats/include/json.hpp"
 #include "../../Hacks/Feature/Init_Hacks.h"
@@ -17,6 +22,24 @@ extern bool isSpeedHackEnabled;
 extern float speedHackMultiplier;
 
 std::string androidFilesDir = "/storage/emulated/0/Android/data/com.garena.game.codm/files/";
+
+inline std::vector<std::string> ListProfiles()
+{
+    std::vector<std::string> out;
+    std::string dir = androidFilesDir + "configs";
+    DIR* d = opendir(dir.c_str());
+    if (!d) return out;
+    struct dirent* e;
+    while ((e = readdir(d)) != nullptr)
+    {
+        std::string name = e->d_name;
+        if (name.size() > 5 && name.compare(name.size() - 5, 5, ".json") == 0)
+            out.push_back(name.substr(0, name.size() - 5));
+    }
+    closedir(d);
+    std::sort(out.begin(), out.end());
+    return out;
+}
 
 void SaveConfiguration(const std::string& filename) {
     nlohmann::json config;
@@ -53,10 +76,12 @@ void SaveConfiguration(const std::string& filename) {
     config["ExtraMenu"]["Reload"] = Config.ExtraMenu.Reload;
     config["ExtraMenu"]["Scope"] = Config.ExtraMenu.Scope;
     config["ExtraMenu"]["Switch"] = Config.ExtraMenu.Switch;
+    config["ExtraMenu"]["Kinetic"] = Config.ExtraMenu.Kinetic;
     config["ExtraMenu"]["KineticArmor"] = Config.ExtraMenu.Kinetic;
     // Both unlock switches persist: without this they flipped back to their
     // startup defaults on every launch.
     config["ExtraMenu"]["MythicAttachments"] = Config.ExtraMenu.MythicAttachments;
+    config["ExtraMenu"]["Attachment"] = Config.ExtraMenu.Attachment;
     config["ExtraMenu"]["BlockReportEvidence"] = Config.ExtraMenu.BlockReportEvidence;
     config["ExtraMenu"]["BlockAceReport"] = Config.ExtraMenu.BlockAceReport;
     config["ExtraMenu"]["AntiLogin"] = Config.ExtraMenu.AntiLogin;
@@ -76,6 +101,11 @@ void SaveConfiguration(const std::string& filename) {
     // options silently reset to defaults on every save/load cycle.
     config["NewFeatures"]["TriggerbotDelay"] = Config.NewFeaturesMenu.TriggerbotDelay;
     config["NewFeatures"]["NoCrouch"] = Config.NewFeaturesMenu.NoCrouch;
+    config["NewFeatures"]["NoHitFlinch"] = Config.NewFeaturesMenu.NoHitFlinch;
+    config["NewFeatures"]["NoDrift"] = Config.NewFeaturesMenu.NoDrift;
+    config["NewFeatures"]["NoSlideFatigue"] = Config.NewFeaturesMenu.NoSlideFatigue;
+    config["NewFeatures"]["NoSprintToFireDelay"] = Config.NewFeaturesMenu.NoSprintToFireDelay;
+    config["NewFeatures"]["NoHipfireDelay"] = Config.NewFeaturesMenu.NoHipfireDelay;
 
     // Own dot crosshair. Color[3] is the opacity, stored under its own name so
     // the JSON reads like the menu (R/G/B + Opacity).
@@ -115,10 +145,10 @@ bool LoadConfiguration(const std::string& filename) {
         file >> config;
 
         if (config.contains("ESPMenu")) {
-            Config.ESPMenu.Box = config["ESPMenu"]["Box"].get<bool>();
-            Config.ESPMenu.Name = config["ESPMenu"]["Name"].get<bool>();
-            Config.ESPMenu.Health = config["ESPMenu"]["Health"].get<bool>();
-            Config.ESPMenu.Distance = config["ESPMenu"]["Distance"].get<bool>();
+            if (config["ESPMenu"].contains("Box")) Config.ESPMenu.Box = config["ESPMenu"]["Box"].get<bool>();
+            if (config["ESPMenu"].contains("Name")) Config.ESPMenu.Name = config["ESPMenu"]["Name"].get<bool>();
+            if (config["ESPMenu"].contains("Health")) Config.ESPMenu.Health = config["ESPMenu"]["Health"].get<bool>();
+            if (config["ESPMenu"].contains("Distance")) Config.ESPMenu.Distance = config["ESPMenu"]["Distance"].get<bool>();
             if (config["ESPMenu"].contains("GrenadeWarn")) Config.ESPMenu.GrenadeWarn = config["ESPMenu"]["GrenadeWarn"].get<bool>();
             if (config["ESPMenu"].contains("Placables")) Config.ESPMenu.Placables = config["ESPMenu"]["Placables"].get<bool>();
             if (config["ESPMenu"].contains("Target")) Config.ESPMenu.Target = static_cast<LineTarget>(config["ESPMenu"]["Target"].get<int>());
@@ -129,32 +159,34 @@ bool LoadConfiguration(const std::string& filename) {
         }
 
         if (config.contains("Aim")) {
-            Config.Aim.Aimbot360 = config["Aim"]["Aimbot360"].get<bool>();
-            Config.Aim.AimSilent = config["Aim"]["AimSilent"].get<bool>();
-            Config.Aim.AimAssistSize = config["Aim"]["AimAssistSize"].get<float>();
-            Config.Aim.Target = static_cast<EAimTarget>(config["Aim"]["Target"].get<int>());
-            Config.Aim.Trigger = static_cast<EAimTrigger>(config["Aim"]["Trigger"].get<int>());
-            Config.Aim.By = static_cast<EAim>(config["Aim"]["By"].get<int>());
-            Config.Aim.size = config["Aim"]["size"].get<float>();
+            if (config["Aim"].contains("Aimbot360")) Config.Aim.Aimbot360 = config["Aim"]["Aimbot360"].get<bool>();
+            if (config["Aim"].contains("AimSilent")) Config.Aim.AimSilent = config["Aim"]["AimSilent"].get<bool>();
+            if (config["Aim"].contains("AimAssistSize")) Config.Aim.AimAssistSize = config["Aim"]["AimAssistSize"].get<float>();
+            if (config["Aim"].contains("Target")) Config.Aim.Target = static_cast<EAimTarget>(config["Aim"]["Target"].get<int>());
+            if (config["Aim"].contains("Trigger")) Config.Aim.Trigger = static_cast<EAimTrigger>(config["Aim"]["Trigger"].get<int>());
+            if (config["Aim"].contains("By")) Config.Aim.By = static_cast<EAim>(config["Aim"]["By"].get<int>());
+            if (config["Aim"].contains("size")) Config.Aim.size = config["Aim"]["size"].get<float>();
         }
 
         if (config.contains("ExtraMenu")) {
-            Config.ExtraMenu.Flash = config["ExtraMenu"]["Flash"].get<bool>();
-            Config.ExtraMenu.Diving = config["ExtraMenu"]["Diving"].get<bool>();
-            Config.ExtraMenu.Fire = config["ExtraMenu"]["Fire"].get<bool>();
-            Config.ExtraMenu.Hit = config["ExtraMenu"]["Hit"].get<bool>();
-            Config.ExtraMenu.Rpd = config["ExtraMenu"]["Rpd"].get<bool>();
-            Config.ExtraMenu.Parachute = config["ExtraMenu"]["Parachute"].get<bool>();
-            Config.ExtraMenu.Recoil = config["ExtraMenu"]["Recoil"].get<bool>();
-            Config.ExtraMenu.Shake = config["ExtraMenu"]["Shake"].get<bool>();
-            Config.ExtraMenu.Spread = config["ExtraMenu"]["Spread"].get<bool>();
-            Config.ExtraMenu.Reload = config["ExtraMenu"]["Reload"].get<bool>();
-            Config.ExtraMenu.Scope = config["ExtraMenu"]["Scope"].get<bool>();
-            Config.ExtraMenu.Switch = config["ExtraMenu"]["Switch"].get<bool>();
-            Config.ExtraMenu.Kinetic = config["ExtraMenu"]["Kinetic"].get<bool>();
-            // Guarded: a config file written before a switch existed keeps that
-            // switch's default (Mythic Attachments: on) instead of throwing out
-            // of the whole load.
+            if (config["ExtraMenu"].contains("Flash")) Config.ExtraMenu.Flash = config["ExtraMenu"]["Flash"].get<bool>();
+            if (config["ExtraMenu"].contains("Diving")) Config.ExtraMenu.Diving = config["ExtraMenu"]["Diving"].get<bool>();
+            if (config["ExtraMenu"].contains("Fire")) Config.ExtraMenu.Fire = config["ExtraMenu"]["Fire"].get<bool>();
+            if (config["ExtraMenu"].contains("Hit")) Config.ExtraMenu.Hit = config["ExtraMenu"]["Hit"].get<bool>();
+            if (config["ExtraMenu"].contains("Rpd")) Config.ExtraMenu.Rpd = config["ExtraMenu"]["Rpd"].get<bool>();
+            if (config["ExtraMenu"].contains("Parachute")) Config.ExtraMenu.Parachute = config["ExtraMenu"]["Parachute"].get<bool>();
+            if (config["ExtraMenu"].contains("Recoil")) Config.ExtraMenu.Recoil = config["ExtraMenu"]["Recoil"].get<bool>();
+            if (config["ExtraMenu"].contains("Shake")) Config.ExtraMenu.Shake = config["ExtraMenu"]["Shake"].get<bool>();
+            if (config["ExtraMenu"].contains("Spread")) Config.ExtraMenu.Spread = config["ExtraMenu"]["Spread"].get<bool>();
+            if (config["ExtraMenu"].contains("Reload")) Config.ExtraMenu.Reload = config["ExtraMenu"]["Reload"].get<bool>();
+            if (config["ExtraMenu"].contains("Scope")) Config.ExtraMenu.Scope = config["ExtraMenu"]["Scope"].get<bool>();
+            if (config["ExtraMenu"].contains("Switch")) Config.ExtraMenu.Switch = config["ExtraMenu"]["Switch"].get<bool>();
+            if (config["ExtraMenu"].contains("Kinetic"))
+                Config.ExtraMenu.Kinetic = config["ExtraMenu"]["Kinetic"].get<bool>();
+            else if (config["ExtraMenu"].contains("KineticArmor"))
+                Config.ExtraMenu.Kinetic = config["ExtraMenu"]["KineticArmor"].get<bool>();
+            if (config["ExtraMenu"].contains("Attachment"))
+                Config.ExtraMenu.Attachment = config["ExtraMenu"]["Attachment"].get<bool>();
             if (config["ExtraMenu"].contains("MythicAttachments"))
                 Config.ExtraMenu.MythicAttachments = config["ExtraMenu"]["MythicAttachments"].get<bool>();
             if (config["ExtraMenu"].contains("BlockReportEvidence"))
@@ -164,31 +196,28 @@ bool LoadConfiguration(const std::string& filename) {
             if (config["ExtraMenu"].contains("AntiLogin"))
                 Config.ExtraMenu.AntiLogin = config["ExtraMenu"]["AntiLogin"].get<bool>();
     if (config.contains("NewFeatures")) {
-        Config.NewFeaturesMenu.NoCrouch = config["NewFeatures"]["NoCrouch"].get<bool>();
-        Config.NewFeaturesMenu.Triggerbot = config["NewFeatures"]["Triggerbot"].get<bool>();
-        Config.NewFeaturesMenu.TriggerbotMode = config["NewFeatures"]["TriggerbotMode"].get<int>();
-        if (config["NewFeatures"].contains("TriggerbotDelay"))
-            Config.NewFeaturesMenu.TriggerbotDelay = config["NewFeatures"]["TriggerbotDelay"].get<int>();
-        if (config["NewFeatures"].contains("TriggerbotRadius"))
-            Config.NewFeaturesMenu.TriggerbotRadius = config["NewFeatures"]["TriggerbotRadius"].get<int>();
-        Config.NewFeaturesMenu.NoHitFlinch = config["NewFeatures"]["NoHitFlinch"].get<bool>();
-        Config.NewFeaturesMenu.NoDrift = config["NewFeatures"]["NoDrift"].get<bool>();
-        if (config["NewFeatures"].contains("NoSlideFatigue"))
-            Config.NewFeaturesMenu.NoSlideFatigue = config["NewFeatures"]["NoSlideFatigue"].get<bool>();
-        Config.NewFeaturesMenu.NoSprintToFireDelay = config["NewFeatures"]["NoSprintToFireDelay"].get<bool>();
-        Config.NewFeaturesMenu.NoHipfireDelay = config["NewFeatures"]["NoHipfireDelay"].get<bool>();
+        if (config["NewFeatures"].contains("NoCrouch")) Config.NewFeaturesMenu.NoCrouch = config["NewFeatures"]["NoCrouch"].get<bool>();
+        if (config["NewFeatures"].contains("Triggerbot")) Config.NewFeaturesMenu.Triggerbot = config["NewFeatures"]["Triggerbot"].get<bool>();
+        if (config["NewFeatures"].contains("TriggerbotMode")) Config.NewFeaturesMenu.TriggerbotMode = config["NewFeatures"]["TriggerbotMode"].get<int>();
+        if (config["NewFeatures"].contains("TriggerbotDelay")) Config.NewFeaturesMenu.TriggerbotDelay = config["NewFeatures"]["TriggerbotDelay"].get<int>();
+        if (config["NewFeatures"].contains("TriggerbotRadius")) Config.NewFeaturesMenu.TriggerbotRadius = config["NewFeatures"]["TriggerbotRadius"].get<int>();
+        if (config["NewFeatures"].contains("NoHitFlinch")) Config.NewFeaturesMenu.NoHitFlinch = config["NewFeatures"]["NoHitFlinch"].get<bool>();
+        if (config["NewFeatures"].contains("NoDrift")) Config.NewFeaturesMenu.NoDrift = config["NewFeatures"]["NoDrift"].get<bool>();
+        if (config["NewFeatures"].contains("NoSlideFatigue")) Config.NewFeaturesMenu.NoSlideFatigue = config["NewFeatures"]["NoSlideFatigue"].get<bool>();
+        if (config["NewFeatures"].contains("NoSprintToFireDelay")) Config.NewFeaturesMenu.NoSprintToFireDelay = config["NewFeatures"]["NoSprintToFireDelay"].get<bool>();
+        if (config["NewFeatures"].contains("NoHipfireDelay")) Config.NewFeaturesMenu.NoHipfireDelay = config["NewFeatures"]["NoHipfireDelay"].get<bool>();
         // DevBypass removed (login bypass).
     }
 
         if (config.contains("Crosshair")) {
-            Config.Crosshair.Enabled = config["Crosshair"]["Enabled"].get<bool>();
-            Config.Crosshair.Size = config["Crosshair"]["Size"].get<float>();
-            Config.Crosshair.OffsetX = config["Crosshair"]["OffsetX"].get<float>();
-            Config.Crosshair.OffsetY = config["Crosshair"]["OffsetY"].get<float>();
-            Config.Crosshair.Color[3] = config["Crosshair"]["Opacity"].get<float>();
-            Config.Crosshair.Color[0] = config["Crosshair"]["ColorR"].get<float>();
-            Config.Crosshair.Color[1] = config["Crosshair"]["ColorG"].get<float>();
-            Config.Crosshair.Color[2] = config["Crosshair"]["ColorB"].get<float>();
+            if (config["Crosshair"].contains("Enabled")) Config.Crosshair.Enabled = config["Crosshair"]["Enabled"].get<bool>();
+            if (config["Crosshair"].contains("Size")) Config.Crosshair.Size = config["Crosshair"]["Size"].get<float>();
+            if (config["Crosshair"].contains("OffsetX")) Config.Crosshair.OffsetX = config["Crosshair"]["OffsetX"].get<float>();
+            if (config["Crosshair"].contains("OffsetY")) Config.Crosshair.OffsetY = config["Crosshair"]["OffsetY"].get<float>();
+            if (config["Crosshair"].contains("Opacity")) Config.Crosshair.Color[3] = config["Crosshair"]["Opacity"].get<float>();
+            if (config["Crosshair"].contains("ColorR")) Config.Crosshair.Color[0] = config["Crosshair"]["ColorR"].get<float>();
+            if (config["Crosshair"].contains("ColorG")) Config.Crosshair.Color[1] = config["Crosshair"]["ColorG"].get<float>();
+            if (config["Crosshair"].contains("ColorB")) Config.Crosshair.Color[2] = config["Crosshair"]["ColorB"].get<float>();
         }
         }
 

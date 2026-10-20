@@ -1219,7 +1219,7 @@ namespace NewFeatures
     // scope flag (Pawn::IsAiming, a Pawn-level getter, safe on any live pawn) and
     // the identity of the weapon's current fire component - the object the swap
     // actually moves.
-    constexpr double kAdsSettleSeconds    = 0.12;   // floor, s
+    constexpr double kAdsSettleSeconds    = 0.10;   // floor, s
     constexpr double kAdsSettleMaxSeconds = 0.35;   // ceiling, s (the old value)
     inline double    g_afireAdsSettleUntil = -1000.0;
     inline double    g_afireAdsSettleMax   = -1000.0;

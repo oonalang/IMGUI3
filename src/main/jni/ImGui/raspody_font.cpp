@@ -19,8 +19,8 @@ namespace raspody
         cfg.OversampleV = 2;
         cfg.PixelSnapH = true;
 
-        // Cyrillic is included on purpose: the app's existing license strings
-        // can contain it, and Inter carries the glyphs anyway.
+        // Cyrillic ranges already cover Latin (0x0020-0x00FF) plus all UI text
+        // characters; no need for additional ranges.
         const ImWchar* ranges = io.Fonts->GetGlyphRangesCyrillic();
 
         fonts::small = io.Fonts->AddFontFromMemoryTTF(inter_semibold, kInterSemiboldBytes, 16.0f, &cfg, ranges);

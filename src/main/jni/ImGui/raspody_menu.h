@@ -26,6 +26,7 @@
 #include "menu_layout.h"
 #include "raspody_style.h"
 #include "raspody_widgets.h"
+#include "System/UI/Keyboard.h"
 #include "raspody_font.h"
 
 #include <algorithm>
@@ -34,6 +35,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <fstream>
 
 // Feature state owned by Main.cpp (same declarations the LANX header used).
 extern bool  HIDEESP;
@@ -50,6 +52,7 @@ extern std::string userType;
 // Implemented in System/Core/SaveConfig.h.
 void SaveConfiguration(const std::string& filename);
 bool LoadConfiguration(const std::string& filename);
+std::vector<std::string> ListProfiles();
 
 namespace raspody
 {
@@ -67,6 +70,12 @@ namespace raspody
         std::string configStatus = "Ready";
         float blackout = 0.0f;
         bool  scrollToTop = false;
+        // On-screen keyboard (RenderVirtualKeyboard) state. Two independent
+        // fields so the search box and the profile-name box never share a
+        // buffer or a flag.
+        bool  searchKeyboard = false;
+        bool  profileKeyboard = false;
+        std::string activeKeyboardId;
     };
 
     inline UiState ui;
@@ -110,10 +119,10 @@ namespace raspody
         const float height = S(25);
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        DrawTextClipped(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(11),
+        DrawTextClipped(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                         pos, ImVec2(pos.x + width * 0.52f, pos.y + height),
                         Col(clr.text2), label, ImVec2(0.0f, 0.5f));
-        DrawTextClipped(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(11),
+        DrawTextClipped(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                         ImVec2(pos.x + width * 0.48f, pos.y), ImVec2(pos.x + width, pos.y + height),
                         Col(clr.white), value ? value : "", ImVec2(1.0f, 0.5f));
 
@@ -125,7 +134,7 @@ namespace raspody
         const ImVec2 pos = ImGui::GetCursorScreenPos();
         const float width = CardInnerWidth();
         const float height = S(32);
-        DrawTextClipped(ImGui::GetWindowDrawList(), fonts::small ? fonts::small : ImGui::GetFont(), S(10.5f),
+        DrawTextClipped(ImGui::GetWindowDrawList(), fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                         pos, ImVec2(pos.x + width, pos.y + height),
                         Col(clr.text), text ? text : "", ImVec2(0.0f, 0.5f));
         ImGui::Dummy(ImVec2(width, height));
@@ -174,11 +183,11 @@ namespace raspody
         {
             const ImVec4 dot(Config.Crosshair.Color[0], Config.Crosshair.Color[1],
                              Config.Crosshair.Color[2], 1.0f);
-            dl->AddCircleFilled(ImVec2(cx, cy), radius + S(2), Col(clr.black, 0.35f), 20);
+            dl->AddCircleFilled(ImVec2(cx, cy), radius + S(0.5f), Col(clr.black, 0.35f), 20);
             dl->AddCircleFilled(ImVec2(cx, cy), radius, Col(dot), 20);
         }
 
-        DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(10),
+        DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                  ImVec2(pos.x + S(14), pos.y + S(13)), Col(clr.text2),
                  Config.Crosshair.Enabled ? "LIVE CROSSHAIR" : "CROSSHAIR DISABLED", ImVec2(0.0f, 0.5f));
 
@@ -436,10 +445,10 @@ namespace raspody
                            Config.sColorsESPBOT.SkeletonBOT);
             });
 
-            AddPageCard(p, 0, "ESP preview", [&] {
+            AddPageCard(p, 1, "ESP preview", [&] {
                 const ImVec2 pos = ImGui::GetCursorScreenPos();
-                const float width = CardInnerWidth();
-                const float height = S(230);
+                const float width = CardInnerWidth() * 0.9f;
+                const float height = width * 0.85f;
                 DrawEspPreview(ImGui::GetWindowDrawList(), pos, width, height);
                 ImGui::Dummy(ImVec2(width, height + S(8)));
             });
@@ -531,8 +540,8 @@ namespace raspody
             AddPageCard(p, 1, "Ammo & attachments", [&] {
                 Checkbox("Unlimited ammo", "Keep the magazine full.", &Config.UnlimitedAmmo);
                 Checkbox("Unlimited reserve", "Keep reserve ammunition full.", &Config.ExtraMenu.UnliAmmo);
-                Checkbox("Mythic attachments", "Unlock and apply mythic attachments.",
-                         &Config.ExtraMenu.MythicAttachments);
+                Checkbox("Blueprint", "Turn on blueprint / skins (BlueprintWeaponInfo).",
+                          &Config.ExtraMenu.MythicAttachments);
                 Checkbox("Attachment unlock", "Treat every attachment as owned.",
                          &Config.ExtraMenu.Attachment);
                 Checkbox("Smart reload", "Reload only when it is safe.", &Config.ExtraMenu.SmartReload);
@@ -673,13 +682,18 @@ namespace raspody
     // ---------------------------------------------------------------------
     inline void ConfigsPage(PageLayout& p, int subtab)
     {
-        static std::vector<std::string> profiles = { "ethnir" };
+        // Enumerate profiles from disk (configs/*.json), not a hardcoded list.
+        // Refreshed every frame so newly saved/deleted files show up.
+        std::vector<std::string> profiles = ListProfiles();
+        if (profiles.empty())
+            profiles.push_back("ethnir");
 
         if (subtab == 0)
         {
             AddPageCard(p, 0, "Create a profile", [&] {
-                TextFieldRow("##new_profile_name", ui.newProfile, (int)sizeof(ui.newProfile),
-                             "Profile name");
+                if (TextFieldRow("##new_profile_name", ui.newProfile, (int)sizeof(ui.newProfile),
+                              "Profile name"))
+                    ui.profileKeyboard = true;
                 if (Selectable("Create & save profile", false))
                 {
                     const std::string name = TrimName(ui.newProfile);
@@ -687,9 +701,19 @@ namespace raspody
                     {
                         if (std::find(profiles.begin(), profiles.end(), name) == profiles.end())
                             profiles.push_back(name);
-                        ui.activeProfile = name;
-                        SaveConfiguration(name);
-                        ui.configStatus = "Saved " + name + ".json";
+                         ui.activeProfile = name;
+                         SaveConfiguration(name);
+                         std::ifstream verify(androidFilesDir + "configs/" + name + ".json");
+                         if (verify.is_open())
+                         {
+                             ui.activeProfile = name;
+                             ui.configStatus = "Saved " + name + ".json";
+                             ui.newProfile[0] = '\0';
+                         }
+                         else
+                         {
+                             ui.configStatus = "Failed to save " + name + ".json";
+                         }
                     }
                 }
                 ParagraphRow("Profiles live in the app's configs/ directory as JSON.");
@@ -718,8 +742,16 @@ namespace raspody
                     if (savePressed)
                     {
                         SaveConfiguration(profile);
-                        ui.activeProfile = profile;
-                        ui.configStatus = "Saved " + profile + ".json";
+                        std::ifstream verify(androidFilesDir + "configs/" + profile + ".json");
+                        if (verify.is_open())
+                        {
+                            ui.activeProfile = profile;
+                            ui.configStatus = "Saved " + profile + ".json";
+                        }
+                        else
+                        {
+                            ui.configStatus = "Failed to save " + profile + ".json";
+                        }
                     }
                 }
             });
@@ -728,7 +760,12 @@ namespace raspody
                 if (Selectable("Save current config", false))
                 {
                     SaveConfiguration(ui.activeProfile);
-                    ui.configStatus = "Saved " + ui.activeProfile + ".json";
+                    {
+                        std::ifstream verify(androidFilesDir + "configs/" + ui.activeProfile + ".json");
+                        ui.configStatus = verify.is_open()
+                            ? "Saved " + ui.activeProfile + ".json"
+                            : "Failed to save " + ui.activeProfile + ".json";
+                    }
                 }
                 if (Selectable("Reload current config", false))
                 {
@@ -751,7 +788,7 @@ namespace raspody
             AddPageCard(p, 1, "Status", [&] {
                 InfoRow("Active profile", ui.activeProfile.c_str());
                 InfoRow("Format", "JSON");
-                InfoRow("Directory", "configs/");
+                InfoRow("Directory", (androidFilesDir + "configs").c_str());
                 ParagraphRow(ui.configStatus.c_str());
             });
         }
@@ -795,7 +832,12 @@ namespace raspody
                 if (Selectable("Save current config", false))
                 {
                     SaveConfiguration(ui.activeProfile);
-                    ui.configStatus = "Saved " + ui.activeProfile + ".json";
+                    {
+                        std::ifstream verify(androidFilesDir + "configs/" + ui.activeProfile + ".json");
+                        ui.configStatus = verify.is_open()
+                            ? "Saved " + ui.activeProfile + ".json"
+                            : "Failed to save " + ui.activeProfile + ".json";
+                    }
                 }
             });
 
@@ -876,8 +918,8 @@ namespace raspody
                 Checkbox("Reset guest", "Reset the guest account state.", &Config.ExtraMenu.ResetGuest);
                 Checkbox("Attachment unlock", "Treat every attachment as owned.",
                          &Config.ExtraMenu.Attachment);
-                Checkbox("Mythic attachments", "Unlock and apply mythic attachments.",
-                         &Config.ExtraMenu.MythicAttachments);
+                Checkbox("Blueprint", "Turn on blueprint / skins (BlueprintWeaponInfo).",
+                          &Config.ExtraMenu.MythicAttachments);
             });
 
             AddPageCard(p, 1, "Performance", [&] {
@@ -903,7 +945,12 @@ namespace raspody
                 if (Selectable("Save current config", false))
                 {
                     SaveConfiguration(ui.activeProfile);
-                    ui.configStatus = "Saved " + ui.activeProfile + ".json";
+                    {
+                        std::ifstream verify(androidFilesDir + "configs/" + ui.activeProfile + ".json");
+                        ui.configStatus = verify.is_open()
+                            ? "Saved " + ui.activeProfile + ".json"
+                            : "Failed to save " + ui.activeProfile + ".json";
+                    }
                 }
                 if (Selectable("Reload current config", false))
                 {
@@ -988,7 +1035,12 @@ namespace raspody
                 if (Selectable("Save config", false))
                 {
                     SaveConfiguration(ui.activeProfile);
-                    ui.configStatus = "Saved " + ui.activeProfile + ".json";
+                    {
+                        std::ifstream verify(androidFilesDir + "configs/" + ui.activeProfile + ".json");
+                        ui.configStatus = verify.is_open()
+                            ? "Saved " + ui.activeProfile + ".json"
+                            : "Failed to save " + ui.activeProfile + ".json";
+                    }
                     ClosePopup("##raspody_profile_menu");
                 }
                 if (Selectable("Reload config", false))
@@ -1058,7 +1110,7 @@ namespace raspody
         dl->AddRect(breadcrumbMin, breadcrumbMax, Col(clr.separator, 0.8f), S(11), 0, 1.0f);
         DrawChevron(dl, ImVec2(breadcrumbMin.x + S(16), centerY), S(11),
                     Col(clr.text3), IM_PI * 0.5f);
-        DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(11),
+        DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                  ImVec2(breadcrumbMin.x + S(30), centerY), Col(clr.white),
                  kTabNames[tab], ImVec2(0.0f, 0.5f));
         nextX = breadcrumbMax.x + S(10);
@@ -1070,7 +1122,7 @@ namespace raspody
             if (!label)
                 continue;
 
-            const float width = TextSize(fonts::small ? fonts::small : ImGui::GetFont(), S(11), label).x + S(24);
+            const float width = TextSize(fonts::small ? fonts::small : ImGui::GetFont(), 16.0f, label).x + S(24);
             if (nextX + width > contentX + contentW - searchSize - S(20))
                 break;
 
@@ -1097,7 +1149,7 @@ namespace raspody
                                        : Col(hovered ? clr.widget : clr.child, 0.95f), S(11));
             if (selected)
                 dl->AddRect(min, max, Col(clr.accent, 0.55f), S(11), 0, 1.0f);
-            DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), S(11),
+            DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                      ImVec2((min.x + max.x) * 0.5f, centerY),
                      selected ? Col(clr.white) : (hovered ? Col(clr.text3) : Col(clr.text2)),
                      label, ImVec2(0.5f, 0.5f));
@@ -1119,7 +1171,8 @@ namespace raspody
             if (fieldW > S(30))
             {
                 const ImVec2 fieldPos(searchX - fieldW - S(6), centerY - S(19));
-                SearchField(ui.search, (int)sizeof(ui.search), fieldPos, fieldW);
+                if (SearchField(ui.search, (int)sizeof(ui.search), fieldPos, fieldW))
+                    ui.searchKeyboard = true;
             }
         }
         else
@@ -1152,8 +1205,13 @@ namespace raspody
         const MenuLayout layout = ComputeMenuLayout(display);
 
         const MenuLayout menu = layout;
-        const ImVec2 pos = menu.menuPos;
-        const ImVec2 size(menu.menuW, menu.menuH);
+        float menuW = ImMin(layout.menuW, 900.0f);
+        float menuH = ImMin(layout.menuH, 592.0f);
+        const ImVec2 pos = ImVec2(
+            ImClamp((display.x - menuW) * 0.5f, 0.0f, ImMax(0.0f, display.x - menuW)),
+            ImClamp((display.y - menuH) * 0.5f, 0.0f, ImMax(0.0f, display.y - menuH))
+        );
+        const ImVec2 size(menuW, menuH);
 
         const float scale = ImClamp(ImMin(size.x / 900.0f, size.y / 592.0f), 0.70f, 1.45f);
         SetScale(scale);
@@ -1161,7 +1219,7 @@ namespace raspody
         const float pad = ImClamp(size.x * 0.017f, S(10), S(18));
         const float headerH = ImClamp(size.y * 0.088f, S(40), S(56));
         const float gap = S(13);
-        const float tabW = ImClamp(size.x * 0.095f, S(58), S(92));
+        const float tabW = ImClamp(size.x * 0.095f, S(58), S(120));
         const float contentY = pos.y + pad + headerH + gap;
         const float contentH = ImMax(S(80), size.y - (contentY - pos.y) - pad);
         const float contentX = pos.x + pad + tabW + gap;
@@ -1251,12 +1309,50 @@ namespace raspody
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
         ImGui::SetCursorScreenPos(ImVec2(contentX, contentY + headerBlockH));
         ImGui::BeginChild("##raspody_content", ImVec2(contentW, childH), false,
-            ImGuiWindowFlags_NoBackground);
+            ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar);
 
         if (ui.scrollToTop)
         {
             ImGui::SetScrollY(0.0f);
             ui.scrollToTop = false;
+        }
+
+        // ---- Drag-to-scroll for touch: press -> move past ~10 px -> scroll.
+        // A drag never toggles the control it started on: once dragging, the
+        // row under the finger is not clicked (dragScrolling gates the
+        // widgets' click handling).
+        {
+            ImGuiIO& io = ImGui::GetIO();
+            static bool dragging = false;
+            static ImVec2 dragOrigin(0, 0);
+            static float dragOriginScroll = 0.0f;
+            const ImVec2 cpos = ImGui::GetWindowPos();
+            const ImVec2 csize = ImGui::GetWindowSize();
+            const bool inChild = io.MousePos.x >= cpos.x && io.MousePos.x <= cpos.x + csize.x &&
+                                 io.MousePos.y >= cpos.y && io.MousePos.y <= cpos.y + csize.y;
+            if (io.MouseDown[0])
+            {
+                if (!dragging && inChild)
+                {
+                    dragging = true;
+                    dragOrigin = io.MousePos;
+                    dragOriginScroll = ImGui::GetScrollY();
+                }
+                if (dragging)
+                {
+                    const float dy = io.MousePos.y - dragOrigin.y;
+                    if (fabsf(dy) > S(10))
+                    {
+                        ui.dragScrolling = true;
+                        ImGui::SetScrollY(dragOriginScroll - dy);
+                    }
+                }
+            }
+            else
+            {
+                dragging = false;
+                ui.dragScrolling = false;
+            }
         }
 
         const ImVec2 origin(ImGui::GetWindowPos().x,
@@ -1268,6 +1364,24 @@ namespace raspody
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, var.tab.alpha * var.subtab.alpha);
         RenderPage(var.tab.current, var.subtab.current, origin, availW);
         ImGui::PopStyleVar();
+
+        // ---- Coral scrollbar (the fork's ImGui::Scrollbar hardcodes amber).
+        if (scrollMax > 0.0f)
+        {
+            ImDrawList* sdl = ImGui::GetWindowDrawList();
+            const ImVec2 wpos = ImGui::GetWindowPos();
+            const ImVec2 wsize = ImGui::GetWindowSize();
+            const float trackX = wpos.x + wsize.x - S(6);
+            const float trackY0 = wpos.y;
+            const float trackY1 = wpos.y + wsize.y;
+            sdl->AddRectFilled(ImVec2(trackX, trackY0), ImVec2(trackX + S(4), trackY1),
+                               Col(clr.widget, 0.6f), S(2));
+            const float frac = scrollY / scrollMax;
+            const float thumbH = ImMax(S(20), wsize.y * (wsize.y / (wsize.y + scrollMax)));
+            const float thumbY = trackY0 + (trackY1 - trackY0 - thumbH) * frac;
+            sdl->AddRectFilled(ImVec2(trackX, thumbY), ImVec2(trackX + S(4), thumbY + thumbH),
+                               Col(clr.accent), S(2));
+        }
 
         ImGui::EndChild();
         ImGui::PopStyleColor();
@@ -1287,5 +1401,15 @@ namespace raspody
 
         Ease(ui.blackout, AnyPopupOpen() ? 1.0f : 0.0f, 8.0f);
         DrawBlackout(ui.blackout);
+
+        // On-screen keyboard for the two text fields. Each has its own flag so
+        // they never share a buffer. Rendered after the menu window so the
+        // tap-outside logic in RenderVirtualKeyboard can see the panel rect.
+        if (ui.searchKeyboard)
+            RenderVirtualKeyboard("##raspody_search_keyboard", ui.search,
+                                  (int)sizeof(ui.search), &ui.searchKeyboard);
+        if (ui.profileKeyboard)
+            RenderVirtualKeyboard("##raspody_profile_keyboard", ui.newProfile,
+                                  (int)sizeof(ui.newProfile), &ui.profileKeyboard);
     }
 } // namespace raspody
