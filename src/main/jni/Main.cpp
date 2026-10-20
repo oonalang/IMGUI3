@@ -1070,6 +1070,9 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         F50 = io.Fonts->AddFontFromMemoryTTF((void *)F50_data, F50_size, 30.0f, NULL, io.Fonts->GetGlyphRangesDefault());
         if (!F107) F107 = font::inter_semibold;
         if (font::inter_semibold) io.FontDefault = font::inter_semibold;
+        // Poppins for the login card (ImGui/login_screen.h). Loaded after
+        // FontDefault so its fallback chain lands on Inter, not the built-in.
+        login_screen::LoadFonts(io);
         raspody::LoadFonts();
         raspody::Style();
         io.Fonts->Build();
@@ -1225,76 +1228,65 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
         if (!isLogin && !ui_loading::IsActive()) {
-            const float WW = ImMin(440.0f, ioDisplaySize.x * 0.92f);
-            const float WH = ImMin(380.0f, ioDisplaySize.y * 0.92f);
+            // The login card is the menu: same layout size, same centre, so the
+            // app opens on the thing the key unlocks. Presentation lives in
+            // ImGui/login_screen.h; the auth flow below is unchanged.
+            const MenuLayout loginLayout = ComputeMenuLayout(ioDisplaySize);
+            const float WW = ImMin(loginLayout.menuW, 900.0f);
+            const float WH = ImMin(loginLayout.menuH, 592.0f);
             ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+
+            // Artwork: the background the loading screen already uses. Only GL
+            // knows its size, so ask once and cache - the texture is created
+            // once for the life of the context.
+            static int artW = 0, artH = 0;
+            if (artW == 0 && runtime_preview_menu::g_menuBackground.id != 0) {
+                GLint prevTex = 0;
+                glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex);
+                glBindTexture(GL_TEXTURE_2D, runtime_preview_menu::g_menuBackground.id);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &artW);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &artH);
+                glBindTexture(GL_TEXTURE_2D, (GLuint)prevTex);
+            }
 
             ImGui::SetNextWindowPos(center, ImGuiCond_Always, {0.5f, 0.5f});
             ImGui::SetNextWindowSize({WW, WH}, ImGuiCond_Always);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 20.0f);
-            ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(20, 10, 35, 240));
-            ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(160, 80, 255, 180));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
 
             if (ImGui::Begin("##premium_login", nullptr,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
-                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize |
-                ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove)) {
+                ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings |
+                ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
+                ImGuiWindowFlags_NoMove)) {
 
-                ImDrawList* dl = ImGui::GetWindowDrawList();
-                ImVec2 wp = ImGui::GetWindowPos();
-                ImFont* titleFont = F50 ? F50 : ImGui::GetFont();
-                ImFont* bodyFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
+                static bool revealKey = false;
+                static bool rememberKey = true;
 
-                dl->AddRectFilled(wp, {wp.x + WW, wp.y + WH}, IM_COL32(20, 10, 35, 240), 20.0f);
-                dl->AddRect(wp, {wp.x + WW, wp.y + WH}, IM_COL32(160, 80, 255, 100), 20.0f, 0, 1.5f);
-                dl->AddRect({wp.x + 6, wp.y + 6}, {wp.x + WW - 6, wp.y + WH - 6}, IM_COL32(160, 80, 255, 30), 16.0f, 0, 1.0f);
+                login_screen::Params lp;
+                lp.pos = ImGui::GetWindowPos();
+                lp.W = WW;
+                lp.H = WH;
+                lp.key = s;
+                lp.keySize = (int)sizeof(s);
+                lp.reveal = &revealKey;
+                lp.remember = &rememberKey;
+                lp.error = err.c_str();
+                lp.art = (ImTextureID)(intptr_t)runtime_preview_menu::g_menuBackground.id;
+                lp.artW = artW;
+                lp.artH = artH;
 
-                const char* brand = "ETHNIR FREEMIUM";
-                ImVec2 brandSize = titleFont->CalcTextSizeA(32.0f, FLT_MAX, 0.0f, brand);
-                dl->AddText(titleFont, 32.0f, {wp.x + (WW - brandSize.x) * 0.5f, wp.y + 40.0f}, IM_COL32(160, 80, 255, 255), brand);
+                const login_screen::Result loginUi = login_screen::Render(lp);
 
-                const char* sub = "AUTHENTICATION";
-                ImVec2 subSize = bodyFont->CalcTextSizeA(12.0f, FLT_MAX, 0.0f, sub);
-                dl->AddText(bodyFont, 12.0f, {wp.x + (WW - subSize.x) * 0.5f, wp.y + 88.0f}, IM_COL32(180, 180, 200, 200), sub);
+                if (loginUi.paste) {
+                    std::string clip = getClipboard();
+                    strncpy(s, clip.c_str(), sizeof(s) - 1);
+                    s[sizeof(s) - 1] = '\0';
+                }
 
-                dl->AddLine({wp.x + 60, wp.y + 110}, {wp.x + WW - 60, wp.y + 110}, IM_COL32(160, 80, 255, 60), 1.0f);
-
-                const char* prompt = "Enter your license key to continue";
-                ImVec2 promptSize = bodyFont->CalcTextSizeA(10.5f, FLT_MAX, 0.0f, prompt);
-                dl->AddText(bodyFont, 10.5f, {wp.x + (WW - promptSize.x) * 0.5f, wp.y + 128.0f}, IM_COL32(160, 160, 180, 220), prompt);
-
-                const float inputW = WW - 60.0f;
-                const float inputX = wp.x + 30.0f;
-                const float inputY = wp.y + 156.0f;
-                const float inputH = 44.0f;
-
-                dl->AddRectFilled({inputX, inputY}, {inputX + inputW, inputY + inputH}, IM_COL32(30, 15, 50, 220), 10.0f);
-                static bool keyFocused = false;
-                ImU32 bc = keyFocused ? IM_COL32(160, 80, 255, 255) : IM_COL32(160, 80, 255, 80);
-                dl->AddRect({inputX, inputY}, {inputX + inputW, inputY + inputH}, bc, 10.0f, 0, keyFocused ? 2.0f : 1.0f);
-
-                ImGui::SetCursorScreenPos({inputX + 12.0f, inputY + 10.0f});
-                ImGui::PushItemWidth(inputW);
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 220, 240, 255));
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {0, 0});
-                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0));
-                ImGui::PushStyleColor(ImGuiCol_FrameBgActive, IM_COL32(0, 0, 0, 0));
-                ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 0));
-                ImGui::InputText("##license_key", s, sizeof(s), ImGuiInputTextFlags_CharsNoBlank);
-                keyFocused = ImGui::IsItemActive() || ImGui::IsItemHovered();
-                ImGui::PopStyleColor(4);
-                ImGui::PopStyleVar(2);
-                ImGui::PopItemWidth();
-
-                float btnY = inputY + inputH + 16.0f;
-                ImGui::SetCursorScreenPos({inputX, btnY});
-                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(160, 80, 255, 220));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(190, 110, 255, 255));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(120, 50, 200, 255));
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(15, 12, 25, 255));
-                if (ImGui::Button("AUTHENTICATE", {inputW, 44.0f})) {
+                if (loginUi.authenticate) {
                     err = Login(s);
                     if (err == "OK") {
                         strncpy(logintext, s, sizeof(logintext) - 1);
@@ -1303,39 +1295,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         g_LoginTextLoaded = true;
                         err.clear();
                         ui_loading::Start(7.0f);
-                        
                     }
                 }
-                ImGui::PopStyleColor(4);
-
-                float pasteBtnY = btnY + 44.0f + 8.0f;
-                ImGui::SetCursorScreenPos({inputX, pasteBtnY});
-                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(160, 80, 255, 40));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(160, 80, 255, 80));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(160, 80, 255, 120));
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(160, 80, 255, 220));
-                if (ImGui::Button("PASTE FROM CLIPBOARD", {inputW, 36.0f})) {
-                    std::string clip = getClipboard();
-                    strncpy(s, clip.c_str(), sizeof(s) - 1);
-                    s[sizeof(s) - 1] = '\0';
-                }
-                ImGui::PopStyleColor(4);
-
-                if (!err.empty() && err != "OK") {
-                    float errY = pasteBtnY + 36.0f + 8.0f;
-                    ImGui::SetCursorScreenPos({inputX, errY});
-                    ImVec2 errPos = ImGui::GetCursorScreenPos();
-                    dl->AddRectFilled(errPos, {errPos.x + inputW, errPos.y + 30.0f}, IM_COL32(200, 50, 50, 40), 6.0f);
-                    dl->AddRect(errPos, {errPos.x + inputW, errPos.y + 30.0f}, IM_COL32(200, 50, 150, 150), 6.0f, 0, 1.0f);
-                    ImGui::SetCursorScreenPos({errPos.x + 12.0f, errPos.y + 8.0f});
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
-                    ImGui::Text("%s", err.c_str());
-                    ImGui::PopStyleColor();
-                }
-
-                const char* footer = "Secure connection  -  All data encrypted";
-                ImVec2 footSize = bodyFont->CalcTextSizeA(9.0f, FLT_MAX, 0.0f, footer);
-                dl->AddText(bodyFont, 9.0f, {wp.x + (WW - footSize.x) * 0.5f, wp.y + WH - 28.0f}, IM_COL32(120, 120, 140, 160), footer);
             }
             ImGui::End();
             ImGui::PopStyleColor(2);

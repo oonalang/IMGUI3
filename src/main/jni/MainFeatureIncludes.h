@@ -30,6 +30,7 @@
 #include "Includes/Jni_Stuff.h"
 
 #include "ImGui/runtime_preview_menu.h"
+#include "ImGui/login_screen.h"
 
 #include "Fonts/Iconcpp.h"
 #include "Fonts/fonts.h"

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "ImGui/Call_ImGui.h"
 #include "../../ImGui/imgui_settings.h"
 #include <algorithm>
