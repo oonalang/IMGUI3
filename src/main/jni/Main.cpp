@@ -3,6 +3,7 @@
 #include "Includes/obfuscate.h"
 #include "Includes/Utils.h"
 #include "ImGui/Call_ImGui.h"
+#include "ImGui/esp_model_preview.h"
 #include "IL2CppSDKGenerator/BasicStructs/Call_BasicStructs.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Call_IL2Cpp.h"
 #include "Hacks/Hacks.h"
@@ -990,267 +991,81 @@ static void DrawPizzaOutline(ImDrawList* dl, ImVec2 wMin, ImVec2 wMax, float tim
     }
 }
 
+// ESP tab character preview.
+//
+// The model is the software-3D mesh from ImGui/esp_model_preview.h; this
+// wrapper draws the floating glass card around it and overlays the live ESP
+// decorations (box / health / name / distance / skeleton / line) onto the
+// projected silhouette, so every toggle shows up on the preview instantly.
 static void DrawEspPreview(ImDrawList* draw, ImVec2 pos, float width, float height) {
-    draw->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), IM_COL32(10, 12, 18, 245));
-    draw->AddRect(pos, ImVec2(pos.x + width, pos.y + height), IM_COL32(70, 70, 82, 180), 8.0f, 0, 1.0f);
+    const ImVec2 cardMin(pos.x, pos.y);
+    const ImVec2 cardMax(pos.x + width, pos.y + height);
+    const float cardRounding = 12.0f;
 
-    static float animTime = 0.0f;
-    animTime += ImGui::GetIO().DeltaTime;
-    float sway     = sinf(animTime * 1.1f) * 4.0f;
-    float hairSway = sinf(animTime * 1.5f) * 3.0f;
-    float blink    = fmodf(animTime, 4.5f);
-    bool  eyesShut = blink > 4.25f && blink < 4.38f;
+    draw->AddRectFilled(cardMin, cardMax, IM_COL32(15, 17, 26, 242), cardRounding);
+    draw->AddRectFilledMultiColor(cardMin, ImVec2(cardMax.x, cardMin.y + height * 0.42f),
+        IM_COL32(158, 96, 255, 46), IM_COL32(158, 96, 255, 0),
+        IM_COL32(158, 96, 255, 0), IM_COL32(158, 96, 255, 46));
+    draw->AddRect(cardMin, cardMax, IM_COL32(126, 96, 196, 150), cardRounding, 0, 1.2f);
+    draw->AddRect(ImVec2(cardMin.x + 1.5f, cardMin.y + 1.5f), ImVec2(cardMax.x - 1.5f, cardMax.y - 1.5f),
+        IM_COL32(255, 255, 255, 12), cardRounding - 1.5f, 0, 1.0f);
 
-    ImVec2 center = ImVec2(pos.x + width * 0.5f + sway, pos.y + height * 0.50f + height * 0.02f);
-    float s = std::min(width, height) * 0.72f;
-
-    auto P = [&](float nx, float ny) -> ImVec2 { return ImVec2(center.x + nx * s, center.y + ny * s); };
-
-    ImU32 skinShade = IM_COL32(232, 200, 178, 255);
-    ImU32 skinBase  = IM_COL32(248, 222, 200, 255);
-    ImU32 skinHigh  = IM_COL32(255, 236, 220, 255);
-    ImU32 hairDark  = IM_COL32(78, 60, 130, 255);
-    ImU32 hairBase  = IM_COL32(140, 110, 200, 255);
-    ImU32 hairHigh  = IM_COL32(200, 170, 250, 255);
-    ImU32 hairTip   = IM_COL32(232, 130, 220, 255);
-    ImU32 coatDark  = IM_COL32(28, 22, 48, 255);
-    ImU32 coatBase  = IM_COL32(48, 38, 82, 255);
-    ImU32 coatTrim  = IM_COL32(160, 80, 255, 255);
-    ImU32 pantsCol  = IM_COL32(24, 20, 40, 255);
-    ImU32 bootCol   = IM_COL32(14, 12, 24, 255);
-    ImU32 bootHigh  = IM_COL32(90, 60, 160, 255);
-    ImU32 eyeWhite  = IM_COL32(250, 248, 255, 255);
-    ImU32 eyeIris   = IM_COL32(150, 90, 230, 255);
-    ImU32 eyePupil  = IM_COL32(28, 12, 50, 255);
-    ImU32 outline   = IM_COL32(8, 4, 20, 220);
-
-    auto drawLimb = [&](ImVec2 a, ImVec2 b, float w, ImU32 col) {
-        draw->AddLine(a, b, col, w);
-        draw->AddCircleFilled(a, w * 0.5f, col, 12);
-        draw->AddCircleFilled(b, w * 0.5f, col, 12);
-    };
-
-    ImVec2 headC  = P(0.00f, -0.72f);
-    float  headR  = s * 0.155f;
-    ImVec2 chin   = P(0.00f, -0.55f);
-    ImVec2 neck   = P(0.00f, -0.52f);
-    ImVec2 shL    = P(-0.19f, -0.42f);
-    ImVec2 shR    = P( 0.19f, -0.42f);
-    ImVec2 chest  = P(0.00f, -0.24f);
-    ImVec2 waist  = P(0.00f, -0.05f);
-    ImVec2 hipL   = P(-0.13f,  0.05f);
-    ImVec2 hipR   = P( 0.13f,  0.05f);
-    ImVec2 elbL   = P(-0.30f, -0.10f);
-    ImVec2 elbR   = P( 0.30f, -0.10f);
-    ImVec2 wrL    = P(-0.31f,  0.20f);
-    ImVec2 wrR    = P( 0.31f,  0.20f);
-    ImVec2 knL    = P(-0.12f,  0.38f);
-    ImVec2 knR    = P( 0.12f,  0.38f);
-    ImVec2 anL    = P(-0.12f,  0.70f);
-    ImVec2 anR    = P( 0.12f,  0.70f);
+    const float pad = 9.0f;
+    const float titleH = 24.0f;
+    const float hintH = 18.0f;
 
     {
-        ImVec2 hw = ImVec2(hairSway * 0.5f, 0);
-        ImVec2 backHair[] = {
-            ImVec2(headC.x - headR * 0.95f + hw.x, headC.y - headR * 0.4f),
-            ImVec2(headC.x - headR * 1.15f + hw.x, headC.y + headR * 0.6f),
-            ImVec2(headC.x - headR * 1.05f + hw.x, headC.y + headR * 1.8f),
-            ImVec2(waist.x - s * 0.16f + hw.x,     waist.y + s * 0.05f),
-            ImVec2(waist.x - s * 0.10f + hw.x,     waist.y + s * 0.22f),
-            ImVec2(waist.x + s * 0.10f + hw.x,     waist.y + s * 0.22f),
-            ImVec2(waist.x + s * 0.16f + hw.x,     waist.y + s * 0.05f),
-            ImVec2(headC.x + headR * 1.05f + hw.x, headC.y + headR * 1.8f),
-            ImVec2(headC.x + headR * 1.15f + hw.x, headC.y + headR * 0.6f),
-            ImVec2(headC.x + headR * 0.95f + hw.x, headC.y - headR * 0.4f),
-        };
-        draw->AddConvexPolyFilled(backHair, 10, hairDark);
-        ImVec2 tipPts[] = {
-            ImVec2(headC.x - headR * 1.05f + hw.x, headC.y + headR * 1.8f),
-            ImVec2(waist.x - s * 0.16f + hw.x,     waist.y + s * 0.05f),
-            ImVec2(waist.x - s * 0.10f + hw.x,     waist.y + s * 0.22f),
-            ImVec2(waist.x + s * 0.10f + hw.x,     waist.y + s * 0.22f),
-            ImVec2(waist.x + s * 0.16f + hw.x,     waist.y + s * 0.05f),
-            ImVec2(headC.x + headR * 1.05f + hw.x, headC.y + headR * 1.8f),
-        };
-        draw->AddConvexPolyFilled(tipPts, 6, hairTip);
+        ImFont* f = ImGui::GetFont();
+        const float fs = ImGui::GetFontSize() * 0.86f;
+        draw->AddText(f, fs, ImVec2(cardMin.x + pad, cardMin.y + 7.0f),
+            IM_COL32(236, 236, 246, 245), "PLAYER PREVIEW");
+        const char* hint = "DRAG TO SPIN";
+        const ImVec2 hs = f->CalcTextSizeA(fs * 0.72f, FLT_MAX, 0.0f, hint);
+        draw->AddText(f, fs * 0.72f, ImVec2(cardMax.x - pad - hs.x, cardMin.y + 9.0f),
+            IM_COL32(150, 132, 190, 210), hint);
+        draw->AddLine(ImVec2(cardMin.x + pad, cardMin.y + titleH),
+            ImVec2(cardMax.x - pad, cardMin.y + titleH), IM_COL32(126, 96, 196, 70), 1.0f);
     }
 
-    drawLimb(hipR, knR, s * 0.100f, pantsCol);
-    drawLimb(knR, anR, s * 0.085f, bootCol);
-    drawLimb(hipL, knL, s * 0.100f, pantsCol);
-    drawLimb(knL, anL, s * 0.085f, bootCol);
+    const ImVec2 modelPos(cardMin.x + pad, cardMin.y + titleH);
+    const ImVec2 modelSize(ImMax(1.0f, width - pad * 2.0f),
+        ImMax(1.0f, height - titleH - hintH));
 
-    draw->AddLine(P(0.075f, 0.52f), P(0.14f, 0.60f), bootHigh, 1.4f);
-    draw->AddLine(P(-0.14f, 0.52f), P(-0.075f, 0.60f), bootHigh, 1.4f);
-
-    draw->AddRectFilled(P(-0.185f, 0.70f), P(-0.070f, 0.78f), bootCol, 2.5f);
-    draw->AddRectFilled(P( 0.070f, 0.70f), P( 0.185f, 0.78f), bootCol, 2.5f);
-    draw->AddRect(P(-0.185f, 0.70f), P(-0.070f, 0.78f), outline, 2.5f, 0, 1.0f);
-    draw->AddRect(P( 0.070f, 0.70f), P( 0.185f, 0.78f), outline, 2.5f, 0, 1.0f);
-
-    drawLimb(shR, elbR, s * 0.078f, coatBase);
-    drawLimb(elbR, wrR, s * 0.062f, skinBase);
-    draw->AddCircleFilled(wrR, s * 0.038f, skinHigh, 14);
-
-    ImVec2 coat[] = {
-        ImVec2(shL.x + s * 0.01f, shL.y - s * 0.02f),
-        ImVec2(waist.x - s * 0.11f, waist.y),
-        ImVec2(waist.x - s * 0.14f, waist.y + s * 0.15f),
-        ImVec2(waist.x - s * 0.10f, waist.y + s * 0.22f),
-        ImVec2(waist.x + s * 0.10f, waist.y + s * 0.22f),
-        ImVec2(waist.x + s * 0.14f, waist.y + s * 0.15f),
-        ImVec2(waist.x + s * 0.11f, waist.y),
-        ImVec2(shR.x - s * 0.01f, shR.y - s * 0.02f),
-    };
-    draw->AddConvexPolyFilled(coat, 8, coatBase);
-
-    draw->AddLine(ImVec2(chest.x - s * 0.01f, shL.y), ImVec2(waist.x, waist.y + s * 0.20f), coatTrim, 1.8f);
-    draw->AddLine(ImVec2(chest.x + s * 0.01f, shL.y), ImVec2(waist.x, waist.y + s * 0.20f), coatTrim, 1.8f);
-    draw->AddLine(shL, shR, coatDark, 2.5f);
-    draw->AddLine(ImVec2(shL.x, shL.y), ImVec2(chest.x, chest.y - s * 0.02f), coatTrim, 1.2f);
-    draw->AddLine(ImVec2(shR.x, shR.y), ImVec2(chest.x, chest.y - s * 0.02f), coatTrim, 1.2f);
-
-    for (int i = 0; i < 8; i++) {
-        ImVec2 a = coat[i], b = coat[(i + 1) % 8];
-        draw->AddLine(a, b, outline, 1.0f);
+    ImGui::SetCursorScreenPos(modelPos);
+    ImGui::InvisibleButton("##esp_preview_spin", modelSize);
+    const bool spinning = ImGui::IsItemActive();
+    esp_model_preview::SetDragging(spinning);
+    if (spinning) {
+        const ImVec2 d = ImGui::GetIO().MouseDelta;
+        if (d.x != 0.0f || d.y != 0.0f) esp_model_preview::DragDelta(d.x, d.y);
     }
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) esp_model_preview::ResetView();
 
-    drawLimb(shL, elbL, s * 0.078f, coatBase);
-    drawLimb(elbL, wrL, s * 0.062f, skinBase);
-    draw->AddCircleFilled(wrL, s * 0.038f, skinHigh, 14);
+    const esp_model_preview::Result model =
+        esp_model_preview::DrawModel(draw, modelPos, modelSize);
 
-    drawLimb(neck, ImVec2(neck.x, chest.y - s * 0.02f), s * 0.055f, skinBase);
-
-    ImVec2 headBounds[] = {
-        ImVec2(headC.x,                 headC.y - headR * 1.05f),
-        ImVec2(headC.x + headR * 0.75f, headC.y - headR * 0.95f),
-        ImVec2(headC.x + headR * 1.00f, headC.y - headR * 0.40f),
-        ImVec2(headC.x + headR * 0.90f, headC.y + headR * 0.30f),
-        ImVec2(headC.x + headR * 0.55f, headC.y + headR * 0.90f),
-        ImVec2(chin.x,                  chin.y),
-        ImVec2(headC.x - headR * 0.55f, headC.y + headR * 0.90f),
-        ImVec2(headC.x - headR * 0.90f, headC.y + headR * 0.30f),
-        ImVec2(headC.x - headR * 1.00f, headC.y - headR * 0.40f),
-        ImVec2(headC.x - headR * 0.75f, headC.y - headR * 0.95f),
-    };
-    draw->AddConvexPolyFilled(headBounds, 10, skinBase);
-
-    draw->AddCircleFilled(ImVec2(headC.x - headR * 0.98f, headC.y + headR * 0.12f), headR * 0.16f, skinBase, 16);
-    draw->AddCircleFilled(ImVec2(headC.x + headR * 0.98f, headC.y + headR * 0.12f), headR * 0.16f, skinBase, 16);
-    draw->AddLine(ImVec2(headC.x - headR * 0.99f, headC.y + headR * 0.12f),
-                  ImVec2(headC.x - headR * 0.91f, headC.y + headR * 0.20f), skinShade, 1.0f);
-    draw->AddLine(ImVec2(headC.x + headR * 0.99f, headC.y + headR * 0.12f),
-                  ImVec2(headC.x + headR * 0.91f, headC.y + headR * 0.20f), skinShade, 1.0f);
-
-    draw->AddCircleFilled(ImVec2(headC.x - headR * 0.55f, headC.y + headR * 0.25f), headR * 0.18f, IM_COL32(255, 150, 180, 90), 20);
-    draw->AddCircleFilled(ImVec2(headC.x + headR * 0.55f, headC.y + headR * 0.25f), headR * 0.18f, IM_COL32(255, 150, 180, 90), 20);
-
-    {
-        float browY = headC.y - headR * 0.43f;
-        float browSpacing = headR * 0.48f;
-        float browW = headR * 0.27f;
-        draw->AddLine(ImVec2(headC.x - browSpacing - browW, browY + headR * 0.02f),
-                      ImVec2(headC.x - browSpacing + browW, browY - headR * 0.02f), outline, 1.6f);
-        draw->AddLine(ImVec2(headC.x + browSpacing - browW, browY - headR * 0.02f),
-                      ImVec2(headC.x + browSpacing + browW, browY + headR * 0.02f), outline, 1.6f);
-    }
-
-    if (!eyesShut) {
-        float eyeY = headC.y - headR * 0.10f;
-        float eyeSpacing = headR * 0.48f;
-        float eyeW = headR * 0.34f;
-        float eyeH = headR * 0.46f;
-
-        auto drawEye = [&](float x) {
-            ImVec2 eC(x, eyeY);
-            draw->AddEllipseFilled(eC, eyeW, eyeH, eyeWhite, 0.0f, 24);
-            draw->AddEllipseFilled(eC, eyeW * 0.72f, eyeH * 0.85f, eyeIris, 0.0f, 24);
-            draw->AddEllipseFilled(eC, eyeW * 0.32f, eyeH * 0.42f, eyePupil, 0.0f, 20);
-            draw->PathClear();
-            draw->PathArcTo(ImVec2(eC.x, eC.y - eyeH * 0.10f), eyeW, IM_PI + 0.25f, -0.25f, 20);
-            draw->PathStroke(outline, false, 1.8f);
-            draw->AddCircleFilled(ImVec2(eC.x - eyeW * 0.28f, eC.y - eyeH * 0.35f), eyeW * 0.22f, IM_COL32(255,255,255,240), 12);
-            draw->AddCircleFilled(ImVec2(eC.x + eyeW * 0.25f, eC.y + eyeH * 0.30f), eyeW * 0.10f, IM_COL32(255,255,255,180), 10);
-        };
-        drawEye(headC.x - eyeSpacing);
-        drawEye(headC.x + eyeSpacing);
-    } else {
-        float eyeY = headC.y - headR * 0.10f;
-        float eyeSpacing = headR * 0.45f;
-        float eyeW = headR * 0.38f;
-        draw->PathClear();
-        draw->PathArcTo(ImVec2(headC.x - eyeSpacing, eyeY), eyeW, IM_PI + 0.2f, -0.2f, 20);
-        draw->PathStroke(outline, false, 1.8f);
-        draw->PathClear();
-        draw->PathArcTo(ImVec2(headC.x + eyeSpacing, eyeY), eyeW, IM_PI + 0.2f, -0.2f, 20);
-        draw->PathStroke(outline, false, 1.8f);
-    }
-
-    draw->AddCircleFilled(ImVec2(headC.x + headR * 0.10f, headC.y + headR * 0.22f), headR * 0.03f, IM_COL32(200, 150, 130, 200), 8);
-    draw->PathClear();
-    draw->PathArcTo(ImVec2(headC.x, headC.y + headR * 0.42f), headR * 0.10f, 0.15f, IM_PI - 0.15f, 12);
-    draw->PathStroke(IM_COL32(180, 90, 110, 220), false, 1.2f);
-
-    {
-        ImVec2 hw = ImVec2(hairSway, 0);
-        ImVec2 bangs[] = {
-            ImVec2(headC.x - headR * 1.05f + hw.x, headC.y - headR * 0.35f),
-            ImVec2(headC.x - headR * 0.85f + hw.x, headC.y - headR * 1.10f),
-            ImVec2(headC.x - headR * 0.30f + hw.x, headC.y - headR * 1.30f),
-            ImVec2(headC.x + headR * 0.30f + hw.x, headC.y - headR * 1.30f),
-            ImVec2(headC.x + headR * 0.85f + hw.x, headC.y - headR * 1.10f),
-            ImVec2(headC.x + headR * 1.05f + hw.x, headC.y - headR * 0.35f),
-            ImVec2(headC.x + headR * 0.55f + hw.x, headC.y - headR * 0.55f),
-            ImVec2(headC.x + headR * 0.15f + hw.x, headC.y - headR * 0.85f),
-            ImVec2(headC.x - headR * 0.10f + hw.x, headC.y - headR * 0.55f),
-            ImVec2(headC.x - headR * 0.45f + hw.x, headC.y - headR * 0.85f),
-        };
-        draw->AddConvexPolyFilled(bangs, 10, hairBase);
-
-        draw->AddLine(ImVec2(headC.x - headR * 0.55f, headC.y - headR * 0.95f),
-                      ImVec2(headC.x - headR * 0.30f, headC.y - headR * 0.55f), hairHigh, 1.2f);
-        draw->AddLine(ImVec2(headC.x + headR * 0.15f, headC.y - headR * 1.10f),
-                      ImVec2(headC.x + headR * 0.30f, headC.y - headR * 0.55f), hairHigh, 1.2f);
-
-        ImVec2 sideL[] = {
-            ImVec2(headC.x - headR * 1.00f + hw.x, headC.y - headR * 0.30f),
-            ImVec2(headC.x - headR * 1.15f + hw.x, headC.y + headR * 0.40f),
-            ImVec2(headC.x - headR * 1.00f + hw.x, headC.y + headR * 1.40f),
-            ImVec2(headC.x - headR * 0.85f + hw.x, headC.y + headR * 0.55f),
-            ImVec2(headC.x - headR * 0.85f + hw.x, headC.y - headR * 0.20f),
-        };
-        draw->AddConvexPolyFilled(sideL, 5, hairBase);
-        ImVec2 sideR[] = {
-            ImVec2(headC.x + headR * 1.00f + hw.x, headC.y - headR * 0.30f),
-            ImVec2(headC.x + headR * 1.15f + hw.x, headC.y + headR * 0.40f),
-            ImVec2(headC.x + headR * 1.00f + hw.x, headC.y + headR * 1.40f),
-            ImVec2(headC.x + headR * 0.85f + hw.x, headC.y + headR * 0.55f),
-            ImVec2(headC.x + headR * 0.85f + hw.x, headC.y - headR * 0.20f),
-        };
-        draw->AddConvexPolyFilled(sideR, 5, hairBase);
-    }
-
-    float minX = headC.x - headR * 1.20f;
-    float maxX = headC.x + headR * 1.20f;
-    float minY = headC.y - headR * 1.35f;
-    float maxY = anR.y + s * 0.12f;
+    if (!model.valid) return;
 
     auto safeColor = [](float* col) -> ImU32 {
         if (!col) return IM_COL32(255, 255, 255, 255);
         return IM_COL32((int)(col[0]*255), (int)(col[1]*255), (int)(col[2]*255), (int)(col[3]*255));
     };
 
+    const float bx = model.min.x - 6.0f, by = model.min.y - 6.0f;
+    const float bw = (model.max.x - model.min.x) + 12.0f;
+    const float bh = (model.max.y - model.min.y) + 12.0f;
+
     if (Config.ESPMenu.Box) {
         ImU32 bc = safeColor(Config.sColorsESPPLAYER.BoxPLAYER);
-        float bx = minX - 6, by = minY - 6, bw = (maxX - minX) + 12, bh = (maxY - minY) + 12;
         if (Config.ESPMenu.BoxType == EspBoxType::Outline) {
             draw->AddRect(ImVec2(bx, by), ImVec2(bx + bw, by + bh), bc, 0.0f, 0, 2.0f);
         } else if (Config.ESPMenu.BoxType == EspBoxType::Fill) {
             ImVec4 c = ImGui::ColorConvertU32ToFloat4(bc);
-            draw->AddRectFilled(ImVec2(bx, by), ImVec2(bx + bw, by + bh), ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, 0.15f)));
+            draw->AddRectFilled(ImVec2(bx, by), ImVec2(bx + bw, by + bh),
+                ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, 0.15f)));
             draw->AddRect(ImVec2(bx, by), ImVec2(bx + bw, by + bh), bc, 0.0f, 0, 2.0f);
         } else if (Config.ESPMenu.BoxType == EspBoxType::Corner) {
-            float iw = bw / 4.0f, ih = bh / 4.0f;
+            const float iw = bw / 4.0f, ih = bh / 4.0f;
             draw->AddLine(ImVec2(bx, by), ImVec2(bx + iw, by), bc, 2.0f);
             draw->AddLine(ImVec2(bx, by), ImVec2(bx, by + ih), bc, 2.0f);
             draw->AddLine(ImVec2(bx + bw - iw, by), ImVec2(bx + bw, by), bc, 2.0f);
@@ -1265,58 +1080,62 @@ static void DrawEspPreview(ImDrawList* draw, ImVec2 pos, float width, float heig
     if (Config.ESPMenu.isPlayerLine) {
         ImU32 lc = safeColor(Config.sColorsESPPLAYER.LinePLAYER);
         ImVec2 from;
-        if (Config.ESPMenu.Target == LineTarget::Bottom) from = ImVec2(pos.x + width * 0.5f, pos.y + height);
-        else if (Config.ESPMenu.Target == LineTarget::Center) from = ImVec2(pos.x + width * 0.5f, pos.y + height * 0.5f);
-        else from = ImVec2(pos.x + width * 0.5f, pos.y + 10);
-        draw->AddLine(from, ImVec2(center.x, minY), lc, 1.6f);
+        if (Config.ESPMenu.Target == LineTarget::Bottom) from = ImVec2(cardMin.x + width * 0.5f, cardMax.y - hintH);
+        else if (Config.ESPMenu.Target == LineTarget::Center) from = ImVec2(cardMin.x + width * 0.5f, cardMin.y + height * 0.5f);
+        else from = ImVec2(cardMin.x + width * 0.5f, cardMin.y + titleH + 2.0f);
+        draw->AddLine(from, ImVec2(model.center.x, by), lc, 1.6f);
     }
 
     if (Config.ESPMenu.Skeleton) {
         ImU32 sc = safeColor(Config.sColorsESPPLAYER.SkeletonPLAYER);
-        draw->AddLine(headC, neck, sc, 1.6f);
-        draw->AddLine(neck, shL, sc, 1.6f);
-        draw->AddLine(neck, shR, sc, 1.6f);
-        draw->AddLine(shL, elbL, sc, 1.6f);
-        draw->AddLine(shR, elbR, sc, 1.6f);
-        draw->AddLine(elbL, wrL, sc, 1.6f);
-        draw->AddLine(elbR, wrR, sc, 1.6f);
-        draw->AddLine(chest, waist, sc, 1.6f);
-        draw->AddLine(waist, hipL, sc, 1.6f);
-        draw->AddLine(waist, hipR, sc, 1.6f);
-        draw->AddLine(hipL, knL, sc, 1.6f);
-        draw->AddLine(hipR, knR, sc, 1.6f);
-        draw->AddLine(knL, anL, sc, 1.6f);
-        draw->AddLine(knR, anR, sc, 1.6f);
+        auto bone = [&](int a, int b) { draw->AddLine(model.joint[a], model.joint[b], sc, 1.6f); };
+        bone(0, 1);
+        bone(1, 2); bone(1, 3);
+        bone(2, 4); bone(3, 5);
+        bone(4, 6); bone(5, 7);
+        bone(1, 8); bone(8, 9);
+        bone(9, 10); bone(9, 11);
+        bone(10, 12); bone(11, 13);
+        bone(12, 14); bone(13, 15);
     }
 
     if (Config.ESPMenu.Health) {
-        float hp = 0.72f;
-        int r = (int)(255 * (1.0f - hp)), g = (int)(255 * hp);
-        ImU32 hpc = IM_COL32(r, g, 0, 255);
-        float bx = minX - 14, by = minY - 6, bw = 4.5f, bh = (maxY - minY) + 12;
-        draw->AddRectFilled(ImVec2(bx, by), ImVec2(bx + bw, by + bh), IM_COL32(0, 0, 0, 120));
-        draw->AddRect(ImVec2(bx, by), ImVec2(bx + bw, by + bh), IM_COL32(0, 0, 0, 220), 0.0f, 0, 1.0f);
-        draw->AddRectFilled(ImVec2(bx, by + bh * (1.0f - hp)), ImVec2(bx + bw, by + bh), hpc);
+        const float hp = 0.72f;
+        const int r = (int)(255 * (1.0f - hp)), g = (int)(255 * hp);
+        const ImU32 hpc = IM_COL32(r, g, 0, 255);
+        const float hx = bx - 9.0f, hy = by, hw = 4.5f, hh = bh;
+        draw->AddRectFilled(ImVec2(hx, hy), ImVec2(hx + hw, hy + hh), IM_COL32(0, 0, 0, 120));
+        draw->AddRect(ImVec2(hx, hy), ImVec2(hx + hw, hy + hh), IM_COL32(0, 0, 0, 220), 0.0f, 0, 1.0f);
+        draw->AddRectFilled(ImVec2(hx, hy + hh * (1.0f - hp)), ImVec2(hx + hw, hy + hh), hpc);
     }
 
     if (Config.ESPMenu.Name) {
         ImU32 nc = safeColor(Config.sColorsESPPLAYER.NamePLAYER);
         const char* name = "PLAYER";
-        ImVec2 ts = ImGui::CalcTextSize(name);
-        draw->AddText(ImVec2(center.x - ts.x * 0.5f, minY - ts.y - 8.0f), nc, name);
+        const ImVec2 ts = ImGui::CalcTextSize(name);
+        draw->AddText(ImVec2(model.center.x - ts.x * 0.5f, by - ts.y - 5.0f), nc, name);
     }
 
     if (Config.ESPMenu.Distance) {
         ImU32 dc = safeColor(Config.sColorsESPPLAYER.DistancePLAYER);
         const char* dist = "50m";
-        ImVec2 ts = ImGui::CalcTextSize(dist);
-        draw->AddText(ImVec2(center.x - ts.x * 0.5f, maxY + 8.0f), dc, dist);
+        const ImVec2 ts = ImGui::CalcTextSize(dist);
+        draw->AddText(ImVec2(model.center.x - ts.x * 0.5f, by + bh + 5.0f), dc, dist);
     }
 
     if (Config.ESPMenu.ShowFov) {
-        float radius = Config.Aim.Cross * 0.6f;
-        if (radius > 0)
-            draw->AddCircle(ImVec2(pos.x + width * 0.5f, pos.y + height * 0.5f), radius, IM_COL32(160, 80, 255, 100), 0, 1.5f);
+        const float radius = Config.Aim.Cross * 0.6f;
+        if (radius > 0.0f)
+            draw->AddCircle(model.center, radius, IM_COL32(160, 80, 255, 100), 0, 1.5f);
+    }
+
+    if (!spinning) {
+        ImFont* f = ImGui::GetFont();
+        const char* bottomHint = "drag to rotate  -  double tap to reset";
+        const ImVec2 hs = f->CalcTextSizeA(ImGui::GetFontSize() * 0.66f, FLT_MAX, 0.0f, bottomHint);
+        draw->AddText(f, ImGui::GetFontSize() * 0.66f,
+            ImVec2(cardMin.x + (width - hs.x) * 0.5f, cardMax.y - hintH + 4.0f),
+            IM_COL32(132, 124, 158, 190), bottomHint);
     }
 }
 
@@ -1668,7 +1487,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     const float layoutGap = 8.0f;
                     const float contentPadding = 10.0f;
                     const float columnGap = 10.0f;
-                    const float headerHeight = 64.0f;
+                    const float headerHeight = 70.0f;
                     const float closeHeaderWidth = 72.0f;
 
                     const float contentLeft = runtimeWindowPos.x + outerPad;
@@ -1707,16 +1526,31 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
                     ImFont *runtimeTitleFont = custom::shell::GetTitleFont();
                     const float runtimeTitleSize = 22.0f;
+                    const float runtimeSubtitleSize = 10.0f;
                     const char *titleA = "ETHNIR NOIR";
                     const char *titleB = " V3";
+                    const char *runtimeSubtitle = "PLAY LIKE A PLAYER  |  NOT A CHEATER";
+                    // Measure both lines and stack them from the header centre.
+                    // AddText's line box for this display font is taller than the
+                    // nominal size, so the old fixed offsets made the subtitle
+                    // overlap the descenders of the title.
                     const ImVec2 titleASize = runtimeTitleFont->CalcTextSizeA(runtimeTitleSize, FLT_MAX, 0.0f, titleA);
+                    const ImVec2 subtitleSize = runtimeTitleFont->CalcTextSizeA(runtimeSubtitleSize, FLT_MAX, 0.0f, runtimeSubtitle);
+                    // +2/+1 keeps the ink of both lines inside its slot even for
+                    // fonts whose glyphs overshoot the nominal line box.
+                    const float titleLineH = titleASize.y + 2.0f;
+                    const float subtitleLineH = subtitleSize.y + 1.0f;
+                    const float titleStackH = titleLineH + 3.0f + subtitleLineH;
+                    const float titleStackTop = ImMax(headerMin.y + 5.0f,
+                        headerMin.y + (headerHeight - titleStackH) * 0.5f);
+                    const float titleTop = titleStackTop;
+                    const float subtitleTop = titleTop + titleLineH + 3.0f;
                     runtimeDrawList->AddText(runtimeTitleFont, runtimeTitleSize,
-                        ImVec2(headerMin.x + 56.0f, headerMin.y + 11.0f), IM_COL32(245, 245, 250, 255), titleA);
+                        ImVec2(headerMin.x + 56.0f, titleTop), IM_COL32(245, 245, 250, 255), titleA);
                     runtimeDrawList->AddText(runtimeTitleFont, runtimeTitleSize,
-                        ImVec2(headerMin.x + 56.0f + titleASize.x, headerMin.y + 11.0f), main_runtime_theme::GetAccentU32(), titleB);
-
-                    const ImVec2 subtitlePos(headerMin.x + 57.0f, headerMin.y + 38.0f);
-                    runtimeDrawList->AddText(runtimeTitleFont, 10.0f, subtitlePos, IM_COL32(135, 143, 165, 220), "PLAY LIKE A PLAYER  |  NOT A CHEATER");
+                        ImVec2(headerMin.x + 56.0f + titleASize.x, titleTop), main_runtime_theme::GetAccentU32(), titleB);
+                    runtimeDrawList->AddText(runtimeTitleFont, runtimeSubtitleSize,
+                        ImVec2(headerMin.x + 57.0f, subtitleTop), IM_COL32(135, 143, 165, 220), runtimeSubtitle);
 
                     const ImVec2 trackMin(headerMin.x + headerMainWidth * 0.58f, headerMin.y + 28.0f);
                     const ImVec2 trackMax(headerMax.x - 18.0f, trackMin.y + 8.0f);
@@ -1825,11 +1659,13 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         }
 
                         if (runtimeState.activeTab == 1) {
+                            // The character preview lives in its own floating
+                            // window beside the menu (see the block after this
+                            // one), so the tab itself is just the two columns.
                             const float espGap = 8.0f;
-                            const float espAvailW = ImMax(1.0f, contentRegion.x - espGap * 2.0f);
-                            const float espSettingsW = ImFloor(espAvailW * 0.40f);
-                            const float espOptionsW = ImFloor(espAvailW * 0.32f);
-                            const float espPreviewW = ImMax(1.0f, espAvailW - espSettingsW - espOptionsW);
+                            const float espAvailW = ImMax(1.0f, contentRegion.x - espGap);
+                            const float espSettingsW = ImFloor(espAvailW * 0.52f);
+                            const float espOptionsW = ImMax(1.0f, espAvailW - espSettingsW);
 
                             custom::BeginGroup();
                             {
@@ -1880,14 +1716,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                                 EndContentChild(options);
                             }
                             custom::EndGroup();
-                            ImGui::SameLine(0.0f, espGap);
-                            ImGui::BeginChild("##CustomRealisticEspPreview", ImVec2(espPreviewW, childHeight), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoBackground);
-                            {
-                                ImVec2 previewPos = ImGui::GetCursorScreenPos();
-                                ImVec2 previewSize = ImGui::GetContentRegionAvail();
-                                DrawEspPreview(ImGui::GetWindowDrawList(), previewPos, previewSize.x, previewSize.y);
-                            }
-                            ImGui::EndChild();
                         }
 
 if (runtimeState.activeTab == 4) {
@@ -2165,6 +1993,65 @@ if (runtimeState.activeTab == 4) {
         ImGui::PopStyleVar();
     }
 
+    // Floating ESP character preview: a draggable card beside the menu instead
+    // of a third column that ran all the way down inside the ESP tab.
+    static ImVec2 s_espPreviewPos(-1.0f, -1.0f);
+    static bool s_espPreviewPosInit = false;
+    if (isLogin && isMenuVisible && !windowCollapsed && activeTab == 1) {
+        const float menuW = ImMin(900.0f, ioDisplaySize.x * 0.72f);
+        const float menuH = ImMin(600.0f, ioDisplaySize.y * 0.88f);
+        const float previewWheelW = 320.0f;
+        const float previewTotalW = menuW + previewWheelW + 24.0f;
+        ImVec2 previewMenuPos;
+        if (previewTotalW < ioDisplaySize.x) {
+            previewMenuPos = ImVec2((ioDisplaySize.x - previewTotalW) * 0.5f,
+                                    (ioDisplaySize.y - menuH) * 0.5f);
+        } else {
+            previewMenuPos = ImVec2((ioDisplaySize.x - menuW) * 0.5f,
+                                    (ioDisplaySize.y - menuH) * 0.5f);
+        }
+
+        const float cardW = ImClamp(ioDisplaySize.x * 0.155f, 172.0f, 248.0f);
+        const float cardH = ImClamp(menuH * 0.52f, 214.0f, 330.0f);
+
+        if (!s_espPreviewPosInit) {
+            float cardX = previewMenuPos.x + menuW + 14.0f;
+            if (cardX + cardW > ioDisplaySize.x - 10.0f)
+                cardX = ioDisplaySize.x - cardW - 12.0f;
+            s_espPreviewPos = ImVec2(cardX, previewMenuPos.y);
+            s_espPreviewPosInit = true;
+        }
+        s_espPreviewPos.x = ImClamp(s_espPreviewPos.x, 4.0f, ImMax(4.0f, ioDisplaySize.x - cardW - 4.0f));
+        s_espPreviewPos.y = ImClamp(s_espPreviewPos.y, 4.0f, ImMax(4.0f, ioDisplaySize.y - cardH - 4.0f));
+
+        ImGui::SetNextWindowPos(s_espPreviewPos, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(cardW, cardH), ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
+        ImGui::Begin("##EspFloatingPreview", nullptr,
+            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus);
+        {
+            DrawEspPreview(ImGui::GetWindowDrawList(), s_espPreviewPos, cardW, cardH);
+
+            // Drag the top strip to move the card; drag the model to spin it.
+            ImGui::SetCursorScreenPos(ImVec2(s_espPreviewPos.x + 6.0f, s_espPreviewPos.y + 3.0f));
+            ImGui::InvisibleButton("##esp_preview_grip", ImVec2(ImMax(1.0f, cardW - 12.0f), 18.0f));
+            if (ImGui::IsItemActive()) {
+                s_espPreviewPos.x += ImGui::GetIO().MouseDelta.x;
+                s_espPreviewPos.y += ImGui::GetIO().MouseDelta.y;
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(3);
+    }
+
     if (isLogin && isMenuVisible && !windowCollapsed) {
         const float WW = 320.0f;
         const float WH = 320.0f;
@@ -2176,11 +2063,12 @@ if (runtimeState.activeTab == 4) {
 
         if (!g_WheelPosInit) {
             const float menuW = ImMin(900.0f, ioDisplaySize.x * 0.72f);
-            const float menuH = ImMin(600.0f, ioDisplaySize.y * 0.88f);
             const float totalW = menuW + WW + 24.0f;
             if (totalW < ioDisplaySize.x) {
-                g_WheelPos = ImVec2((ioDisplaySize.x - totalW) * 0.5f + menuW + 24.0f,
-                                    (ioDisplaySize.y - WH) * 0.5f);
+                // Bottom-right keeps the top-right corner free for the floating
+                // ESP character preview card.
+                g_WheelPos = ImVec2(ioDisplaySize.x - WW - 12.0f,
+                                    ioDisplaySize.y - WH - 12.0f);
             } else {
                 g_WheelPos = ImVec2((ioDisplaySize.x - WW) * 0.5f,
                                     ioDisplaySize.y - WH - 20.0f);
