@@ -1,11 +1,15 @@
 // Host test for the feature defaults in the real Config object.
 //
-// The unlock switch (HOME tab, "Mythic Attachments") has to be ON out of the box:
-// the whole sConfig global is aggregate-initialised as `sConfig Config{0}`, so a
-// member's default only survives if its default member initialiser really is
-// applied to the members the {0} does not cover. This test builds the REAL
-// Hacks/Feature/Init_Hacks.h and asserts that - plus two pre-existing defaults
-// that rely on the same rule, so a regression in the rule itself shows up here.
+// The switch defaults have to survive the aggregate init: the whole sConfig
+// global is aggregate-initialised as `sConfig Config{0}`, so a member's default
+// only survives if its default member initialiser really is applied to the
+// members the {0} does not cover. What is pinned here, after the VARIANT4 port:
+//   * "Attachment unlock" (Config.ExtraMenu.Attachment) is ON out of the box,
+//     because it is the feature that has to work without being found first;
+//   * "Blueprint" (Config.ExtraMenu.MythicAttachments) is OFF out of the box,
+//     like VARIANT4's Blueprints switch;
+// plus two pre-existing defaults that rely on the same rule, so a regression in
+// the rule itself shows up here.
 //
 // Host test, no NDK needed (the Android/JNI headers are the stubs in
 // Skin/tests/stubs, __fastcall is elided like the real build):
@@ -63,8 +67,10 @@ static int g_failures = 0;
 
 int main()
 {
-    CHECK(Config.ExtraMenu.MythicAttachments == true,
-          "Mythic Attachments is ON by default (the HOME tab switch)");
+    CHECK(Config.ExtraMenu.MythicAttachments == false,
+          "Blueprint (MythicAttachments) is OFF by default");
+    CHECK(Config.ExtraMenu.Attachment == true,
+          "Attachment unlock is ON by default");
     CHECK(Config.ExtraMenu.Kinetic == false && Config.ExtraMenu.Recoil == false,
           "the other ExtraMenu switches still default off");
 

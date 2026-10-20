@@ -638,7 +638,9 @@ inline float DisperseBase(void * instance) {
     return orig_DisperseBase(instance);
 } 
 
-// BlueprintWeaponInfo.IsUnlocked() @0x901F988 - no parameters.
+// BlueprintWeaponInfo.IsUnlocked() @0x901F988 - no parameters. The menu calls
+// this switch "Blueprint"; it is OFF out of the box (Init_Hacks.h), and with it
+// off the game's own answer is passed through.
 inline bool (*orig_IsUnlocked)(void *instance) = nullptr;
 inline bool IsUnlocked(void *instance) {
     if (instance != NULL && Config.ExtraMenu.MythicAttachments)
@@ -646,17 +648,16 @@ inline bool IsUnlocked(void *instance) {
     return orig_IsUnlocked != nullptr ? orig_IsUnlocked(instance) : false;
 }
 
-// Mythic Attachments (unlock-as-if-owned) lives in its own header: the four
-// client-side gates that decide whether an applied skin and the weapon's
-// attachments count as unlocked - WeaponPromotionInfo.IsWeaponAttachmentUnlock
-// 0xA61AA00, WeaponPromotionInfo.IsWeaponSkinUnlock 0xA61AD54,
-// LoadoutWeaponsUIHelper.IsThisAttachmentUnlock 0x5D40528 and
-// WeaponAttr.IsAttachUnlock 0xA188634. See System/Hooks/MythicAttachments.h.
+// Attachment unlock ("treat every attachment as owned") lives in its own
+// header: ONE answer, WeaponPromotionInfo.IsWeaponAttachmentUnlock 0xA61AA00,
+// gated by Config.ExtraMenu.Attachment - the same single question
+// github.com/oonalang/VARIANT4 asks. See System/Hooks/MythicAttachments.h.
+//
+// MythicAttachmentSystem.h (the mythic-skin-id resolver and its OwnState
+// rewrites) is deliberately NOT included: VARIANT4 ships that module but its
+// install path is not used, and on this tree its trampolines are what the
+// working answer was fighting. The file is kept for reference.
 #include "MythicAttachments.h"
-// VARIANT4's fixed mythic-attachment system: resolves the real mythic skin id
-// of every attachment and writes it into the AttachmentGroupNew / AttachItem /
-// AttachSkinData records. It OWNS 0xB83F1C0 (see MythicAttachments.h).
-#include "MythicAttachmentSystem.h"
 // Block Report Evidence (HOME tab switch, ON by default): swallows the four
 // report-path entries your client uses to send evidence when you get reported.
 // See System/Hooks/ReportBlock.h.
@@ -1045,42 +1046,15 @@ inline void InitializeAllHooks() {
     //   @0x901F988 - no parameters.
     HOOK_LIB("libunity.so", "0x901F988", IsUnlocked, orig_IsUnlocked);
 
-    //-- Unlock Attachments / Mythic Attachments (see MythicAttachments.h). The
-    //   RVAs are the dump's, same convention as every hook above.
+    //-- Unlock Attachments: WeaponPromotionInfo.IsWeaponAttachmentUnlock(void*)
+    //   @0xA61AA00, exactly as github.com/oonalang/VARIANT4 asks it - one
+    //   question, gated by Config.ExtraMenu.Attachment. See
+    //   System/Hooks/MythicAttachments.h for why the seven-hook stack this tree
+    //   had grown (the three extra answers, the two OwnState row rewrites and
+    //   the MythicAttachmentSystem builders) is gone: they fought each other on
+    //   shared prologues and put locked states back on the objects the loadout
+    //   popup had already drawn.
     HOOK_LIB("libunity.so", "0xA61AA00", IsWeaponAttachmentUnlock, orig_IsWeaponAttachmentUnlock);
-    HOOK_LIB("libunity.so", "0xA61AD54", IsWeaponSkinUnlock, orig_IsWeaponSkinUnlock);
-    HOOK_LIB("libunity.so", "0x5D40528", IsThisAttachmentUnlock, orig_IsThisAttachmentUnlock);
-    HOOK_LIB("libunity.so", "0xA188634", IsAttachUnlock, orig_IsAttachUnlock);
-
-    //-- Mythic Attachments, LAYER 2: the client-side DATA writes that make an
-    //   applied skin behave like really owned (the four answers above were
-    //   never asked on device - they are small enough to be inlined into their
-    //   callers). These three are the builders / SetData of the very screen
-    //   that draws the lock, so the lock is rewritten instead of answered.
-    HOOK_LIB("libunity.so", "0xB6323C0", GetAttachmentList, orig_GetAttachmentList);
-    // 0xB83F1C0 (LoadoutWeaponsAttachmentItem.SetData) is NOT hooked here any
-    // more: MythicAttachmentSystem.h owns that prologue now and does the same
-    // OwnState write plus the mythic-skin-id resolution. Two trampolines on one
-    // prologue is exactly what breaks both.
-    HOOK_LIB("libunity.so", "0xB83D5E0", AttachmentCellSetData, orig_AttachmentCellSetData);
-
-    //-- The fixed mythic attachment system (VARIANT4). Capture-only table hooks
-    //   first, then the runtime hooks - both up front because this menu is
-    //   loaded before the loadout screens are ever built.
-    mythic_attachment_system::InstallMythicAttachmentHooksFresh(m_unity);
-
-    // Which of those seven addresses actually took the hook? The hooker only
-    // fills the original pointer on success, and the SKINS tab prints these -
-    // a 0 there is the reason that gate's asked/granted counter stays at 0/0.
-    mythic_attachments::NoteLanded(mythic_attachments::GateAttachment, orig_IsWeaponAttachmentUnlock != nullptr);
-    mythic_attachments::NoteLanded(mythic_attachments::GateSkin,       orig_IsWeaponSkinUnlock != nullptr);
-    mythic_attachments::NoteLanded(mythic_attachments::GateLoadout,    orig_IsThisAttachmentUnlock != nullptr);
-    mythic_attachments::NoteLanded(mythic_attachments::GateConfirm,    orig_IsAttachUnlock != nullptr);
-    mythic_attachments::NoteLanded(mythic_attachments::GateList,       orig_GetAttachmentList != nullptr);
-    // GateItem now lands through MythicAttachmentSystem.h's own SetData hook.
-    mythic_attachments::NoteLanded(mythic_attachments::GateItem,
-        mythic_attachment_system::mythicRuntimeInstalled.load(std::memory_order_acquire));
-    mythic_attachments::NoteLanded(mythic_attachments::GateCell,       orig_AttachmentCellSetData != nullptr);
 
     //-- Block Report Evidence.
     report_block::InstallReportBlockHooks();

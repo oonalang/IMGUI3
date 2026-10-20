@@ -2,6 +2,15 @@
 
 // Mythic attachment resolver: writes the real mythic skin id into the
 // attachment records so an applied mythic shows its own attachments.
+//
+// NOT INSTALLED. This is the module github.com/oonalang/VARIANT4 keeps at its
+// root, and VARIANT4's Feats.h does not install it either - its attachment
+// unlock is the single IsWeaponAttachmentUnlock answer in
+// System/Hooks/MythicAttachments.h. Keeping it in the tree but out of the
+// install path is deliberate: on this app its AttachmentGroupNew / SetData
+// trampolines shared prologues with the answer hooks and put EOwnState.Lock
+// back on rows the loadout popup had already drawn, which is what made
+// "Attachment unlock" look broken. Nothing includes this header any more.
 
 #include <algorithm>
 #include <array>

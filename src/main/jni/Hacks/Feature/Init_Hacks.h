@@ -196,9 +196,14 @@ sColorsESPBOT sColorsESPBOT{0};
         bool Grapss;
         bool EnhanceFPS;
         bool Spectatex;
+        // Attachment unlock: "treat every attachment as owned". ON by default
+        // (System/Hooks/MythicAttachments.h).
         bool Attachment = true;
-        // Unlocks skins + attachments as if owned. ON by default.
-        bool MythicAttachments = true;
+        // The menu's "Blueprint" switch (BlueprintWeaponInfo.IsUnlocked). OFF by
+        // default: it marks every blueprint/skin as owned, which is a display
+        // change the game's own lobby has to live with, and VARIANT4 - the build
+        // this is taken from - ships it off too.
+        bool MythicAttachments = false;
         // Drops player-report evidence. ON by default.
         bool BlockReportEvidence = true;
         // Empties ACE's report blob. OFF by default.

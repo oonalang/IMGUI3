@@ -1095,7 +1095,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         Config.ExtraMenu.NoGravityScale = 1.0f;
         Config.ExtraMenu.StretchAspect = 1.7778f;
         // Defaults that the memset above would otherwise wipe.
-        Config.ExtraMenu.MythicAttachments = true;
+        // "Blueprint" (MythicAttachments) is deliberately not forced here: it is
+        // OFF by default and stays off unless the player turns it on.
         Config.ExtraMenu.Attachment = true;
         Config.ExtraMenu.BlockReportEvidence = true;
         Config.Crosshair.Enabled = true;
