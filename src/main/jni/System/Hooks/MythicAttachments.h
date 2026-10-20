@@ -28,12 +28,12 @@ namespace mythic_attachments
         constexpr uintptr_t AttachmentCell_SetData                   = 0xB83D5E0;
     }
 
-    // The attachment half: the new toggle, plus the flag this repo shipped
-    // before it (which had no menu row of its own, so it can only be set from a
-    // config file).
+    // The attachment half: gated by the "Attachment unlock" toggle. MythicAttachments
+    // (Blueprint) no longer unlocks attachments on its own - the two toggles are
+    // independent now, so "Attachment unlock" is the one that actually does it.
     inline bool AttachmentsUnlocked()
     {
-        return Config.ExtraMenu.MythicAttachments || Config.ExtraMenu.Attachment;
+        return Config.ExtraMenu.Attachment;
     }
 
     // The ownership half - "the skin I applied counts as unlocked".

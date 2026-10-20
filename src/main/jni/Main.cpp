@@ -1394,6 +1394,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         Config.ExtraMenu.StretchAspect = 1.7778f;
         // Defaults that the memset above would otherwise wipe.
         Config.ExtraMenu.MythicAttachments = true;
+        Config.ExtraMenu.Attachment = true;
         Config.ExtraMenu.BlockReportEvidence = true;
         Config.Crosshair.Enabled = true;
         Config.Crosshair.Color[0] = 1.0f;
