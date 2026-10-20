@@ -75,6 +75,12 @@ const char *GetAndroidID(JNIEnv *env, jobject context) {
 
     auto obj = env->CallObjectMethod(context, getContentResolverMethod);
     auto str = (jstring) env->CallStaticObjectMethod(settingSecureClass, getStringMethod, obj, env->NewStringUTF("android_id"));
+    // Settings.Secure.getString() is allowed to answer null, and
+    // GetStringUTFChars() on a null jstring aborts the VM instead of returning
+    // null, so it never gets one.
+    if (!str) {
+        return "";
+    }
     return env->GetStringUTFChars(str, 0);
 }
 
@@ -87,6 +93,9 @@ const char *GetDeviceModel(JNIEnv *env) {
     jfieldID modelId = env->GetStaticFieldID(buildClass, "MODEL", "Ljava/lang/String;");
 
     auto str = (jstring) env->GetStaticObjectField(buildClass, modelId);
+    if (!str) {
+        return "";
+    }
     return env->GetStringUTFChars(str, 0);
 }
 
@@ -95,6 +104,9 @@ const char *GetDeviceBrand(JNIEnv *env) {
     jfieldID modelId = env->GetStaticFieldID(buildClass, "BRAND", "Ljava/lang/String;");
 
     auto str = (jstring) env->GetStaticObjectField(buildClass, modelId);
+    if (!str) {
+        return "";
+    }
     return env->GetStringUTFChars(str, 0);
 }
 
@@ -111,6 +123,9 @@ const char *GetDeviceUniqueIdentifier(JNIEnv *env, const char *uuid) {
 
     auto obj = env->CallStaticObjectMethod(uuidClass, nameUUIDFromBytesMethod, myJByteArray);
     auto str = (jstring) env->CallObjectMethod(obj, toStringMethod);
+    if (!str) {
+        return "";
+    }
     return env->GetStringUTFChars(str, 0);
 }
 
@@ -223,9 +238,14 @@ int PollUnicodeChars() {
 
 std::string getClipboard() {
     std::string result;
-    JNIEnv *env;
-    
-    jvm->AttachCurrentThread(&env, NULL);
+    if (!jvm) {
+        return result;
+    }
+
+    JNIEnv *env = nullptr;
+    if (jvm->AttachCurrentThread(&env, NULL) != JNI_OK || !env) {
+        return result;
+    }
     
     auto looperClass = env->FindClass("android/os/Looper");
     auto prepareMethod = env->GetStaticMethodID(looperClass, "prepare", "()V");
@@ -254,8 +274,16 @@ std::string getClipboard() {
     auto text = env->CallObjectMethod(clipboardManager, getText);
     if (text) {
         str = (jstring) env->CallObjectMethod(text, toStringMethod);
-        result = env->GetStringUTFChars(str, 0);
-        env->DeleteLocalRef(str);
+        // An empty clipboard answers null; GetStringUTFChars() on that aborts
+        // the VM, so it is checked before it is asked.
+        if (str) {
+            const char *chars = env->GetStringUTFChars(str, 0);
+            if (chars) {
+                result = chars;
+                env->ReleaseStringUTFChars(str, chars);
+            }
+            env->DeleteLocalRef(str);
+        }
         env->DeleteLocalRef(text);
     }
     env->DeleteLocalRef(CharSequenceClass);
@@ -265,12 +293,24 @@ std::string getClipboard() {
     env->DeleteLocalRef(mInitialApplication);
     env->DeleteLocalRef(activityThreadClass);
     jvm->DetachCurrentThread();
-    return result.c_str();
+    // The std::string, not its c_str(): the local String dies with this
+    // function, so returning the pointer handed back freed memory - a tap on
+    // "paste" followed by anything that read the key crashed.
+    return result;
 }
 
 std::string Login(const char *user_key) {
-    JNIEnv *env;
-    jvm->AttachCurrentThread(&env, 0);
+    if (!user_key) {
+        return "No access key";
+    }
+    if (!jvm) {
+        return "Secure channel unavailable";
+    }
+
+    JNIEnv *env = nullptr;
+    if (jvm->AttachCurrentThread(&env, 0) != JNI_OK || !env) {
+        return "Secure channel unavailable";
+    }
     
     auto looperClass = env->FindClass("android/os/Looper");
     auto prepareMethod = env->GetStaticMethodID(looperClass, "prepare", "()V");
@@ -283,10 +323,17 @@ std::string Login(const char *user_key) {
     jfieldID mInitialApplicationField = env->GetFieldID(activityThreadClass, "mInitialApplication", "Landroid/app/Application;");
     jobject mInitialApplication = env->GetObjectField(sCurrentActivityThread, mInitialApplicationField);
     
+    // A null answer from any of the device getters used to be appended to a
+    // std::string as a C string, which is undefined behaviour and crashed on
+    // devices without an ANDROID_ID.
+    const char *androidId = GetAndroidID(env, mInitialApplication);
+    const char *model = GetDeviceModel(env);
+    const char *brand = GetDeviceBrand(env);
+
     std::string hwid = user_key;
-    hwid += GetAndroidID(env, mInitialApplication);
-    hwid += GetDeviceModel(env);
-    hwid += GetDeviceBrand(env);
+    hwid += androidId ? androidId : "";
+    hwid += model ? model : "";
+    hwid += brand ? brand : "";
     std::string UUID = GetDeviceUniqueIdentifier(env, hwid.c_str());
     jvm->DetachCurrentThread();
     std::string errMsg;
@@ -299,8 +346,17 @@ std::string Login(const char *user_key) {
     }  
 	
     struct MemoryStruct chunk{};
-    chunk.memory = (char *) malloc(1);
+    // calloc, not malloc: the reply is parsed as a C string below, and if curl
+    // never writes (a failed connect, a TLS error, an empty body) the buffer has
+    // to read as empty rather than as whatever the allocator handed back.
+    // json::parse() over that uninitialised byte - and the catch block that then
+    // appended it to the error message - is what took the app down the moment
+    // "sign in" was tapped.
+    chunk.memory = (char *) calloc(1, 1);
     chunk.size = 0;
+    if (!chunk.memory) {
+        return "Out of memory";
+    }
     
     CURL *curl;
     CURLcode res;
@@ -311,13 +367,28 @@ std::string Login(const char *user_key) {
         curl_easy_setopt(curl, CURLOPT_URL, api_url.c_str());
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_DEFAULT_PROTOCOL, "https");
-        
+
+        // This runs on the render thread, inside the frame that drew the button,
+        // so it must never block forever: with no timeout a dead host froze the
+        // app until Android killed it, which reads as a crash to the user.
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
         struct curl_slist *headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
         
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         char data[4096];
-        sprintf(data, "game=CODMGR&user_key=%s&serial=%s", user_key, UUID.c_str());
+        const int dataLen = snprintf(data, sizeof(data), "game=CODMGR&user_key=%s&serial=%s",
+                                     user_key, UUID.c_str());
+        // A key long enough to overflow this buffer used to run off the stack.
+        if (dataLen <= 0 || (size_t)dataLen >= sizeof(data)) {
+            curl_slist_free_all(headers);
+            curl_easy_cleanup(curl);
+            free(chunk.memory);
+            return "Access key is too long";
+        }
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *) &chunk);
@@ -325,7 +396,10 @@ std::string Login(const char *user_key) {
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
         
         res = curl_easy_perform(curl);
-        if (res == CURLE_OK) {
+        if (res == CURLE_OK && chunk.size == 0) {
+            // Nothing came back: there is no JSON to parse.
+            errMsg = "No response from the licence server";
+        } else if (res == CURLE_OK) {
             try {
                 json result = json::parse(chunk.memory);
                 if (result["status"] == true) {
@@ -354,17 +428,18 @@ std::string Login(const char *user_key) {
                     errMsg = result["reason"].get<std::string>();
                 }
             } catch (json::exception &e) {
-                errMsg = "{";
-                errMsg += e.what();
-                errMsg += "}\n{";
-                errMsg += chunk.memory;
-                errMsg += "}";
+                // Only ever read the bytes curl actually wrote, and keep the
+                // result short enough for the card's one-line error row.
+                errMsg = e.what();
+                errMsg += " | ";
+                errMsg.append(chunk.memory, chunk.size < 120 ? chunk.size : 120);
             }
         } else {
             errMsg = curl_easy_strerror(res);
         }
     }
     curl_easy_cleanup(curl);
+    free(chunk.memory);            // the reply leaked on every attempt
     jvm->DetachCurrentThread();
-    return bValid ? "OK" : errMsg;
+    return bValid ? "OK" : (errMsg.empty() ? "Login failed" : errMsg);
 }
