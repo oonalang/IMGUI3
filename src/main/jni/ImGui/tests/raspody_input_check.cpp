@@ -129,8 +129,25 @@ int main()
     Check(std::fabs(yawIdleEnd - yawIdleStart) < 0.01f, "model does not spin on its own");
 
     // ---- 2. Dragging the model rotates it ---------------------------------
-    // Centre of the floating card: beside the menu, roughly 1280 - 100 wide.
-    ImVec2 modelCenter(1180.0f, 200.0f);   // inside the docked card's model area
+    // The card docks beside the menu and is centred on the menu's vertical
+    // axis, so ask the real window where it landed instead of guessing a
+    // screen point; then take the model half of it from the card's own
+    // rectangle so the drag cannot land on the title strip.
+    ImGuiWindow* espWin = ImGui::FindWindowByName("##raspody_esp_preview");
+    if (espWin)
+        Check(true, "the floating preview card exists");
+    else
+        Check(false, "the floating preview card exists");
+
+    ImVec2 modelMin(0.0f, 0.0f), modelSize(0.0f, 0.0f);
+    if (espWin)
+        esp_preview::ModelArea(espWin->Pos, espWin->Size.x, espWin->Size.y,
+                               modelMin, modelSize);
+
+    ImVec2 modelCenter(modelMin.x + modelSize.x * 0.5f,
+                       modelMin.y + modelSize.y * 0.5f);
+    if (!espWin || modelSize.x <= 1.0f || modelSize.y <= 1.0f)
+        modelCenter = ImVec2(-FLT_MAX, -FLT_MAX);   // never silently drag elsewhere
     in.pos = modelCenter;
     in.down = false;
     Frame(in);

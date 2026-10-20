@@ -23,6 +23,19 @@
 
 namespace esp_preview
 {
+    // The area the 3D model owns inside the card: everything below the title
+    // strip and above the bottom hint. The card draws the model there and the
+    // spin button is registered on it, so both use this one rectangle.
+    inline void ModelArea(ImVec2 pos, float width, float height, ImVec2& outMin, ImVec2& outSize)
+    {
+        const float pad = 9.0f;
+        const float titleH = 24.0f;
+        const float hintH = 18.0f;
+        outMin = ImVec2(pos.x + pad, pos.y + titleH);
+        outSize = ImVec2(ImMax(1.0f, width - pad * 2.0f),
+                         ImMax(1.0f, height - titleH - hintH));
+    }
+
     inline void Draw(ImDrawList* draw, ImVec2 pos, float width, float height)
     {
     if (!draw || width <= 0.0f || height <= 0.0f)
@@ -59,9 +72,8 @@ namespace esp_preview
             ImVec2(cardMax.x - pad, cardMin.y + titleH), IM_COL32(120, 112, 118, 60), 1.0f);
     }
 
-    const ImVec2 modelPos(cardMin.x + pad, cardMin.y + titleH);
-    const ImVec2 modelSize(ImMax(1.0f, width - pad * 2.0f),
-        ImMax(1.0f, height - titleH - hintH));
+    ImVec2 modelPos, modelSize;
+    ModelArea(cardMin, width, height, modelPos, modelSize);
 
     ImGui::SetCursorScreenPos(modelPos);
     ImGui::InvisibleButton("##esp_preview_spin", modelSize);
