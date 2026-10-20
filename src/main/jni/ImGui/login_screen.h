@@ -19,11 +19,11 @@
 //   |                          |   (  sign in  )                   |
 //   +--------------------------+-----------------------------------+
 //
-// This file keeps that composition, and swaps the reference's photo for the
-// artwork the app already ships: IMAGE/astral.h, the same picture the loader's
-// logo is made from. It is drawn the way the reference draws its photo - scaled
-// to cover the left column, standing on the panel's bottom edge, clipped by it -
-// so the character bleeds off the bottom instead of sitting in a framed box.
+// This file keeps that composition, and uses the same picture the reference puts
+// there: IMAGE/miku.h, the blue-haired girl off its assets/miku.png. She is drawn
+// the way the reference draws her - the whole image scaled to fit the column,
+// resting on the panel's bottom edge and nudged toward the form - so the artwork
+// sits on the page instead of in a framed box.
 //
 // The panel fills the display (it is the whole page, not a floating card) and
 // every measurement in the reference is a fraction of the panel, so it holds up
@@ -63,9 +63,8 @@ namespace login_screen
     // the ones picked off the screenshot.
     constexpr ImU32 kPanel   = IM_COL32(255, 255, 255, 255);
     constexpr ImU32 kHeader  = IM_COL32(250, 251, 252, 255);
-    // The artwork is a transparent PNG, so this is what shows through it: the
-    // reference's photo has a white studio background, and white is what makes
-    // the character sit on the page instead of in a coloured column.
+    // What is behind the artwork, and what the JPEG's own background is baked
+    // to: white, so the picture sits on the page instead of in a column.
     constexpr ImU32 kArtBg   = IM_COL32(255, 255, 255, 255);
     constexpr ImU32 kHair    = IM_COL32(231, 234, 239, 255);
     constexpr ImU32 kLine    = IM_COL32(212, 217, 224, 255);
@@ -395,7 +394,7 @@ namespace login_screen
         const char* error = nullptr;   // null or empty when there is nothing to say
         const char* brand = nullptr;   // title bar text; defaults to "ethnir.cc"
 
-        ImTextureID art = 0;   // the artwork texture (IMAGE/astral.h)
+        ImTextureID art = 0;   // the artwork texture (IMAGE/miku.h)
         int    artW = 0;
         int    artH = 0;
     };
@@ -461,10 +460,11 @@ namespace login_screen
         }
 
         // ---- artwork --------------------------------------------------------
-        // The reference lets its photo run to the panel's own bottom-left
-        // corner. This is the same picture the loader uses (IMAGE/astral.h, a
-        // transparent PNG), scaled to cover the column and stood on the bottom
-        // edge so the character is cut off by it - not boxed, not floating.
+        // The reference's own placement, quoted from its README: the picture is
+        // "scaled to fit the left panel (whole image visible, resting on the
+        // bottom edge, nudged to the right) so the character sits exactly where
+        // it does in the reference". Contain, not cover - she is never cropped,
+        // and because the picture is baked onto white the page has no edge.
         dl->AddRectFilled(L.wellMin, L.wellMax, kArtBg, L.cardRound, ImDrawFlags_RoundCornersBottomLeft);
 
         if (p.art && p.artW > 0 && p.artH > 0)
@@ -473,35 +473,18 @@ namespace login_screen
             const float colW = L.wellMax.x - L.wellMin.x;
             const float colH = L.wellMax.y - L.wellMin.y;
 
-            // Cover, but never zoom past 2.2x the width fit: on a very tall
-            // column (a portrait surface) a pure cover would crop the artwork
-            // down to one shoulder.
-            const float kFill  = colW / iw;
-            const float kCover = ImMax(kFill, colH / ih);
-            const float k      = ImMin(kCover, kFill * 2.2f);
-
+            const float k = ImMin(colW / iw, colH / ih);
             const float dw = iw * k, dh = ih * k;
-            // Anchored on the character (she sits slightly right of centre in
-            // the source), so the sides crop evenly instead of lopping an arm
-            // off at the panel edge.
-            const float x = (L.wellMin.x + L.wellMax.x) * 0.5f - 0.53f * dw;
-            const float y = L.wellMax.y - dh;
+            const float x = L.wellMin.x + (colW - dw) * 0.62f;   // nudged toward the form
+            const float y = L.wellMax.y - dh;                    // standing on the bottom edge
 
-            const float dx0 = ImMax(L.wellMin.x, x);
-            const float dx1 = ImMin(L.wellMax.x, x + dw);
-            const float dy0 = ImMax(L.wellMin.y, y);
-            const float dy1 = ImMin(L.wellMax.y, y + dh);
-
-            if (dx1 - dx0 > 1.0f && dy1 - dy0 > 1.0f)
-            {
-                const ImVec2 uv0((dx0 - x) / dw, (dy0 - y) / dh);
-                const ImVec2 uv1((dx1 - x) / dw, (dy1 - y) / dh);
-                // Only the corner the panel actually rounds is rounded here.
-                const bool atCorner = (dx0 <= L.wellMin.x + 0.5f && dy1 >= L.wellMax.y - 0.5f);
-                dl->AddImageRounded(p.art, ImVec2(dx0, dy0), ImVec2(dx1, dy1), uv0, uv1,
-                                    IM_COL32_WHITE, atCorner ? L.cardRound : 0.0f,
-                                    atCorner ? ImDrawFlags_RoundCornersBottomLeft : 0);
-            }
+            // Only when the picture fills the column does it own the panel's
+            // rounded bottom-left corner, and then it has to round with it.
+            const bool atCorner = (x <= L.wellMin.x + 0.5f && y + dh >= L.wellMax.y - 0.5f);
+            dl->AddImageRounded(p.art, ImVec2(x, y), ImVec2(x + dw, y + dh),
+                                ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), IM_COL32_WHITE,
+                                atCorner ? L.cardRound : 0.0f,
+                                atCorner ? ImDrawFlags_RoundCornersBottomLeft : 0);
         }
         else
         {

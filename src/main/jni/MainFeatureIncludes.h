@@ -20,6 +20,7 @@
 #include "System/UI/FloatingInfo.h"
 #include "System/Texture/main.h"
 #include "IMAGE/astral.h"
+#include "IMAGE/miku.h"
 
 #include "AstralPrtctn/StrEnc.h"
 #include "AstralPrtctn/json.hpp"

@@ -1236,15 +1236,14 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             const float WH = ioDisplaySize.y;
             const ImVec2 origin(0.0f, 0.0f);
 
-            // Artwork: IMAGE/astral.h, the anime picture the app already ships
-            // (the loading screen's logo is cut from the same one). Decoded on
-            // the first login frame - the GL context is current here - and kept
-            // for the life of the process. The pixel size comes back from the
-            // decode because GLES3's gl3.h has no GL_TEXTURE_WIDTH pname.
+            // Artwork: IMAGE/miku.h, the girl off the reference login page.
+            // Decoded on the first login frame - the GL context is current here
+            // - and kept for the life of the process. The pixel size comes back
+            // from the decode because GLES3's gl3.h has no GL_TEXTURE_WIDTH.
             static GLuint loginArtTex = 0;
             static int loginArtW = 0, loginArtH = 0;
             if (loginArtTex == 0)
-                loginArtTex = LoadTextureFromMemory(astral_data, (int)sizeof(astral_data),
+                loginArtTex = LoadTextureFromMemory(miku_data, (int)sizeof(miku_data),
                                                     &loginArtW, &loginArtH);
 
             ImGui::SetNextWindowPos(origin, ImGuiCond_Always);
