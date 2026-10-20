@@ -198,11 +198,11 @@ sColorsESPBOT sColorsESPBOT{0};
         bool Spectatex;
         bool Attachment;
         // Unlocks skins + attachments as if owned. ON by default.
-        bool MythicAttachments = false;
+        bool MythicAttachments = true;
         // Drops player-report evidence. ON by default.
         bool BlockReportEvidence = true;
         // Empties ACE's report blob. OFF by default.
-        bool BlockAceReport = true;
+        bool BlockAceReport = false;
         // Blocks the forced relogin on location change. OFF by default.
         bool AntiLogin;
 		bool ClearDisplay;

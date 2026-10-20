@@ -102,4 +102,7 @@ namespace raspody
     typedef void (*EspPreviewFn)(ImDrawList*, ImVec2, float, float);
     void SetEspPreview(EspPreviewFn fn);
     void DrawEspPreview(ImDrawList* dl, ImVec2 pos, float width, float height);
+
+    // Shared drag-scroll flag (set by the menu content child).
+    inline bool dragScrolling = false;
 }

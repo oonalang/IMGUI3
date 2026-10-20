@@ -687,7 +687,7 @@ namespace raspody
         const bool pressed = ImGui::IsItemClicked(0);
         ImGui::PopID();
 
-        if (pressed && !overSettings)
+        if (pressed && !overSettings && !raspody::dragScrolling)
             *value = !*value;
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -1057,11 +1057,11 @@ namespace raspody
         const ImU32 titleColor = open ? Col(clr.white)
                               : hovered ? Col(clr.text3) : Col(clr.text2);
         DrawTextClipped(dl, bodyFont, 20.0f, pos,
-                        ImVec2(pos.x + width - barW - S(12), pos.y + height),
+                        ImVec2(pos.x + width - buttonW - S(12), pos.y + height),
                         titleColor, label, ImVec2(0.0f, hasDesc ? 0.34f : 0.5f));
         if (hasDesc)
             DrawTextClipped(dl, smallFont, 16.0f, pos,
-                            ImVec2(pos.x + width - barW - S(12), pos.y + height),
+                            ImVec2(pos.x + width - buttonW - S(12), pos.y + height),
                             Col(clr.text), description, ImVec2(0.0f, 0.72f));
 
         dl->AddRectFilled(buttonMin, buttonMax,
@@ -1138,11 +1138,11 @@ namespace raspody
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const ImU32 titleColor = hovered ? Col(clr.text3) : Col(clr.text2);
         DrawTextClipped(dl, bodyFont, 20.0f, pos,
-                        ImVec2(pos.x + width - barW - S(12), pos.y + height),
+                        ImVec2(pos.x + width - swatchW - S(12), pos.y + height),
                         titleColor, label, ImVec2(0.0f, hasDesc ? 0.34f : 0.5f));
         if (hasDesc)
             DrawTextClipped(dl, smallFont, 16.0f, pos,
-                            ImVec2(pos.x + width - barW - S(12), pos.y + height),
+                            ImVec2(pos.x + width - swatchW - S(12), pos.y + height),
                             Col(clr.text), description, ImVec2(0.0f, 0.72f));
 
         if (color)
@@ -1253,6 +1253,7 @@ namespace raspody
 
         ImGui::SetNextWindowPos(windowPos, ImGuiCond_Always);
         ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+        ImGui::SetNextWindowSizeConstraints(size, size);
         ImGui::SetNextWindowFocus();
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -1382,7 +1383,7 @@ namespace raspody
                         selected ? Col(clr.white) : Col(clr.text3), label, ImVec2(0.0f, 0.5f));
 
         ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + height + S(3)));
-        return pressed;
+        return pressed && !raspody::dragScrolling;
     }
 
     void KeybindChip(const char* key, ImVec2 pos, float width)
@@ -1549,6 +1550,8 @@ namespace raspody
 
     void DrawEspPreview(ImDrawList* dl, ImVec2 pos, float width, float height)
     {
+        if (!dl || width <= 0.0f || height <= 0.0f)
+            return;
         if (g_espPreview)
         {
             g_espPreview(dl, pos, width, height);

@@ -19,7 +19,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <string>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <vector>
 
 // Init_Hacks only needs Vector2 for the Touch struct when it is included on its
 // own; the real build always has it from the SDK first.
@@ -27,7 +31,7 @@ struct Vector2 { float x, y; };
 
 #include "Hacks/Feature/Init_Hacks.h"
 #include "Fonts/fonts.h"
-
+#include "System/Core/SaveConfig.h"
 #include "ImGui/imgui.h"
 
 // MainFeatureIncludes.h normally brings Logo.h in before the menu header.
@@ -43,6 +47,10 @@ bool  UnlimitedFly = false;
 float SnowBsize = 0.0f;
 float speedHackMultiplier = 1.0f;
 float jumpHeightMultiplier = 1.0f;
+float menu[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+bool  isJumpAdjustmentEnabled = false;
+bool  SnowB = false;
+bool  isSpeedHackEnabled = false;
 
 std::string usedKey = "HOST-TEST";
 std::string userType = "PREMIUM";
@@ -59,8 +67,8 @@ void  SetLogoOpacity(float v) { g_logoOpacity = v; }
 float GetLogoSizeMultiplier() { return g_logoSize; }
 void  SetLogoSizeMultiplier(float v) { g_logoSize = v; }
 
-void SaveConfiguration(const std::string&) {}
-bool LoadConfiguration(const std::string&) { return true; }
+// SaveConfig.h provides real SaveConfiguration/LoadConfiguration/ListProfiles.
+// Point androidFilesDir at a temp location for the config round-trip check.
 
 static int g_frames = 0;
 static int g_lastVerts = 0;
@@ -176,6 +184,67 @@ int main()
     raspody::ui.search[0] = '\0';
     raspody::ClearSearch();
     RenderFrames(2);
+
+    // ---- Config round-trip check -----------------------------------------
+    {
+        androidFilesDir = "/tmp/raspody_test_configs/";
+        mkdir(androidFilesDir.c_str(), 0777);
+        mkdir((androidFilesDir + "configs").c_str(), 0777);
+
+        Config.Aim.AimAssistSize = 42.0f;
+        Config.ESPMenu.Box = true;
+        Config.NewFeaturesMenu.NoHitFlinch = true;
+        Config.ExtraMenu.Kinetic = true;
+        Config.Crosshair.Size = 7.5f;
+
+        SaveConfiguration("host_test");
+
+        Config.Aim.AimAssistSize = 0.0f;
+        Config.ESPMenu.Box = false;
+        Config.NewFeaturesMenu.NoHitFlinch = false;
+        Config.ExtraMenu.Kinetic = false;
+        Config.Crosshair.Size = 0.0f;
+
+        bool ok = LoadConfiguration("host_test");
+        if (!ok || Config.Aim.AimAssistSize != 42.0f || !Config.ESPMenu.Box ||
+            !Config.NewFeaturesMenu.NoHitFlinch || !Config.ExtraMenu.Kinetic ||
+            Config.Crosshair.Size != 7.5f)
+        {
+            std::printf("FAIL: config round-trip (ok=%d)\n", (int)ok);
+            ImGui::DestroyContext();
+            return 1;
+        }
+
+        // Older file (KineticArmor, no NewFeatures keys) must still load.
+        {
+            std::ofstream f(androidFilesDir + "configs/old.json");
+            f << "{\"ExtraMenu\":{\"KineticArmor\":true},\"NewFeatures\":{}}";
+            f.close();
+            Config.ExtraMenu.Kinetic = false;
+            bool ok2 = LoadConfiguration("old");
+            if (!ok2 || !Config.ExtraMenu.Kinetic)
+            {
+                std::printf("FAIL: older-file load (ok=%d)\n", (int)ok2);
+                ImGui::DestroyContext();
+                return 1;
+            }
+        }
+
+        // Configs page should list the profile written to disk.
+        {
+            std::vector<std::string> profs = ListProfiles();
+            bool found = false;
+            for (auto& p : profs) if (p == "host_test") found = true;
+            if (!found)
+            {
+                std::printf("FAIL: Configs page does not list on-disk profile\n");
+                ImGui::DestroyContext();
+                return 1;
+            }
+        }
+
+        std::printf("OK: config round-trip + older-file load + disk listing\n");
+    }
 
     ImGui::DestroyContext();
 

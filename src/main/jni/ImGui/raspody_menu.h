@@ -26,6 +26,7 @@
 #include "menu_layout.h"
 #include "raspody_style.h"
 #include "raspody_widgets.h"
+#include "System/UI/Keyboard.h"
 #include "raspody_font.h"
 
 #include <algorithm>
@@ -34,6 +35,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <fstream>
 
 // Feature state owned by Main.cpp (same declarations the LANX header used).
 extern bool  HIDEESP;
@@ -50,6 +52,7 @@ extern std::string userType;
 // Implemented in System/Core/SaveConfig.h.
 void SaveConfiguration(const std::string& filename);
 bool LoadConfiguration(const std::string& filename);
+std::vector<std::string> ListProfiles();
 
 namespace raspody
 {
@@ -67,6 +70,12 @@ namespace raspody
         std::string configStatus = "Ready";
         float blackout = 0.0f;
         bool  scrollToTop = false;
+        // On-screen keyboard (RenderVirtualKeyboard) state. Two independent
+        // fields so the search box and the profile-name box never share a
+        // buffer or a flag.
+        bool  searchKeyboard = false;
+        bool  profileKeyboard = false;
+        std::string activeKeyboardId;
     };
 
     inline UiState ui;
@@ -673,13 +682,18 @@ namespace raspody
     // ---------------------------------------------------------------------
     inline void ConfigsPage(PageLayout& p, int subtab)
     {
-        static std::vector<std::string> profiles = { "ethnir" };
+        // Enumerate profiles from disk (configs/*.json), not a hardcoded list.
+        // Refreshed every frame so newly saved/deleted files show up.
+        std::vector<std::string> profiles = ListProfiles();
+        if (profiles.empty())
+            profiles.push_back("ethnir");
 
         if (subtab == 0)
         {
             AddPageCard(p, 0, "Create a profile", [&] {
-                TextFieldRow("##new_profile_name", ui.newProfile, (int)sizeof(ui.newProfile),
-                             "Profile name");
+                if (TextFieldRow("##new_profile_name", ui.newProfile, (int)sizeof(ui.newProfile),
+                              "Profile name"))
+                    ui.profileKeyboard = true;
                 if (Selectable("Create & save profile", false))
                 {
                     const std::string name = TrimName(ui.newProfile);
@@ -687,9 +701,19 @@ namespace raspody
                     {
                         if (std::find(profiles.begin(), profiles.end(), name) == profiles.end())
                             profiles.push_back(name);
-                        ui.activeProfile = name;
-                        SaveConfiguration(name);
-                        ui.configStatus = "Saved " + name + ".json";
+                         ui.activeProfile = name;
+                         SaveConfiguration(name);
+                         std::ifstream verify(androidFilesDir + "configs/" + name + ".json");
+                         if (verify.is_open())
+                         {
+                             ui.activeProfile = name;
+                             ui.configStatus = "Saved " + name + ".json";
+                             ui.newProfile[0] = '\0';
+                         }
+                         else
+                         {
+                             ui.configStatus = "Failed to save " + name + ".json";
+                         }
                     }
                 }
                 ParagraphRow("Profiles live in the app's configs/ directory as JSON.");
@@ -718,8 +742,16 @@ namespace raspody
                     if (savePressed)
                     {
                         SaveConfiguration(profile);
-                        ui.activeProfile = profile;
-                        ui.configStatus = "Saved " + profile + ".json";
+                        std::ifstream verify(androidFilesDir + "configs/" + profile + ".json");
+                        if (verify.is_open())
+                        {
+                            ui.activeProfile = profile;
+                            ui.configStatus = "Saved " + profile + ".json";
+                        }
+                        else
+                        {
+                            ui.configStatus = "Failed to save " + profile + ".json";
+                        }
                     }
                 }
             });
@@ -728,7 +760,12 @@ namespace raspody
                 if (Selectable("Save current config", false))
                 {
                     SaveConfiguration(ui.activeProfile);
-                    ui.configStatus = "Saved " + ui.activeProfile + ".json";
+                    {
+                        std::ifstream verify(androidFilesDir + "configs/" + ui.activeProfile + ".json");
+                        ui.configStatus = verify.is_open()
+                            ? "Saved " + ui.activeProfile + ".json"
+                            : "Failed to save " + ui.activeProfile + ".json";
+                    }
                 }
                 if (Selectable("Reload current config", false))
                 {
@@ -751,7 +788,7 @@ namespace raspody
             AddPageCard(p, 1, "Status", [&] {
                 InfoRow("Active profile", ui.activeProfile.c_str());
                 InfoRow("Format", "JSON");
-                InfoRow("Directory", "configs/");
+                InfoRow("Directory", (androidFilesDir + "configs").c_str());
                 ParagraphRow(ui.configStatus.c_str());
             });
         }
@@ -795,7 +832,12 @@ namespace raspody
                 if (Selectable("Save current config", false))
                 {
                     SaveConfiguration(ui.activeProfile);
-                    ui.configStatus = "Saved " + ui.activeProfile + ".json";
+                    {
+                        std::ifstream verify(androidFilesDir + "configs/" + ui.activeProfile + ".json");
+                        ui.configStatus = verify.is_open()
+                            ? "Saved " + ui.activeProfile + ".json"
+                            : "Failed to save " + ui.activeProfile + ".json";
+                    }
                 }
             });
 
@@ -903,7 +945,12 @@ namespace raspody
                 if (Selectable("Save current config", false))
                 {
                     SaveConfiguration(ui.activeProfile);
-                    ui.configStatus = "Saved " + ui.activeProfile + ".json";
+                    {
+                        std::ifstream verify(androidFilesDir + "configs/" + ui.activeProfile + ".json");
+                        ui.configStatus = verify.is_open()
+                            ? "Saved " + ui.activeProfile + ".json"
+                            : "Failed to save " + ui.activeProfile + ".json";
+                    }
                 }
                 if (Selectable("Reload current config", false))
                 {
@@ -988,7 +1035,12 @@ namespace raspody
                 if (Selectable("Save config", false))
                 {
                     SaveConfiguration(ui.activeProfile);
-                    ui.configStatus = "Saved " + ui.activeProfile + ".json";
+                    {
+                        std::ifstream verify(androidFilesDir + "configs/" + ui.activeProfile + ".json");
+                        ui.configStatus = verify.is_open()
+                            ? "Saved " + ui.activeProfile + ".json"
+                            : "Failed to save " + ui.activeProfile + ".json";
+                    }
                     ClosePopup("##raspody_profile_menu");
                 }
                 if (Selectable("Reload config", false))
@@ -1119,7 +1171,8 @@ namespace raspody
             if (fieldW > S(30))
             {
                 const ImVec2 fieldPos(searchX - fieldW - S(6), centerY - S(19));
-                SearchField(ui.search, (int)sizeof(ui.search), fieldPos, fieldW);
+                if (SearchField(ui.search, (int)sizeof(ui.search), fieldPos, fieldW))
+                    ui.searchKeyboard = true;
             }
         }
         else
@@ -1256,12 +1309,50 @@ namespace raspody
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
         ImGui::SetCursorScreenPos(ImVec2(contentX, contentY + headerBlockH));
         ImGui::BeginChild("##raspody_content", ImVec2(contentW, childH), false,
-            ImGuiWindowFlags_NoBackground);
+            ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar);
 
         if (ui.scrollToTop)
         {
             ImGui::SetScrollY(0.0f);
             ui.scrollToTop = false;
+        }
+
+        // ---- Drag-to-scroll for touch: press -> move past ~10 px -> scroll.
+        // A drag never toggles the control it started on: once dragging, the
+        // row under the finger is not clicked (dragScrolling gates the
+        // widgets' click handling).
+        {
+            ImGuiIO& io = ImGui::GetIO();
+            static bool dragging = false;
+            static ImVec2 dragOrigin(0, 0);
+            static float dragOriginScroll = 0.0f;
+            const ImVec2 cpos = ImGui::GetWindowPos();
+            const ImVec2 csize = ImGui::GetWindowSize();
+            const bool inChild = io.MousePos.x >= cpos.x && io.MousePos.x <= cpos.x + csize.x &&
+                                 io.MousePos.y >= cpos.y && io.MousePos.y <= cpos.y + csize.y;
+            if (io.MouseDown[0])
+            {
+                if (!dragging && inChild)
+                {
+                    dragging = true;
+                    dragOrigin = io.MousePos;
+                    dragOriginScroll = ImGui::GetScrollY();
+                }
+                if (dragging)
+                {
+                    const float dy = io.MousePos.y - dragOrigin.y;
+                    if (fabsf(dy) > S(10))
+                    {
+                        dragScrolling = true;
+                        ImGui::SetScrollY(dragOriginScroll - dy);
+                    }
+                }
+            }
+            else
+            {
+                dragging = false;
+                dragScrolling = false;
+            }
         }
 
         const ImVec2 origin(ImGui::GetWindowPos().x,
@@ -1273,6 +1364,24 @@ namespace raspody
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, var.tab.alpha * var.subtab.alpha);
         RenderPage(var.tab.current, var.subtab.current, origin, availW);
         ImGui::PopStyleVar();
+
+        // ---- Coral scrollbar (the fork's ImGui::Scrollbar hardcodes amber).
+        if (scrollMax > 0.0f)
+        {
+            ImDrawList* sdl = ImGui::GetWindowDrawList();
+            const ImVec2 wpos = ImGui::GetWindowPos();
+            const ImVec2 wsize = ImGui::GetWindowSize();
+            const float trackX = wpos.x + wsize.x - S(6);
+            const float trackY0 = wpos.y;
+            const float trackY1 = wpos.y + wsize.y;
+            sdl->AddRectFilled(ImVec2(trackX, trackY0), ImVec2(trackX + S(4), trackY1),
+                               Col(clr.widget, 0.6f), S(2));
+            const float frac = scrollY / scrollMax;
+            const float thumbH = ImMax(S(20), wsize.y * (wsize.y / (wsize.y + scrollMax)));
+            const float thumbY = trackY0 + (trackY1 - trackY0 - thumbH) * frac;
+            sdl->AddRectFilled(ImVec2(trackX, thumbY), ImVec2(trackX + S(4), thumbY + thumbH),
+                               Col(clr.accent), S(2));
+        }
 
         ImGui::EndChild();
         ImGui::PopStyleColor();
@@ -1292,5 +1401,15 @@ namespace raspody
 
         Ease(ui.blackout, AnyPopupOpen() ? 1.0f : 0.0f, 8.0f);
         DrawBlackout(ui.blackout);
+
+        // On-screen keyboard for the two text fields. Each has its own flag so
+        // they never share a buffer. Rendered after the menu window so the
+        // tap-outside logic in RenderVirtualKeyboard can see the panel rect.
+        if (ui.searchKeyboard)
+            RenderVirtualKeyboard("##raspody_search_keyboard", ui.search,
+                                  (int)sizeof(ui.search), &ui.searchKeyboard);
+        if (ui.profileKeyboard)
+            RenderVirtualKeyboard("##raspody_profile_keyboard", ui.newProfile,
+                                  (int)sizeof(ui.newProfile), &ui.profileKeyboard);
     }
 } // namespace raspody
