@@ -418,30 +418,19 @@ namespace raspody
                           &Config.NewFeaturesMenu.TriggerbotDelay, 0, 500, "%.0f ms");
             });
 
-            AddPageCard(p, 1, "Dot crosshair", [&] {
-                Checkbox("Enabled", "Draw the dot and use it as the trigger zone.",
-                         &Config.Crosshair.Enabled);
-                SliderFloat("Size", "Diameter of the dot and trigger zone.",
-                            &Config.Crosshair.Size, 1.0f, 40.0f, "%.0f px");
-                SliderFloat("Opacity", "Dot opacity.", &Config.Crosshair.Color[3], 0.0f, 1.0f, "%.2f");
-            });
-
-            AddPageCard(p, 0, "Offset", [&] {
-                SliderFloat("Horizontal", "Pixels right of the render centre.",
-                            &Config.Crosshair.OffsetX, -400.0f, 400.0f, "%.0f px");
-                SliderFloat("Vertical", "Pixels below the render centre.",
-                            &Config.Crosshair.OffsetY, -400.0f, 400.0f, "%.0f px");
-                if (Selectable("Reset to centre", false))
+            // The crosshair itself lives on Scripts -> Crosshair; this page
+            // used to repeat all three of its cards.
+            AddPageCard(p, 1, "Trigger zone", [&] {
+                InfoRow("Trigger point", "Crosshair dot");
+                InfoRow("Dot state", Config.Crosshair.Enabled ? "Enabled" : "Disabled");
+                ParagraphRow("The dot's radius is the triggerbot's zone. Size, opacity and offset are on the Crosshair page.");
+                if (Selectable("Open crosshair settings", false))
                 {
-                    Config.Crosshair.OffsetX = 0.0f;
-                    Config.Crosshair.OffsetY = 0.0f;
+                    if (var.tab.stored != Tab_Scripts)
+                        RequestTab(Tab_Scripts);
+                    // RequestTab resets the subtab, so set it afterwards.
+                    var.subtab.stored = 1;
                 }
-            });
-
-            AddPageCard(p, 1, "Crosshair colour", [&] {
-                ColorRow("Crosshair colour", "Dot colour and transparency.",
-                         Config.Crosshair.Color);
-                DrawCrosshairPreview();
             });
         }
     }
@@ -601,8 +590,6 @@ namespace raspody
                 Checkbox("Attachment unlock", "Treat every attachment as owned.",
                          &Config.ExtraMenu.Attachment);
                 Checkbox("Smart reload", "Reload only when it is safe.", &Config.ExtraMenu.SmartReload);
-                SliderFloat("Vehicle scale", "Scale of rendered vehicles.",
-                            &Config.ExtraMenu.VehicleScale, 0.5f, 3.0f, "%.2fx");
             });
         }
         else
@@ -654,7 +641,6 @@ namespace raspody
                 Checkbox("No crouch", "Remove the crouch state.", &Config.NewFeaturesMenu.NoCrouch);
                 Checkbox("No slide fatigue", "Remove the slide fatigue limit.",
                          &Config.NewFeaturesMenu.NoSlideFatigue);
-                Checkbox("No wingsuit", "Disable the automatic wingsuit.", &Config.ExtraMenu.NoWingsuit);
             });
 
             AddPageCard(p, 0, "Patch status", [&] {
@@ -896,14 +882,9 @@ namespace raspody
                 Checkbox("Anti-login", "Block the forced relogin on location change.",
                          &Config.ExtraMenu.AntiLogin);
                 Checkbox("Reset guest", "Reset the guest account state.", &Config.ExtraMenu.ResetGuest);
-                Checkbox("Attachment unlock", "Treat every attachment as owned.",
-                         &Config.ExtraMenu.Attachment);
-                Checkbox("Blueprint", "Turn on blueprint / skins (BlueprintWeaponInfo).",
-                         &Config.ExtraMenu.MythicAttachments);
             });
 
             AddPageCard(p, 1, "Performance", [&] {
-                Checkbox("Smart reload", "Reload only when it is safe.", &Config.ExtraMenu.SmartReload);
                 Checkbox("Frame smoothness", "Cap the frame rate to the level below.",
                          &Config.Aim.FpsLevel);
                 if (Config.Aim.FpsLevel)
