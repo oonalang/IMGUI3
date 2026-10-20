@@ -427,13 +427,6 @@ namespace raspody
                            Config.sColorsESPBOT.SkeletonBOT);
             });
 
-            AddPageCard(p, 1, "ESP preview", [&] {
-                const ImVec2 pos = ImGui::GetCursorScreenPos();
-                const float width = CardInnerWidth() * 0.9f;
-                const float height = width * 0.85f;
-                DrawEspPreview(ImGui::GetWindowDrawList(), pos, width, height);
-                ImGui::Dummy(ImVec2(width, height + S(8)));
-            });
         }
         else
         {
@@ -1380,6 +1373,58 @@ namespace raspody
 
         ImGui::PopStyleColor(2);
         ImGui::PopStyleVar(2);
+
+        // ---- Floating ESP character preview ------------------------------
+        // A draggable card beside the menu instead of a card inside the ESP
+        // page: it stays visible while the settings list scrolls. Drag the top
+        // strip to move it, drag the model to spin it.
+        if (var.tab.current == Tab_Visuals)
+        {
+            static ImVec2 cardPos(-1.0f, -1.0f);
+            static bool cardInit = false;
+
+            const float cardW = ImClamp(size.x * 0.21f, S(150), S(226));
+            const float cardH = ImClamp(cardW * 1.34f, S(196), S(310));
+            if (!cardInit)
+            {
+                float cardX = pos.x + size.x + S(14);
+                if (cardX + cardW > display.x - S(6))
+                    cardX = display.x - cardW - S(10);
+                cardPos = ImVec2(cardX, pos.y);
+                cardInit = true;
+            }
+            cardPos.x = ImClamp(cardPos.x, 0.0f, ImMax(0.0f, display.x - cardW));
+            cardPos.y = ImClamp(cardPos.y, 0.0f, ImMax(0.0f, display.y - cardH));
+
+            ImGui::SetNextWindowPos(cardPos, ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(cardW, cardH), ImGuiCond_Always);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
+            ImGui::Begin("##raspody_esp_preview", nullptr,
+                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoSavedSettings |
+                ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoCollapse |
+                ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav);
+            {
+                DrawEspPreview(ImGui::GetWindowDrawList(), cardPos, cardW, cardH);
+
+                ImGui::SetCursorScreenPos(ImVec2(cardPos.x + S(6), cardPos.y + S(2)));
+                ImGui::InvisibleButton("##raspody_esp_grip",
+                                       ImVec2(ImMax(1.0f, cardW - S(12)), S(18)));
+                if (ImGui::IsItemActive())
+                {
+                    const ImVec2 delta = ImGui::GetIO().MouseDelta;
+                    cardPos.x += delta.x;
+                    cardPos.y += delta.y;
+                }
+            }
+            ImGui::End();
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar(2);
+        }
 
         Ease(ui.blackout, AnyPopupOpen() ? 1.0f : 0.0f, 8.0f);
         DrawBlackout(ui.blackout);

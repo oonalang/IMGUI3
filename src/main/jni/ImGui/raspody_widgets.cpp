@@ -658,6 +658,45 @@ namespace raspody
     }
 
     // -------------------------------------------------------------------------
+    // Row label / description stack
+    //
+    // Rows used to place the label and its description with fractional aligns
+    // of the row box, so with the body font's line height the description landed
+    // on top of the label. Both lines are now measured and stacked, and the row
+    // is at least tall enough for them at any menu scale.
+    // -------------------------------------------------------------------------
+    inline float RowTextHeight(ImFont* bodyFont, ImFont* smallFont, const char* label,
+                               const char* description, float minHeight)
+    {
+        const float titleH = TextSize(bodyFont, 20.0f, label).y;
+        if (!description || !*description)
+            return ImMax(minHeight, titleH + S(10));
+        const float descH = TextSize(smallFont, 16.0f, description).y;
+        return ImMax(minHeight, titleH + descH + S(3) + S(7));
+    }
+
+    inline void DrawRowText(ImDrawList* dl, ImFont* bodyFont, ImFont* smallFont,
+                            ImVec2 min, ImVec2 max, ImU32 titleColor,
+                            const char* label, const char* description)
+    {
+        const float titleH = TextSize(bodyFont, 20.0f, label).y;
+        if (!description || !*description)
+        {
+            DrawTextClipped(dl, bodyFont, 20.0f, min, max, titleColor, label, ImVec2(0.0f, 0.5f));
+            return;
+        }
+
+        const float descH = TextSize(smallFont, 16.0f, description).y;
+        const float gap = S(3);
+        const float stackH = titleH + gap + descH;
+        const float top = min.y + ImMax(0.0f, ((max.y - min.y) - stackH) * 0.5f);
+        DrawTextClipped(dl, bodyFont, 20.0f, ImVec2(min.x, top), ImVec2(max.x, top + titleH),
+                        titleColor, label, ImVec2(0.0f, 0.0f));
+        DrawTextClipped(dl, smallFont, 16.0f, ImVec2(min.x, top + titleH + gap),
+                        ImVec2(max.x, top + stackH), Col(clr.text), description, ImVec2(0.0f, 0.0f));
+    }
+
+    // -------------------------------------------------------------------------
     // Checkbox
     // -------------------------------------------------------------------------
     bool Checkbox(const char* label, const char* description, bool* value, bool settings)
@@ -671,7 +710,7 @@ namespace raspody
         const bool hasDesc = description && *description;
         const float width = RowWidth();
         const ImVec2 pos = ImGui::GetCursorScreenPos();
-        const float height = hasDesc ? S(42) : S(30);
+        const float height = RowTextHeight(bodyFont, smallFont, label, hasDesc ? description : nullptr, S(30));
         const float toggleW = S(36);
         const float toggleH = S(20);
         const ImVec2 toggleMin(pos.x + width - toggleW, pos.y + (height - toggleH) * 0.5f);
@@ -700,13 +739,9 @@ namespace raspody
 
         const ImU32 titleColor = *value ? Col(clr.white)
                               : hovered ? Col(clr.text3) : Col(clr.text2);
-        DrawTextClipped(dl, bodyFont, 20.0f, pos,
-                        ImVec2(pos.x + width - toggleW - (settings ? S(38) : S(8)), pos.y + height),
-                        titleColor, label, ImVec2(0.0f, hasDesc ? 0.34f : 0.5f));
-        if (hasDesc)
-            DrawTextClipped(dl, smallFont, 16.0f, pos,
-                            ImVec2(pos.x + width - toggleW - (settings ? S(38) : S(8)), pos.y + height),
-                            Col(clr.text), description, ImVec2(0.0f, 0.72f));
+        DrawRowText(dl, bodyFont, smallFont, pos,
+                    ImVec2(pos.x + width - toggleW - (settings ? S(38) : S(8)), pos.y + height),
+                    titleColor, label, hasDesc ? description : nullptr);
 
         const ImVec4 bg = *value ? clr.widget
                         : hovered ? clr.checkboxHover : clr.widget;
@@ -806,7 +841,7 @@ namespace raspody
         const bool hasDesc = description && *description;
         const float width = RowWidth();
         const ImVec2 pos = ImGui::GetCursorScreenPos();
-        const float height = hasDesc ? S(44) : S(32);
+        const float height = RowTextHeight(bodyFont, smallFont, label, hasDesc ? description : nullptr, S(32));
         const float barW = S(120);
         const float barH = S(10);
         const ImVec2 barMin(pos.x + width - barW, pos.y + (height - barH) * 0.5f);
@@ -839,13 +874,9 @@ namespace raspody
 
         const ImU32 titleColor = active ? Col(clr.white)
                               : hovered ? Col(clr.text3) : Col(clr.text2);
-        DrawTextClipped(dl, bodyFont, 20.0f, pos,
-                        ImVec2(pos.x + width - barW - S(12), pos.y + height),
-                        titleColor, label, ImVec2(0.0f, hasDesc ? 0.34f : 0.5f));
-        if (hasDesc)
-            DrawTextClipped(dl, smallFont, 16.0f, pos,
-                            ImVec2(pos.x + width - barW - S(12), pos.y + height),
-                            Col(clr.text), description, ImVec2(0.0f, 0.72f));
+        DrawRowText(dl, bodyFont, smallFont, pos,
+                    ImVec2(pos.x + width - barW - S(12), pos.y + height),
+                    titleColor, label, hasDesc ? description : nullptr);
 
         char buffer[64];
         snprintf(buffer, sizeof(buffer), format ? format : "%.0f", display);
@@ -920,7 +951,7 @@ namespace raspody
         const bool hasDesc = description && *description;
         const float width = RowWidth();
         const ImVec2 pos = ImGui::GetCursorScreenPos();
-        const float height = hasDesc ? S(46) : S(34);
+        const float height = RowTextHeight(bodyFont, smallFont, label, hasDesc ? description : nullptr, S(34));
         const float barW = S(120);
         const float barH = S(10);
         const ImVec2 barMin(pos.x + width - barW, pos.y + (height - barH) * 0.5f);
@@ -968,13 +999,9 @@ namespace raspody
                               : hovered ? Col(clr.text3) : Col(clr.text2);
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        DrawTextClipped(dl, bodyFont, 20.0f, pos,
-                        ImVec2(pos.x + width - barW - S(12), pos.y + height),
-                        titleColor, label, ImVec2(0.0f, hasDesc ? 0.34f : 0.5f));
-        if (hasDesc)
-            DrawTextClipped(dl, smallFont, 16.0f, pos,
-                            ImVec2(pos.x + width - barW - S(12), pos.y + height),
-                            Col(clr.text), description, ImVec2(0.0f, 0.72f));
+        DrawRowText(dl, bodyFont, smallFont, pos,
+                    ImVec2(pos.x + width - barW - S(12), pos.y + height),
+                    titleColor, label, hasDesc ? description : nullptr);
 
         char lowBuf[32], highBuf[32];
         snprintf(lowBuf, sizeof(lowBuf), format ? format : "%.0f", lowAnim);
@@ -1026,7 +1053,7 @@ namespace raspody
         const bool hasDesc = description && *description;
         const float width = RowWidth();
         const ImVec2 pos = ImGui::GetCursorScreenPos();
-        const float height = hasDesc ? S(44) : S(34);
+        const float height = RowTextHeight(bodyFont, smallFont, label, hasDesc ? description : nullptr, S(34));
         const float buttonW = S(140);
         const float buttonH = S(24);
         const ImVec2 buttonMin(pos.x + width - buttonW, pos.y + (height - buttonH) * 0.5f);
@@ -1056,13 +1083,9 @@ namespace raspody
 
         const ImU32 titleColor = open ? Col(clr.white)
                               : hovered ? Col(clr.text3) : Col(clr.text2);
-        DrawTextClipped(dl, bodyFont, 20.0f, pos,
-                        ImVec2(pos.x + width - buttonW - S(12), pos.y + height),
-                        titleColor, label, ImVec2(0.0f, hasDesc ? 0.34f : 0.5f));
-        if (hasDesc)
-            DrawTextClipped(dl, smallFont, 16.0f, pos,
-                            ImVec2(pos.x + width - buttonW - S(12), pos.y + height),
-                            Col(clr.text), description, ImVec2(0.0f, 0.72f));
+        DrawRowText(dl, bodyFont, smallFont, pos,
+                    ImVec2(pos.x + width - buttonW - S(12), pos.y + height),
+                    titleColor, label, hasDesc ? description : nullptr);
 
         dl->AddRectFilled(buttonMin, buttonMax,
                           Col(open ? clr.checkboxHover : (hovered ? clr.checkboxHover : clr.widget)), S(6));
@@ -1137,13 +1160,9 @@ namespace raspody
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const ImU32 titleColor = hovered ? Col(clr.text3) : Col(clr.text2);
-        DrawTextClipped(dl, bodyFont, 20.0f, pos,
-                        ImVec2(pos.x + width - swatchW - S(12), pos.y + height),
-                        titleColor, label, ImVec2(0.0f, hasDesc ? 0.34f : 0.5f));
-        if (hasDesc)
-            DrawTextClipped(dl, smallFont, 16.0f, pos,
-                            ImVec2(pos.x + width - swatchW - S(12), pos.y + height),
-                            Col(clr.text), description, ImVec2(0.0f, 0.72f));
+        DrawRowText(dl, bodyFont, smallFont, pos,
+                    ImVec2(pos.x + width - swatchW - S(12), pos.y + height),
+                    titleColor, label, hasDesc ? description : nullptr);
 
         if (color)
         {
