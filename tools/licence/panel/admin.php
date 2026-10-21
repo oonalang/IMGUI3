@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/lib.php';
+
 $config = licence_config();
 $store  = licence_store_open();
 $auth   = licence_auth();
@@ -20,67 +21,54 @@ if (empty($_SESSION['csrf'])) {
 }
 $csrf = $_SESSION['csrf'];
 
-$error = '';
+$error  = '';
 $notice = '';
-
 $action = $_POST['action'] ?? '';
 
 if ($action !== '' && !hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
     http_response_code(400);
-    echo "<!doctype html><meta charset=utf-8><p style='font:16px system-ui;padding:2rem'>"
-       . "Missing or stale form token. Reload the panel and try again.</p>";
+    echo '<!doctype html><meta charset="utf-8"><p style="font:16px system-ui;padding:2rem">'
+       . 'This form expired. Reload the page and try again.</p>';
     exit;
 }
 
-$setupNeeded = $auth['hash'] === '';
-
-if ($setupNeeded && $action === 'setup') {
-    $user = trim((string)($_POST['user'] ?? ''));
-    $pass = (string)($_POST['pass'] ?? '');
-    $again = (string)($_POST['pass2'] ?? '');
-    if ($user === '' || strlen($user) > 64) {
-        $error = 'Pick a user name (up to 64 characters)';
-    } elseif (strlen($pass) < 8) {
-        $error = 'Use at least 8 characters for the password';
-    } elseif (!hash_equals($pass, $again)) {
-        $error = 'The two passwords do not match';
-    } elseif (!licence_auth_save($user, password_hash($pass, PASSWORD_DEFAULT))) {
-        $error = 'Could not write data/auth.php - is the data/ directory writable?';
-    } else {
-        $_SESSION['in'] = true;
-        session_regenerate_id(true);
-        header('Location: ' . basename(__FILE__));
-        exit;
-    }
-} elseif ($action === 'login') {
-    $user = (string)($_POST['user'] ?? '');
-    $pass = (string)($_POST['pass'] ?? '');
-    if ($user === $auth['user'] && password_verify($pass, $auth['hash'])) {
-        $_SESSION['in'] = true;
-        session_regenerate_id(true);
-        header('Location: ' . basename(__FILE__));
-        exit;
-    }
-    $error = 'Wrong username or password';
-} elseif ($action === 'logout') {
+if ($action === 'logout') {
     $_SESSION = [];
     session_destroy();
     header('Location: ' . basename(__FILE__));
     exit;
 }
 
+if ($action === 'login') {
+    $user = trim((string)($_POST['user'] ?? ''));
+    $pass = (string)($_POST['pass'] ?? '');
+    $slow = (int)($_SESSION['fails'] ?? 0) >= 3;
+    if ($slow) {
+        usleep(400000);
+    }
+    if (licence_login($user, $pass)) {
+        $_SESSION['in'] = true;
+        $_SESSION['fails'] = 0;
+        session_regenerate_id(true);
+        header('Location: ' . basename(__FILE__));
+        exit;
+    }
+    $_SESSION['fails'] = (int)($_SESSION['fails'] ?? 0) + 1;
+    $error = 'Wrong username or password';
+}
+
 $signedIn = !empty($_SESSION['in']);
 
-$docRoot    = isset($_SERVER['DOCUMENT_ROOT']) ? rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/') : '';
-
+$docRoot = isset($_SERVER['DOCUMENT_ROOT']) ? rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/') : '';
 $webRootNote = static function (string $path, string $guard) use ($docRoot): array {
     if ($docRoot === '') {
-        return ['unknown - DOCUMENT_ROOT is not set', true];
+        return ['unknown', true];
     }
     return strpos($path, $docRoot) === 0
-        ? ['NO - inside it; only ' . $guard . ' stands between it and the internet', false]
-        : ['yes', true];
+        ? ['inside the web root, guarded by ' . $guard, false]
+        : ['outside the web root', true];
 };
+
 $hasOpenssl = extension_loaded('openssl');
 $keyOk      = is_readable($config['private_key']);
 $storeDir   = dirname($store);
@@ -94,54 +82,34 @@ if ($hasOpenssl && $keyOk) {
     if ($key !== false) {
         $details = openssl_pkey_get_details($key);
         if (is_array($details) && isset($details['rsa']['n'])) {
-            $keyModulus = strtoupper(bin2hex($details['rsa']['n']));
-            $keyModulus = ltrim($keyModulus, '0');
+            $keyModulus = ltrim(strtoupper(bin2hex($details['rsa']['n'])), '0');
         }
     }
 }
 if ($appModulus === '') {
-    $modulusNote = 'config.php app_modulus is empty - cannot check the key';
+    $modulusNote = 'no app modulus in config.php';
     $modulusOk = true;
 } elseif ($keyModulus === '') {
-    $modulusNote = 'cannot read a modulus from the private key';
+    $modulusNote = 'cannot read the private key';
     $modulusOk = false;
 } elseif (ltrim($appModulus, '0') === $keyModulus) {
-    $modulusNote = 'matches LicencePubKey.h - tokens will verify';
+    $modulusNote = 'matches the app';
     $modulusOk = true;
 } else {
-    $modulusNote = 'DOES NOT MATCH LicencePubKey.h - every sign-in will be refused (' . substr($keyModulus, 0, 24) . '...) ';
+    $modulusNote = 'does not match the app - every sign-in will be refused';
     $modulusOk = false;
 }
 
 $diag = [
     ['PHP', PHP_VERSION . ' (7.4 or newer)', version_compare(PHP_VERSION, '7.4.0', '>=')],
-    ['openssl', $hasOpenssl ? 'loaded' : 'MISSING - tokens cannot be signed', $hasOpenssl],
-    ['signing key', $keyOk ? 'readable by PHP' : 'not readable: ' . $config['private_key'], $keyOk],
+    ['openssl', $hasOpenssl ? 'loaded' : 'missing', $hasOpenssl],
+    ['signing key', $keyOk ? 'readable' : 'not readable', $keyOk],
     ['key matches the app', $modulusNote, $modulusOk],
-    ['key store', $storeOk ? 'writable: ' . $storeDir : 'not writable: ' . $storeDir, $storeOk],
-    ['panel login', !$setupNeeded ? (is_file(dirname($store) . '/auth.php') ? 'data/auth.php' : 'config.php admin_hash')
-                                 : 'NOT SET - this page offers the setup form', !$setupNeeded],
-    ['payload build', (string)$config['build'] . ' (must equal licence::kBuild)', true],
-    ['key outside web root', ...$webRootNote($config['private_key'], 'private/.htaccess')],
-    ['store outside web root', ...$webRootNote($store, 'data/.htaccess')],
+    ['key store', $storeOk ? 'writable' : 'not writable', $storeOk],
+    ['payload build', (string)$config['build'], true],
+    ['key file', ...$webRootNote($config['private_key'], 'private/.htaccess')],
+    ['key store path', ...$webRootNote($store, 'data/.htaccess')],
 ];
-
-if ($signedIn && $action === 'password') {
-    $current = (string)($_POST['current'] ?? '');
-    $pass    = (string)($_POST['pass'] ?? '');
-    $again   = (string)($_POST['pass2'] ?? '');
-    if (!password_verify($current, $auth['hash'])) {
-        $error = 'Current password is wrong';
-    } elseif (strlen($pass) < 8) {
-        $error = 'Use at least 8 characters for the new password';
-    } elseif (!hash_equals($pass, $again)) {
-        $error = 'The two new passwords do not match';
-    } elseif (!licence_auth_save($auth['user'], password_hash($pass, PASSWORD_DEFAULT))) {
-        $error = 'Could not write data/auth.php - is the data/ directory writable?';
-    } else {
-        $notice = 'Panel password changed';
-    }
-}
 
 function valid_device(string $hwid): bool
 {
@@ -177,7 +145,7 @@ if ($signedIn && $action === 'create') {
     if (strpos($name, '|') !== false) {
         $error = "A key may not contain '|'";
     } elseif ($badDevice !== null) {
-        $error = 'Not a device id: ' . $badDevice . ' - ids are 8-64 letters, digits or hyphens';
+        $error = 'Not a device id: ' . $badDevice;
     } elseif ($seats !== 0 && count($devices) > $seats) {
         $error = 'You listed ' . count($devices) . ' devices but allowed only ' . $seats;
     } elseif (licence_find($store, $name) !== null) {
@@ -186,8 +154,7 @@ if ($signedIn && $action === 'create') {
         licence_create($store, $name, $days, $note, $devices, $seats);
         $notice = 'Created ' . $name . ($seats === 0
             ? ' - unlimited devices'
-            : ' - ' . $seats . ' device' . ($seats === 1 ? '' : 's'))
-            . ($devices ? ', starting with ' . implode(', ', $devices) : '');
+            : ' - ' . $seats . ' device' . ($seats === 1 ? '' : 's'));
     }
 }
 
@@ -212,29 +179,26 @@ if ($signedIn && $action === 'revoke') {
 }
 
 if ($signedIn && $action === 'bind') {
-    $key  = (string)($_POST['key'] ?? '');
-    $lic  = licence_find($store, $key);
+    $key = (string)($_POST['key'] ?? '');
+    $lic = licence_find($store, $key);
     [$devices, $badDevice] = split_devices((string)($_POST['hwid'] ?? ''));
     if ($lic === null) {
-        $error = 'That key is gone - reload the panel';
+        $error = 'That key is gone - reload the page';
     } elseif ($badDevice !== null) {
-        $error = 'Not a device id: ' . $badDevice . ' - ids are 8-64 letters, digits or hyphens';
+        $error = 'Not a device id: ' . $badDevice;
     } elseif (!$devices) {
-        $error = 'Type the device id to allow';
+        $error = 'Type a device id first';
     } else {
         $current = licence_devices($lic);
         $seats   = licence_seats($lic);
         $merged  = array_values(array_unique(array_merge($current, $devices)));
         if ($seats !== 0 && count($merged) > $seats) {
-            $error = 'This key allows ' . $seats . ' device' . ($seats === 1 ? '' : 's')
-                   . ' - raise the limit first, or use 0 for a trial key';
+            $error = 'This key allows ' . $seats . ' device' . ($seats === 1 ? '' : 's') . ' - raise the limit first';
         } else {
             $lic = licence_apply_devices($lic, $merged);
             licence_update($store, $key, $lic);
             $added = array_values(array_diff($merged, $current));
-            $notice = $added
-                ? 'Added ' . implode(', ', $added) . ' to ' . $key
-                : $key . ' already allows ' . implode(', ', $devices);
+            $notice = $added ? 'Added ' . implode(', ', $added) : 'Already allowed';
         }
     }
 }
@@ -246,7 +210,7 @@ if ($signedIn && $action === 'dropdevice') {
     if ($lic !== null && $hwid !== '') {
         $lic = licence_apply_devices($lic, array_diff(licence_devices($lic), [$hwid]));
         licence_update($store, $key, $lic);
-        $notice = 'Removed ' . $hwid . ' from ' . $key;
+        $notice = 'Removed ' . $hwid;
     }
 }
 
@@ -255,16 +219,13 @@ if ($signedIn && $action === 'seats') {
     $seats = max(0, (int)($_POST['seats'] ?? 1));
     $lic   = licence_find($store, $key);
     if ($lic === null) {
-        $error = 'That key is gone - reload the panel';
+        $error = 'That key is gone - reload the page';
     } elseif ($seats !== 0 && $seats < count(licence_devices($lic))) {
-        $error = 'This key already allows ' . count(licence_devices($lic))
-               . ' device(s) - remove one first';
+        $error = 'Remove a device first - this key already allows ' . count(licence_devices($lic));
     } else {
         $lic = licence_apply_devices($lic, licence_devices($lic), $seats);
         licence_update($store, $key, $lic);
-        $notice = $key . ($seats === 0
-            ? ' now works on unlimited devices'
-            : ' now allows ' . $seats . ' device' . ($seats === 1 ? '' : 's'));
+        $notice = $key . ($seats === 0 ? ' now works on any device' : ' now allows ' . $seats);
     }
 }
 
@@ -278,349 +239,688 @@ if ($signedIn && $action === 'rebind') {
     }
 }
 
-$keys = licence_all($store);
+$keys = $signedIn ? licence_all($store) : [];
 ksort($keys);
 $now = time();
 
-function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
-
-function diag_table(array $rows): void
+function h(string $s): string
 {
-    echo '<section class="diag"><h2>Deployment</h2><div class="tablewrap"><table>'
-       . '<thead><tr><th>Check</th><th>State</th></tr></thead><tbody>';
-    foreach ($rows as [$name, $detail, $ok]) {
-        printf('<tr><td>%s</td><td class="%s">%s</td></tr>',
-            h((string)$name), $ok ? 'ok' : 'bad', h((string)$detail));
-    }
-    echo '</tbody></table></div></section>';
+    return htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
 }
 ?>
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Licence panel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#efe9ff">
+<title><?= $signedIn ? 'Licence keys' : 'Sign in' ?></title>
 <style>
-
     :root {
-        --paper:
-        --ink:
-        --violet:
-        --acid:
-        --muted:
-        --bad:
+        --bg: #efe9ff;
+        --bg-2: #e3d6ff;
+        --clay: #f6f1ff;
+        --ink: #241a3d;
+        --muted: #6e6390;
+        --violet: #7c3aed;
+        --violet-soft: #b79bff;
+        --mint: #c8f7e4;
+        --rose: #ffd6e7;
+        --lilac: #e9dcff;
+        --shadow:
+            14px 14px 30px rgba(124, 58, 237, .16),
+            -12px -12px 26px rgba(255, 255, 255, .95),
+            inset 2px 2px 5px rgba(255, 255, 255, .9),
+            inset -3px -3px 9px rgba(124, 58, 237, .10);
+        --shadow-sm:
+            8px 8px 18px rgba(124, 58, 237, .14),
+            -7px -7px 16px rgba(255, 255, 255, .95);
+        --press:
+            inset 7px 7px 14px rgba(124, 58, 237, .18),
+            inset -7px -7px 14px rgba(255, 255, 255, .92);
         color-scheme: light;
     }
+
     * { box-sizing: border-box }
+
+    html, body { min-height: 100% }
+
     body {
-        margin: 0; background: var(--paper); color: var(--ink);
-        font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        margin: 0;
+        background:
+            radial-gradient(1100px 620px at 12% -10%, #f8f2ff 0%, rgba(248, 242, 255, 0) 60%),
+            radial-gradient(900px 640px at 108% 12%, #d9c6ff 0%, rgba(217, 198, 255, 0) 62%),
+            linear-gradient(168deg, var(--bg) 0%, var(--bg-2) 100%);
+        background-attachment: fixed;
+        color: var(--ink);
+        font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
         -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
     }
-    ::selection { background: var(--violet); color:
-    main { max-width: 1120px; margin: 0 auto; padding: 40px 20px 90px }
 
-    header.top {
-        display: flex; align-items: flex-end; justify-content: space-between;
-        gap: 20px; flex-wrap: wrap;
-        border-bottom: 3px solid var(--ink); padding-bottom: 16px; margin-bottom: 28px;
+    ::selection { background: var(--violet); color: #fff }
+
+    a { color: var(--violet) }
+
+    .shell { max-width: 1080px; margin: 0 auto; padding: 34px 18px 80px }
+
+    .clay {
+        background: var(--clay);
+        border-radius: 30px;
+        box-shadow: var(--shadow);
     }
+
+    .rise { animation: rise .62s cubic-bezier(.19, 1, .22, 1) both }
+    .rise:nth-of-type(2) { animation-delay: .07s }
+    .rise:nth-of-type(3) { animation-delay: .14s }
+    .rise:nth-of-type(4) { animation-delay: .21s }
+
+    @keyframes rise {
+        from { opacity: 0; transform: translateY(18px) scale(.985) }
+        to   { opacity: 1; transform: none }
+    }
+
+    @keyframes float {
+        0%, 100% { transform: translate3d(0, 0, 0) }
+        50%      { transform: translate3d(0, -16px, 0) }
+    }
+
+    @keyframes shake {
+        10%, 90% { transform: translateX(-2px) }
+        30%, 70% { transform: translateX(4px) }
+        50%      { transform: translateX(-5px) }
+    }
+
+    @keyframes spin { to { transform: rotate(360deg) } }
+
+    @keyframes shimmer {
+        from { background-position: -180% 0 }
+        to   { background-position: 180% 0 }
+    }
+
+    .login-shell {
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 24px 16px 40px;
+        position: relative;
+        isolation: isolate;
+    }
+
+    .orb {
+        position: fixed;
+        border-radius: 50%;
+        filter: blur(2px);
+        opacity: .55;
+        z-index: -1;
+        animation: float 9s ease-in-out infinite;
+    }
+    .orb.a { width: 260px; height: 260px; background: #cdb4ff; top: -70px; left: -60px }
+    .orb.b { width: 320px; height: 320px; background: #e7d5ff; bottom: -120px; right: -90px; animation-delay: -3.5s }
+    .orb.c { width: 150px; height: 150px; background: #f3d9ff; top: 42%; right: -60px; animation-delay: -6s }
+
+    .login-card {
+        width: 100%;
+        max-width: 392px;
+        padding: 34px 30px 28px;
+        animation: rise .7s cubic-bezier(.19, 1, .22, 1) both;
+    }
+    .login-card.bad { animation: shake .5s ease-in-out }
+
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: var(--lilac);
+        box-shadow: var(--shadow-sm);
+        color: var(--violet);
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: .18em;
+        text-transform: uppercase;
+    }
+    .badge i {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: var(--violet);
+        box-shadow: 0 0 0 4px rgba(124, 58, 237, .18);
+    }
+
     h1 {
-        margin: 0 0 8px; font-size: clamp(28px, 4.4vw, 44px); line-height: .92;
-        letter-spacing: -.035em; text-transform: uppercase; font-weight: 800;
+        margin: 20px 0 6px;
+        font-size: clamp(26px, 7vw, 32px);
+        line-height: 1.08;
+        letter-spacing: -.03em;
     }
-    p.sub { margin: 0; max-width: 62ch; color: var(--muted) }
 
-    section {
-        background:
-        padding: 22px; margin: 0 0 24px;
-    }
-    h2 {
-        margin: 0 0 16px; font-size: 12px; letter-spacing: .16em;
-        text-transform: uppercase; font-weight: 800;
-    }
-    h2 .count { color: var(--muted); font-weight: 600; letter-spacing: .06em }
+    .sub { margin: 0 0 24px; color: var(--muted); font-size: 14px }
 
-    label {
-        display: block; margin-bottom: 6px; font-size: 10px; letter-spacing: .16em;
-        text-transform: uppercase; font-weight: 800;
-    }
-    input, select {
-        width: 100%; padding: 11px 12px; font: inherit; color: var(--ink);
-        background:
-    }
-    input::placeholder { color:
-    input:focus, select:focus { outline: none; box-shadow: 4px 4px 0 var(--violet) }
+    label { display: block; margin: 0 0 16px }
 
-    .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end }
-    .row > div { flex: 1 1 200px; min-width: 0 }
-
-    button {
-        font: 800 12px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .1em;
-        text-transform: uppercase; padding: 13px 18px; cursor: pointer;
-        color:
-        border: 3px solid var(--ink); border-radius: 0; box-shadow: 4px 4px 0 var(--ink);
-        transition: transform .06s ease, box-shadow .06s ease;
+    .label-text {
+        display: block;
+        margin: 0 0 8px 6px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: .16em;
+        text-transform: uppercase;
+        color: var(--muted);
     }
-    button:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--ink) }
-    button:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--ink) }
-    button.ghost { background:
-    button.acid  { background: var(--acid); color: var(--ink) }
-    button.danger{ background:
-    button.small { padding: 9px 12px; font-size: 11px; box-shadow: 3px 3px 0 var(--ink) }
+
+    input {
+        width: 100%;
+        padding: 15px 18px;
+        font: inherit;
+        color: var(--ink);
+        background: #fbf8ff;
+        border: 0;
+        border-radius: 18px;
+        box-shadow: var(--press);
+        transition: box-shadow .2s ease, background .2s ease;
+        -webkit-appearance: none;
+    }
+    input::placeholder { color: #a79bc4 }
+    input:focus {
+        outline: none;
+        background: #fff;
+        box-shadow: var(--press), 0 0 0 3px rgba(124, 58, 237, .28);
+    }
+
+    .btn {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        width: 100%;
+        min-height: 52px;
+        padding: 15px 22px;
+        font: 800 13px/1 ui-sans-serif, system-ui, sans-serif;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        color: #fff;
+        background: linear-gradient(145deg, #8b5cf6, #6d28d9);
+        border: 0;
+        border-radius: 18px;
+        cursor: pointer;
+        box-shadow:
+            10px 10px 22px rgba(109, 40, 217, .28),
+            -6px -6px 16px rgba(255, 255, 255, .7),
+            inset 1px 1px 2px rgba(255, 255, 255, .45);
+        transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
+    }
+    .btn:hover { transform: translateY(-2px); filter: saturate(1.05) }
+    .btn:active { transform: translateY(2px); box-shadow: var(--press) }
+    .btn:focus-visible { outline: 3px solid rgba(124, 58, 237, .45); outline-offset: 3px }
+
+    .btn.ghost {
+        width: auto;
+        min-height: 44px;
+        padding: 11px 18px;
+        color: var(--violet);
+        background: var(--clay);
+        box-shadow: var(--shadow-sm);
+    }
+    .btn.ghost:active { box-shadow: var(--press) }
+
+    .btn.danger { color: #b4235a; background: var(--rose) }
+    .btn.danger:active { box-shadow: var(--press) }
+
+    .btn.small {
+        width: auto;
+        min-height: 38px;
+        padding: 9px 14px;
+        font-size: 11px;
+        border-radius: 14px;
+        box-shadow: var(--shadow-sm);
+    }
+    .btn.small:active { box-shadow: var(--press) }
+
+    .btn .spin {
+        position: absolute;
+        width: 18px; height: 18px;
+        border-radius: 50%;
+        border: 2.5px solid rgba(255, 255, 255, .4);
+        border-top-color: #fff;
+        opacity: 0;
+        animation: spin .7s linear infinite;
+    }
+    .btn.busy { color: transparent; pointer-events: none }
+    .btn.busy .spin { opacity: 1 }
 
     .flash {
-        margin: 0 0 24px; padding: 14px 16px; border: 3px solid var(--ink);
-        box-shadow: 4px 4px 0 var(--ink); font-weight: 700;
+        margin: 0 0 18px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        font-weight: 700;
+        font-size: 13px;
+        animation: rise .35s ease both;
     }
-    .flash.ok  { background: var(--acid) }
-    .flash.bad { background:
+    .flash.bad  { background: var(--rose); color: #8e1d44; box-shadow: var(--press) }
+    .flash.good { background: var(--mint); color: #0d5e44; box-shadow: var(--press) }
 
-    .tablewrap { overflow-x: auto; border: 3px solid var(--ink) }
-    table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 14px }
-    th, td { text-align: left; padding: 12px 12px; border-bottom: 2px solid var(--ink); vertical-align: top }
-    tr:last-child td { border-bottom: 0 }
-    th {
-        background: var(--ink); color: var(--paper); font-size: 10px;
-        letter-spacing: .14em; text-transform: uppercase; font-weight: 800;
+    .tiny { margin: 18px 0 0; text-align: center; color: var(--muted); font-size: 12px }
+
+    .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin: 0 0 26px;
+        padding: 18px 22px;
     }
-    td.actions { white-space: nowrap }
+    .brand { display: flex; align-items: center; gap: 14px }
+    .brand .mark {
+        display: grid;
+        place-items: center;
+        width: 46px; height: 46px;
+        border-radius: 16px;
+        background: linear-gradient(145deg, #a78bfa, #7c3aed);
+        box-shadow: var(--shadow-sm);
+        color: #fff;
+        font-weight: 900;
+        font-size: 15px;
+        letter-spacing: .02em;
+    }
+    .brand h2 { margin: 0; font-size: 16px; letter-spacing: -.01em }
+    .brand p { margin: 2px 0 0; color: var(--muted); font-size: 12px }
 
-    code, .mono { font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace }
-    code { word-break: break-all }
+    section.card {
+        padding: 26px 24px;
+        margin: 0 0 22px;
+    }
+
+    .section-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0 0 20px;
+    }
+    .section-head h3 {
+        margin: 0;
+        font-size: 12px;
+        letter-spacing: .18em;
+        text-transform: uppercase;
+        color: var(--violet);
+    }
+    .section-head .count { color: var(--muted); font-size: 12px; font-weight: 700 }
+
+    .grid { display: flex; flex-wrap: wrap; gap: 14px }
+    .grid > .field { flex: 1 1 200px; min-width: 0 }
+    .grid > .field.grow { flex: 2 1 300px }
+    .grid > .field.slim { flex: 0 1 132px }
+
+    .trial-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px }
+    .trial-row .btn { width: auto; min-width: 132px }
+
+    .hint { margin: 18px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.6 }
+    .hint code {
+        padding: 2px 7px;
+        border-radius: 8px;
+        background: var(--lilac);
+        font-size: 12px;
+        color: var(--violet);
+    }
+
+    .table-wrap {
+        position: relative;
+        border-radius: 24px;
+        background: #fbf8ff;
+        box-shadow: var(--press);
+        padding: 6px;
+        overflow-x: auto;
+    }
+
+    table {
+        width: 100%;
+        min-width: 860px;
+        border-collapse: separate;
+        border-spacing: 0 6px;
+        font-size: 13.5px;
+    }
+    thead th {
+        padding: 10px 14px;
+        text-align: left;
+        font-size: 10px;
+        letter-spacing: .16em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    tbody tr {
+        background: #f4eeff;
+        box-shadow: 0 6px 14px rgba(124, 58, 237, .07);
+        transition: transform .16s ease, box-shadow .16s ease;
+    }
+    tbody tr:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 20px rgba(124, 58, 237, .13);
+    }
+    tbody td {
+        padding: 14px;
+        vertical-align: top;
+        border-top: 1px solid rgba(124, 58, 237, .07);
+        border-bottom: 1px solid rgba(124, 58, 237, .07);
+    }
+    tbody td:first-child { border-left: 1px solid rgba(124, 58, 237, .07); border-radius: 16px 0 0 16px }
+    tbody td:last-child  { border-right: 1px solid rgba(124, 58, 237, .07); border-radius: 0 16px 16px 0 }
+
+    .mono {
+        font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        word-break: break-all;
+    }
 
     .pill {
-        display: inline-block; padding: 4px 9px; border: 2px solid var(--ink);
-        font-size: 10px; letter-spacing: .12em; text-transform: uppercase; font-weight: 800;
+        display: inline-block;
+        padding: 5px 11px;
+        border-radius: 999px;
+        font-size: 9.5px;
+        font-weight: 800;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        box-shadow: var(--shadow-sm);
     }
-    .pill.ok  { background: var(--acid) }
-    .pill.bad { background:
+    .pill.ok  { background: var(--mint); color: #0d5e44 }
+    .pill.bad { background: var(--rose); color: #8e1d44 }
+
     .dim { color: var(--muted) }
 
-    .device-form { display: flex; gap: 8px; margin-top: 8px; min-width: 240px }
-    .device-form input { padding: 8px 10px; border-width: 2px; font-size: 12px }
-    .device-form input[type=number] { flex: 0 0 74px }
-    .device-form button { flex: 0 0 auto }
-
-    .device-chip {
-        display: inline-flex; align-items: center; gap: 6px; margin: 0 6px 6px 0;
-        padding: 3px 4px 3px 8px; border: 2px solid var(--ink); background:
+    .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0 6px 6px 0;
+        padding: 5px 6px 5px 10px;
+        border-radius: 12px;
+        background: #fbf8ff;
+        box-shadow: var(--shadow-sm);
+        font: 11.5px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
-    .device-chip code { font-size: 12px }
-    .device-chip button { padding: 3px 7px; font-size: 10px; box-shadow: none; border-width: 2px }
-    .seatnote {
-        font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
-        color: var(--muted); font-weight: 700; margin: 0 0 6px;
+    .chip button {
+        width: 24px; height: 24px;
+        display: grid; place-items: center;
+        border: 0;
+        border-radius: 8px;
+        background: var(--rose);
+        color: #8e1d44;
+        font-size: 12px;
+        font-weight: 900;
+        cursor: pointer;
+        line-height: 1;
+    }
+    .chip button:hover { filter: brightness(.97) }
+
+    .dev-forms { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px }
+    .dev-forms input { width: auto; flex: 1 1 150px; padding: 9px 12px; border-radius: 12px; font-size: 12px }
+    .dev-forms input[type=number] { flex: 0 0 66px }
+    .dev-forms button { flex: 0 0 auto }
+
+    .actions { display: flex; flex-wrap: wrap; gap: 8px }
+
+    .diag td:first-child { font-weight: 700; width: 40% }
+    .diag td.ok  { color: #0d5e44 }
+    .diag td.bad { color: #8e1d44; font-weight: 700 }
+
+    .skeleton {
+        position: absolute;
+        inset: 6px;
+        border-radius: 20px;
+        background: #fbf8ff;
+        display: grid;
+        gap: 10px;
+        padding: 18px;
+        align-content: start;
+        transition: opacity .28s ease;
+        z-index: 2;
+    }
+    .skeleton span {
+        display: block;
+        height: 44px;
+        border-radius: 14px;
+        background:
+            linear-gradient(100deg, rgba(233, 220, 255, .55) 20%, rgba(255, 255, 255, .95) 40%, rgba(233, 220, 255, .55) 60%)
+            0 0 / 220% 100%;
+        animation: shimmer 1.5s linear infinite;
+    }
+    body.ready .skeleton { opacity: 0; pointer-events: none }
+    body.ready .table-wrap table { animation: rise .5s ease both }
+
+    .foot { margin: 30px 0 0; text-align: center; color: var(--muted); font-size: 12px }
+
+    @media (max-width: 620px) {
+        .shell { padding: 20px 12px 64px }
+        section.card { padding: 20px 16px }
+        .topbar { padding: 16px }
+        .login-card { padding: 28px 22px 24px }
+        .trial-row .btn { flex: 1 1 130px; min-width: 0 }
     }
 
-    .inline { display: inline }
-    .diag td:first-child { font-weight: 700; width: 34% }
-    .diag td.ok  { color: var(--ink) }
-    .diag td.bad { color: var(--bad); font-weight: 700 }
-
-    p.note { color: var(--muted); font-size: 13px; margin: 36px 0 0; max-width: 70ch }
-    @media (max-width: 640px) {
-        main { padding: 24px 14px 70px }
-        section { padding: 18px; box-shadow: 4px 4px 0 var(--ink) }
-        header.top { align-items: flex-start }
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+            animation-duration: .001ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: .001ms !important;
+        }
     }
 </style>
 </head>
-<body>
-<main>
-    <header class="top">
-        <div>
-            <h1>Licence panel</h1>
-            <p class="sub">Keys minted here are what the app accepts: every token is signed
-                with the private key, and the app trusts only the matching public one.</p>
-        </div>
-        <?php if ($signedIn): ?>
-            <form method="post">
-                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                <button class="ghost" name="action" value="logout">Sign out</button>
-            </form>
-        <?php endif; ?>
-    </header>
+<body class="<?= $signedIn ? '' : 'guest' ?>">
+<?php if (!$signedIn): ?>
+    <span class="orb a"></span><span class="orb b"></span><span class="orb c"></span>
+    <main class="login-shell">
+        <form class="login-card clay <?= $error ? 'bad' : '' ?>" method="post" data-busy>
+            <input type="hidden" name="action" value="login">
+            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+            <span class="badge"><i></i>Licence panel</span>
+            <h1>Sign in</h1>
+            <p class="sub">Manage the keys this build accepts.</p>
 
-    <?php if ($error): ?><p class="flash bad"><?= h($error) ?></p><?php endif; ?>
-    <?php if ($notice): ?><p class="flash ok"><?= h($notice) ?></p><?php endif; ?>
+            <?php if ($error): ?>
+                <p class="flash bad" role="alert"><?= h($error) ?></p>
+            <?php endif; ?>
 
-    <?php if ($setupNeeded): ?>
-        <section>
-            <h2>First run</h2>
-            <p class="dim" style="margin:0 0 18px">There is no panel login yet. Pick one now:
-                this form disappears once it is set, and anyone who reaches this page
-                before you do can claim it.</p>
-            <form method="post">
-                <input type="hidden" name="action" value="setup">
-                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                <div class="row">
-                    <div><label>User</label><input name="user" value="admin" autocomplete="username" autofocus></div>
-                    <div><label>Password (8+ characters)</label><input name="pass" type="password" autocomplete="new-password"></div>
-                    <div><label>Repeat password</label><input name="pass2" type="password" autocomplete="new-password"></div>
-                    <div style="flex:0 0 auto"><button>Save and sign in</button></div>
+            <label>
+                <span class="label-text">Username</span>
+                <input name="user" autocomplete="username" autocapitalize="none" spellcheck="false"
+                       placeholder="your username" required autofocus>
+            </label>
+
+            <label>
+                <span class="label-text">Password</span>
+                <input name="pass" type="password" autocomplete="current-password"
+                       placeholder="your password" required>
+            </label>
+
+            <button class="btn" type="submit">
+                <span class="label">Sign in</span>
+                <span class="spin" aria-hidden="true"></span>
+            </button>
+
+            <p class="tiny">One account. No registration.</p>
+        </form>
+    </main>
+<?php else: ?>
+    <main class="shell">
+        <header class="topbar clay rise">
+            <div class="brand">
+                <span class="mark">EK</span>
+                <div>
+                    <h2>Licence keys</h2>
+                    <p><?= h((string)$auth['user']) ?> · every token here is signed</p>
                 </div>
-            </form>
-        </section>
-        <?php diag_table($diag); ?>
-    <?php elseif (!$signedIn): ?>
-        <section>
-            <h2>Sign in</h2>
+            </div>
             <form method="post">
-                <input type="hidden" name="action" value="login">
                 <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                <div class="row">
-                    <div><label>User</label><input name="user" autocomplete="username" autofocus></div>
-                    <div><label>Password</label><input name="pass" type="password" autocomplete="current-password"></div>
-                    <div style="flex:0 0 auto"><button>Sign in</button></div>
-                </div>
+                <button class="btn ghost small" name="action" value="logout">Sign out</button>
             </form>
-        </section>
-    <?php else: ?>
-        <section>
-            <h2>Mint a key</h2>
-            <form method="post">
+        </header>
+
+        <?php if ($error): ?><p class="flash bad" role="alert"><?= h($error) ?></p><?php endif; ?>
+        <?php if ($notice): ?><p class="flash good"><?= h($notice) ?></p><?php endif; ?>
+
+        <section class="card clay rise">
+            <div class="section-head"><h3>Mint a key</h3><span class="count">signed on creation</span></div>
+            <form method="post" data-busy>
                 <input type="hidden" name="action" value="create">
                 <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                <div class="row">
-                    <div style="flex:2 1 300px"><label>Access key (blank = generate)</label>
-                        <input name="key" placeholder="ETHNIR-XXXXXXXX" class="mono"></div>
-                    <div style="flex:0 1 130px"><label>Days (0 = never)</label>
-                        <input name="days" type="number" value="30" min="0"></div>
-                    <div><label>Max devices (0 = unlimited)</label>
-                        <input name="seats" type="number" value="0" min="0"></div>
-                    <div style="flex:2 1 260px"><label>Device ids (comma separated, blank = first sign-in)</label>
-                        <input name="hwid" placeholder="device id, optional" class="mono"></div>
-                    <div style="flex:2 1 220px"><label>Note</label><input name="note" placeholder="who / what"></div>
+                <div class="grid">
+                    <div class="field grow">
+                        <span class="label-text">Access key</span>
+                        <input name="key" class="mono" placeholder="blank = generate one">
+                    </div>
+                    <div class="field slim">
+                        <span class="label-text">Days</span>
+                        <input name="days" type="number" min="0" value="30" inputmode="numeric">
+                    </div>
+                    <div class="field slim">
+                        <span class="label-text">Max devices</span>
+                        <input name="seats" type="number" min="0" value="0" inputmode="numeric">
+                    </div>
+                    <div class="field grow">
+                        <span class="label-text">Device ids</span>
+                        <input name="hwid" class="mono" placeholder="comma separated, optional">
+                    </div>
+                    <div class="field grow">
+                        <span class="label-text">Note</span>
+                        <input name="note" placeholder="who or what">
+                    </div>
                 </div>
-                <div class="row" style="margin-top:16px">
-                    <div style="flex:0 0 auto"><button>Create key</button></div>
-                    <div style="flex:0 0 auto"><button class="acid" name="days" value="1">1-day trial</button></div>
-                    <div style="flex:0 0 auto"><button class="acid" name="days" value="3">3-day trial</button></div>
-                    <div style="flex:0 0 auto"><button class="acid" name="days" value="7">7-day trial</button></div>
+                <div class="trial-row">
+                    <button class="btn" type="submit"><span class="label">Create key</span><span class="spin" aria-hidden="true"></span></button>
+                    <button class="btn ghost" name="days" value="1"><span class="label">1-day trial</span><span class="spin" aria-hidden="true"></span></button>
+                    <button class="btn ghost" name="days" value="3"><span class="label">3-day trial</span><span class="spin" aria-hidden="true"></span></button>
+                    <button class="btn ghost" name="days" value="7"><span class="label">7-day trial</span><span class="spin" aria-hidden="true"></span></button>
                 </div>
-                <p class="dim" style="margin:14px 0 0"><strong>Max devices</strong> is the number of
-                    phones one key may sign in on: <code>0</code> is unlimited, which is what a
-                    free-trial key wants; leave it at 1 for a key you sell. A trial button creates
-                    the key with that lifetime, that device limit and any device ids you typed -
-                    a trial can be handed over already locked to one phone, or open to any.</p>
+                <p class="hint"><code>0</code> max devices means the key works on any phone, which is what a
+                    free trial wants. Set <code>1</code> for a key you sell. A trial button keeps the
+                    other fields as they are.</p>
             </form>
         </section>
 
-        <section>
-            <h2>Keys <span class="count">(<?= count($keys) ?>)</span></h2>
-            <div class="tablewrap">
-            <table>
-                <thead>
-                    <tr><th>Key</th><th>State</th><th>Expires</th><th>Device</th><th>Note</th><th>Actions</th></tr>
-                </thead>
-                <tbody>
-                <?php if (!$keys): ?>
-                    <tr><td colspan="6" class="dim">No keys yet.</td></tr>
-                <?php endif; ?>
-                <?php foreach ($keys as $key => $lic): ?>
-                    <tr>
-                        <td><code><?= h((string)$key) ?></code></td>
-                        <td>
-                            <?php if (!empty($lic['revoked'])): ?><span class="pill bad">revoked</span>
-                            <?php elseif ($lic['expires'] !== 0 && $lic['expires'] < $now): ?><span class="pill bad">expired</span>
-                            <?php else: ?><span class="pill ok">active</span><?php endif; ?>
-                        </td>
-                        <td class="mono dim"><?= $lic['expires'] === 0
-                            ? 'never'
-                            : h(date('Y-m-d H:i', (int)$lic['expires'])) ?></td>
-                        <td>
-                            <?php
-                            $devs  = licence_devices($lic);
-                            $seats = licence_seats($lic);
-                            ?>
-                            <?php if (!$devs): ?>
-                                <code class="dim">unbound - first sign-in claims it</code>
-                            <?php else: ?>
-                                <?php foreach ($devs as $d): ?>
-                                    <form class="inline" method="post">
+        <section class="card clay rise">
+            <div class="section-head">
+                <h3>Keys</h3>
+                <span class="count"><?= count($keys) ?> total</span>
+            </div>
+            <div class="table-wrap">
+                <div class="skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
+                <table>
+                    <thead>
+                        <tr><th>Key</th><th>State</th><th>Expires</th><th>Devices</th><th>Note</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody>
+                    <?php if (!$keys): ?>
+                        <tr><td colspan="6" class="dim">No keys yet.</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($keys as $key => $lic): ?>
+                        <?php
+                        $devs  = licence_devices($lic);
+                        $seats = licence_seats($lic);
+                        ?>
+                        <tr>
+                            <td class="mono"><?= h((string)$key) ?></td>
+                            <td>
+                                <?php if (!empty($lic['revoked'])): ?><span class="pill bad">revoked</span>
+                                <?php elseif ($lic['expires'] !== 0 && $lic['expires'] < $now): ?><span class="pill bad">expired</span>
+                                <?php else: ?><span class="pill ok">active</span><?php endif; ?>
+                            </td>
+                            <td class="mono dim"><?= $lic['expires'] === 0 ? 'never' : h(date('Y-m-d H:i', (int)$lic['expires'])) ?></td>
+                            <td>
+                                <?php if (!$devs): ?>
+                                    <span class="dim">unbound</span>
+                                <?php else: ?>
+                                    <?php foreach ($devs as $d): ?>
+                                        <form method="post" style="display:inline">
+                                            <input type="hidden" name="key" value="<?= h((string)$key) ?>">
+                                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                                            <input type="hidden" name="action" value="dropdevice">
+                                            <span class="chip"><?= h($d) ?><button name="hwid" value="<?= h($d) ?>"
+                                                aria-label="Remove <?= h($d) ?>" title="Remove">&times;</button></span>
+                                        </form>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                                <div class="dim" style="font-size:11px;margin:2px 0 6px">
+                                    <?= $seats === 0 ? 'any device' : $seats . ' device' . ($seats === 1 ? '' : 's') ?>
+                                </div>
+                                <div class="dev-forms">
+                                    <form method="post" style="display:flex;gap:8px;flex:1 1 160px">
                                         <input type="hidden" name="key" value="<?= h((string)$key) ?>">
                                         <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                                        <input type="hidden" name="action" value="dropdevice">
-                                        <span class="device-chip">
-                                            <code><?= h($d) ?></code>
-                                            <button class="small ghost" name="hwid" value="<?= h($d) ?>"
-                                                    aria-label="Remove device <?= h($d) ?>"
-                                                    title="Remove this device">x</button>
-                                        </span>
+                                        <input name="hwid" class="mono" placeholder="add device id" aria-label="Device to allow">
+                                        <button class="btn ghost small" name="action" value="bind">Add</button>
                                     </form>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                            <div class="seatnote"><?= $seats === 0
-                                ? 'unlimited devices'
-                                : $seats . ' device' . ($seats === 1 ? '' : 's') . ' max' ?></div>
-                            <form class="device-form" method="post">
-                                <input type="hidden" name="key" value="<?= h((string)$key) ?>">
-                                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                                <input name="hwid" class="mono" aria-label="Device id to allow on <?= h((string)$key) ?>"
-                                       placeholder="device id">
-                                <button class="small ghost" name="action" value="bind">Add</button>
-                            </form>
-                            <form class="device-form" method="post">
-                                <input type="hidden" name="key" value="<?= h((string)$key) ?>">
-                                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                                <input name="seats" type="number" min="0" value="<?= $seats ?>"
-                                       aria-label="Max devices for <?= h((string)$key) ?>">
-                                <button class="small ghost" name="action" value="seats">Max</button>
-                            </form>
-                        </td>
-                        <td class="dim"><?= h((string)($lic['note'] ?? '')) ?></td>
-                        <td class="actions">
-                            <form class="inline" method="post">
-                                <input type="hidden" name="key" value="<?= h((string)$key) ?>">
-                                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                                <button class="small ghost" name="action" value="revoke">
-                                    <?= empty($lic['revoked']) ? 'Revoke' : 'Re-enable' ?></button>
-                            </form>
-                            <?php if (licence_devices($lic)): ?>
-                            <form class="inline" method="post">
-                                <input type="hidden" name="key" value="<?= h((string)$key) ?>">
-                                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                                <button class="small ghost" name="action" value="rebind">Clear</button>
-                            </form>
-                            <?php endif; ?>
-                            <form class="inline" method="post"
-                                  onsubmit="return confirm('Delete this key? It cannot be undone.');">
-                                <input type="hidden" name="key" value="<?= h((string)$key) ?>">
-                                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                                <button class="small danger" name="action" value="delete">Delete</button>
-                            </form>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
+                                    <form method="post" style="display:flex;gap:8px">
+                                        <input type="hidden" name="key" value="<?= h((string)$key) ?>">
+                                        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                                        <input name="seats" type="number" min="0" value="<?= $seats ?>" aria-label="Max devices">
+                                        <button class="btn ghost small" name="action" value="seats">Max</button>
+                                    </form>
+                                </div>
+                            </td>
+                            <td class="dim"><?= h((string)($lic['note'] ?? '')) ?></td>
+                            <td>
+                                <div class="actions">
+                                    <form method="post">
+                                        <input type="hidden" name="key" value="<?= h((string)$key) ?>">
+                                        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                                        <button class="btn ghost small" name="action" value="revoke">
+                                            <?= empty($lic['revoked']) ? 'Revoke' : 'Enable' ?></button>
+                                    </form>
+                                    <?php if ($devs): ?>
+                                        <form method="post">
+                                            <input type="hidden" name="key" value="<?= h((string)$key) ?>">
+                                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                                            <button class="btn ghost small" name="action" value="rebind">Clear</button>
+                                        </form>
+                                    <?php endif; ?>
+                                    <form method="post" onsubmit="return confirm('Delete this key?')">
+                                        <input type="hidden" name="key" value="<?= h((string)$key) ?>">
+                                        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                                        <button class="btn danger small" name="action" value="delete">Delete</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
             </div>
         </section>
 
-        <?php diag_table($diag); ?>
-
-        <section>
-            <h2>Panel login</h2>
-            <form method="post">
-                <input type="hidden" name="action" value="password">
-                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                <div class="row">
-                    <div><label>Current password</label><input name="current" type="password" autocomplete="current-password"></div>
-                    <div><label>New password</label><input name="pass" type="password" autocomplete="new-password"></div>
-                    <div><label>Repeat new password</label><input name="pass2" type="password" autocomplete="new-password"></div>
-                    <div style="flex:0 0 auto"><button class="ghost">Change password</button></div>
-                </div>
-            </form>
+        <section class="card clay rise">
+            <div class="section-head"><h3>Deployment</h3><span class="count">server checks</span></div>
+            <div class="table-wrap">
+                <table class="diag" style="min-width:560px">
+                    <thead><tr><th>Check</th><th>State</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($diag as [$name, $detail, $ok]): ?>
+                        <tr>
+                            <td><?= h((string)$name) ?></td>
+                            <td class="<?= $ok ? 'ok' : 'bad' ?>"><?= h((string)$detail) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
         </section>
-    <?php endif; ?>
 
-    <p class="note">Device ids are the serial the app computes for that phone: 8-64 letters,
-        digits or hyphens. A key starts unbound and the first phone to sign in takes a seat;
-        <em>Add</em> allows another phone by hand, <em>x</em> takes one away, and
-        <em>Max</em> is how many seats the key has (0 = unlimited, for a free trial).</p>
-</main>
+        <p class="foot">Signed with RSA-2048 · build <?= h((string)$config['build']) ?></p>
+    </main>
+<?php endif; ?>
+<script>
+    document.querySelectorAll('form[data-busy]').forEach(function (form) {
+        form.addEventListener('submit', function () {
+            var btn = form.querySelector('button[type=submit], .btn');
+            if (btn) { btn.classList.add('busy'); }
+        });
+    });
+    window.addEventListener('load', function () {
+        window.setTimeout(function () { document.body.classList.add('ready'); }, 500);
+    });
+</script>
 </body>
 </html>
-

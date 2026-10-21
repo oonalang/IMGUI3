@@ -14,42 +14,19 @@ function licence_config(): array
 
 function licence_auth(): array
 {
-    static $auth = null;
-    if ($auth !== null) {
-        return $auth;
-    }
-
-    $cfg  = licence_config();
-    $auth = [
-        'user' => (string)($cfg['admin_user'] ?? 'admin'),
+    $cfg = licence_config();
+    return [
+        'user' => (string)($cfg['admin_user'] ?? ''),
         'hash' => (string)($cfg['admin_hash'] ?? ''),
     ];
-
-    $file = dirname((string)$cfg['store']) . '/auth.php';
-    if (is_readable($file)) {
-        $override = include $file;
-        if (is_array($override)) {
-            $auth['user'] = (string)($override['user'] ?? $auth['user']);
-            $auth['hash'] = (string)($override['hash'] ?? $auth['hash']);
-        }
-    }
-
-    return $auth;
 }
 
-function licence_auth_save(string $user, string $hash): bool
+function licence_login(string $user, string $pass): bool
 {
-    $file = dirname((string)licence_config()['store']) . '/auth.php';
-    $body = "<?php\n// Written by admin.php - the panel's own login. Delete this file to fall back\n"
-          . "// to config.php's admin_hash, or to run the setup form again.\n"
-          . "return ['user' => " . var_export($user, true)
-          . ", 'hash' => " . var_export($hash, true) . "];\n";
-
-    if (file_put_contents($file, $body, LOCK_EX) === false) {
-        return false;
-    }
-    @chmod($file, 0660);
-    return true;
+    $auth = licence_auth();
+    $userOk = $auth['user'] !== '' && hash_equals($auth['user'], $user);
+    $passOk = $auth['hash'] !== '' && password_verify($pass, $auth['hash']);
+    return $userOk && $passOk;
 }
 
 function licence_private_key(): string

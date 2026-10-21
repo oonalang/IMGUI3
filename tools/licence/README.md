@@ -64,24 +64,24 @@ composer. Drop it on any shared host:
 
 1. `cp tools/licence/private/licence_private.pem panel/private/` (`chmod 600`).
 2. In `panel/config.php` point `private_key` and `store` at absolute paths, keep
-   `build` equal to `licence::kBuild`, and either set `admin_hash`:
+   `build` equal to `licence::kBuild`, and set the panel account - the only one
+   that exists:
 
    ```bash
    php -r 'echo password_hash("your-panel-password", PASSWORD_DEFAULT), "\n";'
    ```
 
-   or leave it empty and let the panel ask: `admin.php` then shows a **first-run
-   form** and writes the login to `data/auth.php` (which overrides `config.php`).
-   That second route exists because a free host gives you no shell to run
-   `password_hash()`. The same page carries a *Change password* form once you are
-   in, and deleting `data/auth.php` puts the first-run form back.
+   `admin_user` is the name, `admin_hash` is that value. There is no setup form,
+   no registration and no in-page password change: `admin.php` only signs in, and
+   the account lives entirely in `config.php`. Changing it means editing the two
+   values and re-uploading that file. A hash left empty locks everyone out, so
+   build the archive with `-p` (below) rather than hand-editing it out.
 
 3. Upload the folder. Everything in `panel/` goes together, `.htaccess` files
    included.
-4. Open `admin.php`, sign in, create keys. If you left `admin_hash` empty, do
-   this the minute the upload finishes: until you do, anyone who finds that URL
-   can claim the panel. Devices and seat counts are explained
-   below; *Revoke* kills a key without deleting its row.
+4. Open `admin.php` and sign in with the account from `config.php`. Devices and
+   seat counts are explained below; *Revoke* kills a key without deleting its
+   row.
    The page also prints a **Deployment** table under the key list: PHP version,
    whether `openssl` is loaded, whether the key is readable and the store
    writable, and whether either one is sitting inside the document root. Those
@@ -191,8 +191,8 @@ actually use:
 
 ```bash
 tools/licence/make_panel_zip.sh                  # asks for the panel password
-tools/licence/make_panel_zip.sh --no-password    # or let the first-run form set it
-tools/licence/make_panel_zip.sh --no-password --with-key   # key inside: one extract
+tools/licence/make_panel_zip.sh -p 'the-panel-password'   # bake the login in
+tools/licence/make_panel_zip.sh -p 'pw' --with-key         # key inside: one extract
 ```
 
 It writes `tools/licence/dist/licence-panel.zip` with `connect.php`, `admin.php`,
@@ -237,7 +237,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://<host>/connect                 
 | --- | --- |
 | `private/licence_private.pem` | the signing key. Deny-all `.htaccess` in `private/`. |
 | `data/keys.json` | every customer key, its allowed devices, seat count, expiry. Deny-all `.htaccess` in `data/`. |
-| `data/auth.php` | the panel login, once the first-run form or *Change password* has been used. |
+| `data/auth.php` | leftover from the old setup form; ignored now, safe to delete. |
 
 All three are gitignored. `data/auth.php` is a PHP file that only returns an
 array, so even a host that ignores `.htaccess` and serves it as PHP prints
