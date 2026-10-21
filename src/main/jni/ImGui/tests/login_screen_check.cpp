@@ -1,17 +1,3 @@
-// Headless input test for the login card (ImGui/login_screen.h).
-//
-// Build (host, no NDK):
-//   g++ -std=c++17 -I src/main/jni -I src/main/jni/ImGui \
-//       src/main/jni/ImGui/tests/login_screen_check.cpp \
-//       src/main/jni/ImGui/imgui.cpp src/main/jni/ImGui/imgui_draw.cpp \
-//       src/main/jni/ImGui/imgui_tables.cpp src/main/jni/ImGui/imgui_widgets.cpp \
-//       -o login_screen_check && ./login_screen_check
-//
-// Drives the shipped header the way a finger would: tap the field and type, tap
-// the reveal eye, tap the pill, tap paste, press Enter, tap the title bar's X.
-// Every tap aims at a rectangle from the card's own ComputeLayout(), so if a
-// control moves without its hit box the check fails instead of the screenshot
-// merely looking off.
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -35,7 +21,6 @@ static void Check(const char* what, bool ok)
     if (!ok) ++g_failures;
 }
 
-// One card frame; returns what the user tapped this frame.
 static login_screen::Result Frame(const ImVec2& pos, float W, float H)
 {
     ImGuiIO& io = ImGui::GetIO();
@@ -84,8 +69,7 @@ static void MoveTo(ImVec2 p)
 static void Tap(const ImVec2& pos, float W, float H, const ImVec2& at, login_screen::Result* tapped = nullptr)
 {
     ImGuiIO& io = ImGui::GetIO();
-    // Tap = hover, press, release. Android delivers touches as mouse events, and
-    // ImGui needs a press *and* a release for a click to register.
+
     MoveTo(at);
     Frame(pos, W, H);
     io.AddMouseButtonEvent(0, true);
@@ -103,11 +87,6 @@ static void Tap(const ImVec2& pos, float W, float H, const ImVec2& at, login_scr
     Frame(pos, W, H);
 }
 
-// The panel is the menu's window, not the whole surface. Regression: the login
-// used to be drawn full-bleed, which on a phone was a page covering the entire
-// screen (and the menu underneath it was nowhere). For each surface the panel
-// has to be exactly the rectangle the menu opens in, centred, and strictly
-// smaller than the surface.
 static void TestPanelIsMenuSized()
 {
     const ImVec2 surfaces[] = { ImVec2(1280, 720), ImVec2(2400, 1080),
@@ -131,8 +110,6 @@ static void TestPanelIsMenuSized()
         std::snprintf(what, sizeof what, "%.0fx%.0f: panel leaves the surface around it visible", d.x, d.y);
         Check(what, pw < d.x - 1.0f && ph < d.y - 1.0f);
 
-        // The design's own ceiling: no phone surface may blow the panel up past
-        // 900x592, which is what made it read as full-screen.
         std::snprintf(what, sizeof what, "%.0fx%.0f: panel stays within 900x592", d.x, d.y);
         Check(what, pw <= 900.5f && ph <= 592.5f);
     }
@@ -140,8 +117,6 @@ static void TestPanelIsMenuSized()
 
 int main()
 {
-    // The whole render surface, the way Main.cpp hands it over; the panel drawn
-    // inside it is the menu's 900x592 window, centred at (190, 64) here.
     const float W = 1280.0f, H = 720.0f;
     const ImVec2 pos(0.0f, 0.0f);
 
@@ -158,12 +133,10 @@ int main()
 
     TestPanelIsMenuSized();
 
-    // Every tap below aims at a rectangle from the card's own layout pass.
     const login_screen::Layout L = login_screen::ComputeLayout(pos, W, H, false);
 
     for (int i = 0; i < 3; ++i) Frame(pos, W, H);
 
-    // ---- the field is where it is drawn, and it takes typing ---------------
     Tap(pos, W, H, L.fieldHitCenter());
 
     g_key[0] = '\0';
@@ -175,37 +148,28 @@ int main()
     if (std::strcmp(g_key, "ETHNIR-KEY-1") != 0)
         std::printf("     buffer was \"%s\"\n", g_key);
 
-    // ---- reveal eye ---------------------------------------------------------
     const bool beforeReveal = g_reveal;
     Tap(pos, W, H, L.eyeCenter());
     Check("reveal eye toggles", g_reveal != beforeReveal);
     Tap(pos, W, H, L.eyeCenter());
     Check("reveal eye toggles back", g_reveal == beforeReveal);
 
-    // ---- remember me --------------------------------------------------------
     const bool beforeRemember = g_remember;
     Tap(pos, W, H, L.rememberCenter());
     Check("remember me toggles", g_remember != beforeRemember);
 
-    // ---- authenticate pill ---------------------------------------------------
     login_screen::Result clicked;
     Tap(pos, W, H, L.pillCenter(), &clicked);
     Check("the pill reports authenticate", clicked.authenticate);
 
-    // ---- paste ---------------------------------------------------------------
     login_screen::Result paste;
     Tap(pos, W, H, L.pasteCenter(), &paste);
     Check("the paste row reports paste", paste.paste);
 
-    // ---- title bar close ------------------------------------------------------
-    // The X folds the screen away; Main.cpp collapses the menu on it, and the
-    // restore bar brings it back, so the tap has to be reported rather than
-    // swallowed by the header.
     login_screen::Result closed;
     Tap(pos, W, H, L.closeCenter(), &closed);
     Check("the title bar's X reports close", closed.close);
 
-    // ---- Enter in a focused field -------------------------------------------
     Tap(pos, W, H, L.fieldHitCenter());
     io.AddKeyEvent(ImGuiKey_Enter, true);
     login_screen::Result entered = Frame(pos, W, H);
@@ -223,3 +187,4 @@ int main()
     std::printf("OK: login card input\n");
     return 0;
 }
+

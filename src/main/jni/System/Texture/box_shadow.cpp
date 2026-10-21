@@ -326,3 +326,4 @@ void drawShadowTestExampleWindow()
     ImGui::PopStyleColor();
     ImGui::End();
 }
+

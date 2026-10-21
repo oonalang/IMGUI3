@@ -92,7 +92,7 @@ struct sConfig {
         uintptr_t thiz;
     };
     sInitImGui ImGuiMenu{0};
-    
+
 struct sWeaponAim {
         bool Aimbot360;
         float AimAssistSize;
@@ -102,23 +102,22 @@ struct sWeaponAim {
         EAim By;
         float size;
         float Cross;
-        
-         // Frame Rate Controls
+
         bool FpsLevel;
         float FpsLevel1;
         bool showFPSLevelSlider;
 
-        bool FpsLevelUltra;              // Ultra FPS toggle
-        float FpsLevelUltra1 = 240.0f;   // Default Ultra FPS value
-        bool showFPSLevelUltraSlider;    // Show the Ultra FPS slider
+        bool FpsLevelUltra;
+        float FpsLevelUltra1 = 240.0f;
+        bool showFPSLevelUltraSlider;
     };
     sWeaponAim Aim{0};
-    
+
     struct sESPMenuLineScale {
         float lineSize;
     };
     sESPMenuLineScale sESPMenuLineScale{0};
-    
+
     struct sESPMenu {
         bool Signal;
         bool Alert;
@@ -145,7 +144,7 @@ struct sWeaponAim {
         bool Aimline;
     };
     sESPMenu ESPMenu{0};
-    
+
     struct sColorsESPPLAYER {
     float *LinePLAYER;
     float *BoxPLAYER;
@@ -165,12 +164,12 @@ struct sColorsESPBOT {
     float *SkeletonBOT;
 };
 sColorsESPBOT sColorsESPBOT{0};
-    
+
     struct sColorsESPOTHERS {
         float *PovOTHERS;
     };
     sColorsESPOTHERS sColorsESPOTHERS{0};
-    
+
     struct sExtraMenu {
         bool SmartReload;
         bool NoGravity;
@@ -196,19 +195,15 @@ sColorsESPBOT sColorsESPBOT{0};
         bool Grapss;
         bool EnhanceFPS;
         bool Spectatex;
-        // Attachment unlock: "treat every attachment as owned". ON by default
-        // (System/Hooks/MythicAttachments.h).
+
         bool Attachment = true;
-        // The menu's "Blueprint" switch (BlueprintWeaponInfo.IsUnlocked). OFF by
-        // default: it marks every blueprint/skin as owned, which is a display
-        // change the game's own lobby has to live with, and VARIANT4 - the build
-        // this is taken from - ships it off too.
+
         bool MythicAttachments = false;
-        // Drops player-report evidence. ON by default.
+
         bool BlockReportEvidence = true;
-        // Empties ACE's report blob. OFF by default.
+
         bool BlockAceReport = false;
-        // Blocks the forced relogin on location change. OFF by default.
+
         bool AntiLogin;
 		bool ClearDisplay;
 		bool ResetGuest;
@@ -228,52 +223,40 @@ sColorsESPBOT sColorsESPBOT{0};
 		bool WallHack;
 		bool Kinetic;
 
-        // Stretch Screen: forces UnityEngine.Camera.aspect, which widens the
-        // horizontal field of view without touching the vertical one. 1.0-3.0.
         bool StretchScreen;
         float StretchAspect = 1.7778f;
     };
     sExtraMenu ExtraMenu{0};
 
 	struct sColorsESP {
-	
         float *Vehicle;
     };
     sColorsESP ColorsESP{0};
 
-    // New Features menu (VAR3)
     struct sNewFeaturesMenu
     {
         bool NoCrouch = false;
         bool Triggerbot = false;
-        int TriggerbotMode = 0;        // 0 = Always, 1 = ADS only, 2 = Firing only
-        int TriggerbotDelay = 0;       // ms (humanized reaction delay)
-        int TriggerbotRadius = 40;     // LEGACY, unused: the zone IS the dot crosshair now
-                                       // (Crosshair.Size below). Kept only so old
-                                       // config files keep loading.
+        int TriggerbotMode = 0;
+        int TriggerbotDelay = 0;
+        int TriggerbotRadius = 40;
+
         bool NoHitFlinch = false;
         bool NoDrift = false;
         bool NoSlideFatigue = false;
-        // Firing timing - each removes exactly one delay, nothing else
-        bool NoSprintToFireDelay = false;  // sprint-out timer before the gun fires
-        bool NoHipfireDelay = false;       // hipfire get-ready / wind-up gate
+
+        bool NoSprintToFireDelay = false;
+        bool NoHipfireDelay = false;
     };
     sNewFeaturesMenu NewFeaturesMenu{0};
 
-    // The menu's own dot crosshair - and the triggerbot's crosshair. There is
-    // exactly ONE crosshair in this build: the dot sits at the render centre plus
-    // OffsetX/OffsetY in pixels, that pixel is what the trigger aims through, and
-    // the dot's own radius IS the trigger's zone. Nothing else feeds the trigger's
-    // geometry, so shrinking the dot tightens the trigger by exactly the same
-    // amount and the two can never drift apart. On by default: this IS the
-    // crosshair now.
     struct sCrosshair
     {
-        bool  Enabled = true;           // draw the dot (the trigger aims here either way)
-        float Color[4] = {1.0f, 1.0f, 1.0f, 0.95f};  // RGB + opacity (alpha)
-        float Size = 6.0f;              // dot diameter in px == the trigger zone diameter
-        float OffsetX = 0.0f;           // px right of centre (0 = centre)
-        float OffsetY = 0.0f;           // px below centre (0 = centre)
+        bool  Enabled = true;
+        float Color[4] = {1.0f, 1.0f, 1.0f, 0.95f};
+        float Size = 6.0f;
+        float OffsetX = 0.0f;
+        float OffsetY = 0.0f;
     };
     sCrosshair Crosshair{};
 };

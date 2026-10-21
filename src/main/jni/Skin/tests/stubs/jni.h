@@ -1,11 +1,3 @@
-// Host stub for <jni.h> - used ONLY by the desktop syntax checks in
-// Skin/tests and Hacks/Feature/tests (the real header comes from the NDK in
-// the Android build).
-//
-// Every accessor takes an arbitrary argument list (the real JNI API is
-// variadic) but returns its TRUE type, so a call site that would be a type
-// error against the NDK fails here too. It cannot check argument counts - a
-// real NDK/device build is still the only proof of a JNI call.
 #pragma once
 #include <cstdint>
 #include <cstddef>
@@ -25,9 +17,6 @@ typedef uint16_t jchar;
 typedef jint     jsize;
 typedef unsigned char jbool;
 
-// Separate classes, as in the real C++ jni.h: a jclass must NOT be
-// interchangeable with a jobject at overload resolution, while still
-// converting to one (that upcast is what real code relies on).
 struct _jobject {};
 struct _jclass    : _jobject {};
 struct _jstring   : _jobject {};
@@ -88,8 +77,6 @@ typedef union jvalue {
 struct JNINativeInterface_;
 struct JNIInvokeInterface_;
 
-// Any name in this list may be called with any arguments; the return type is
-// the real one. Add a neighbour when a new call appears in the header graph.
 #define HOST_STUB_ANY_ARGS template<typename... A>
 
 struct _JNIEnv {
@@ -248,3 +235,4 @@ struct JNIInvokeInterface_ {};
 struct JNINativeInterface_ {};
 
 typedef jint (*JNI_OnLoad_t)(JavaVM*, void*);
+

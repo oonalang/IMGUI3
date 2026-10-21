@@ -2,14 +2,8 @@
 #include <string>
 #include "imgui_internal.h"
 
-/**
- * @autor SPraditya
- * email help : foxcheatsid@gmail.com
- */
-
 namespace ImguiPP
 {
-
     float getx()
     {
         return ImGui::GetContentRegionAvail().x;
@@ -106,3 +100,4 @@ namespace ImguiPP
         return ImVec4(r / 255.0, g / 255.0, b / 255.0, a / 255.0);
     }
 }
+

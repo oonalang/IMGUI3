@@ -1,21 +1,3 @@
-// Host input test for the Raspody menu.
-//
-// Renders the real menu and the real floating ESP card (ImGui/esp_preview.h)
-// against the same ImGui sources Android.mk builds, then drives synthetic touch
-// input through ImGui's own mouse state. It covers the things a still render
-// cannot show: the character must not turn by itself, dragging it must turn it,
-// the search button must open the field and the breadcrumb must walk back.
-//
-// Android.mk wildcards only ImGui/*.c*, never ImGui/tests/, so this file does
-// not reach the APK.
-//
-// Build:
-//   g++ -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS \
-//       -I src/main/jni -I src/main/jni/ImGui \
-//       src/main/jni/ImGui/imgui.cpp src/main/jni/ImGui/imgui_draw.cpp \
-//       src/main/jni/ImGui/imgui_tables.cpp src/main/jni/ImGui/imgui_widgets.cpp \
-//       src/main/jni/ImGui/raspody_widgets.cpp src/main/jni/ImGui/raspody_font.cpp \
-//       src/main/jni/ImGui/tests/raspody_input_check.cpp -o /tmp/raspody_input_check
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -77,7 +59,7 @@ struct Input
     bool   down = false;
 };
 
-static void Frame(Input& in, int /*unused*/ = 0)
+static void Frame(Input& in, int  = 0)
 {
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(1280.0f, 720.0f);
@@ -91,7 +73,6 @@ static void Frame(Input& in, int /*unused*/ = 0)
     ImGui::Render();
 }
 
-// ImGui derives clicks from the MouseDown edge, so a tap is press + release.
 static void Tap(Input& in, ImVec2 at)
 {
     in.pos = at;
@@ -112,7 +93,6 @@ int main()
     io.Fonts->Build();
     raspody::SetEspPreview(&esp_preview::Draw);
 
-    // ---- 1. The model must be still when nobody is dragging it -------------
     raspody::var.tab.current = raspody::var.tab.stored = raspody::Tab_Visuals;
     raspody::var.subtab.current = raspody::var.subtab.stored = 0;
     raspody::var.tab.alpha = 1.0f;
@@ -128,11 +108,6 @@ int main()
     const float yawIdleEnd = esp_model_preview::g_yaw;
     Check(std::fabs(yawIdleEnd - yawIdleStart) < 0.01f, "model does not spin on its own");
 
-    // ---- 2. Dragging the model rotates it ---------------------------------
-    // The card docks beside the menu and is centred on the menu's vertical
-    // axis, so ask the real window where it landed instead of guessing a
-    // screen point; then take the model half of it from the card's own
-    // rectangle so the drag cannot land on the title strip.
     ImGuiWindow* espWin = ImGui::FindWindowByName("##raspody_esp_preview");
     if (espWin)
         Check(true, "the floating preview card exists");
@@ -147,7 +122,7 @@ int main()
     ImVec2 modelCenter(modelMin.x + modelSize.x * 0.5f,
                        modelMin.y + modelSize.y * 0.5f);
     if (!espWin || modelSize.x <= 1.0f || modelSize.y <= 1.0f)
-        modelCenter = ImVec2(-FLT_MAX, -FLT_MAX);   // never silently drag elsewhere
+        modelCenter = ImVec2(-FLT_MAX, -FLT_MAX);
     in.pos = modelCenter;
     in.down = false;
     Frame(in);
@@ -165,14 +140,12 @@ int main()
 
     Check(std::fabs(yawAfterDrag - yawBeforeDrag) > 0.05f, "dragging the model rotates it");
 
-    // ---- 3. Search button opens the field ---------------------------------
     raspody::var.tab.current = raspody::var.tab.stored = raspody::Tab_Visuals;
     raspody::ui.searchOpen = false;
     raspody::ui.search[0] = '\0';
     for (int i = 0; i < 3; ++i)
         Frame(in);
 
-    // The search button sits at the right end of the content header.
     Input click;
     Tap(click, ImVec2(1050.0f, 167.0f));
     const bool searchOpened = raspody::ui.searchOpen;
@@ -189,18 +162,16 @@ int main()
     raspody::ClearSearch();
     Frame(click);
 
-    // ---- 4. Breadcrumb walks back one step --------------------------------
     raspody::var.subtab.current = raspody::var.subtab.stored = 1;
     raspody::var.subtab.alpha = 1.0f;
     for (int i = 0; i < 3; ++i)
         Frame(click);
 
     Input back;
-    Tap(back, ImVec2(330.0f, 167.0f));   // the chevron inside the breadcrumb pill
+    Tap(back, ImVec2(330.0f, 167.0f));
 
     Check(raspody::var.subtab.stored == 0, "breadcrumb returns to the first subtab");
 
-    // ---- 5. A second tap goes back to the previous tab --------------------
     raspody::RequestTab(raspody::Tab_Configs);
     for (int i = 0; i < 30; ++i)
         Frame(back);
@@ -217,3 +188,4 @@ int main()
     ImGui::DestroyContext();
     return g_failures ? 1 : 0;
 }
+

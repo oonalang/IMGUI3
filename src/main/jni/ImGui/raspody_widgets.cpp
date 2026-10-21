@@ -86,15 +86,6 @@ namespace raspody
             return avail > 1.0f ? avail : 220.0f;
         }
 
-        // Where the next row starts.
-        //
-        // ImGui resets the cursor's x to the window's content start after every
-        // item (it lays items out as lines), so a row that read the cursor
-        // directly jumped to the child window's left edge after the first row.
-        // Both page columns share that child, which is why every card in the
-        // right column painted itself on top of the left column. Rows inside a
-        // card now take their x from the card frame and only the y from ImGui;
-        // popups stay on the plain cursor because they are their own window.
         void FinishRow(ImVec2 pos, float width, float height)
         {
             ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -131,11 +122,8 @@ namespace raspody
             for (const char* p = text; *p; ++p)
                 out.push_back((char)std::tolower((unsigned char)*p));
         }
-    } // namespace
+    }
 
-    // -------------------------------------------------------------------------
-    // Theme / frame
-    // -------------------------------------------------------------------------
     void Style()
     {
         ImGuiStyle& s = ImGui::GetStyle();
@@ -223,8 +211,6 @@ namespace raspody
         const float dt = ImGui::GetIO().DeltaTime;
         for (auto& popup : g_popups)
         {
-            // A popup whose owning page vanished (tab switch, search filter)
-            // must not leave the blackout active forever.
             if (popup.open && popup.lastRenderedFrame + 2 < g_popupFrame)
                 popup.open = false;
 
@@ -235,9 +221,6 @@ namespace raspody
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Text helpers
-    // -------------------------------------------------------------------------
     ImVec2 TextSize(ImFont* font, float size, const char* text)
     {
         if (!font || !text)
@@ -264,10 +247,7 @@ namespace raspody
             return;
 
         const ImVec2 sz = TextSize(font, size, text);
-        // align.x/align.y are fractions of the *box*: 0 is the min edge, 0.5 the
-        // centre and 1 the max edge. Scaling by the text size instead (the old
-        // form) pushed fractional alignments outside the row, which drew labels
-        // on top of the section heading and clipped them away.
+
         const ImVec2 box(max.x - min.x, max.y - min.y);
         const ImVec2 at(min.x + (box.x - sz.x) * align.x,
                         min.y + (box.y - sz.y) * align.y);
@@ -282,9 +262,6 @@ namespace raspody
                     ImVec2(max.x, (min.y + max.y) * 0.5f), color, 1.0f);
     }
 
-    // -------------------------------------------------------------------------
-    // Vector icons
-    // -------------------------------------------------------------------------
     void DrawTabIcon(ImDrawList* dl, int icon, ImVec2 c, float size, ImU32 color)
     {
         const float h = size * 0.5f;
@@ -416,9 +393,6 @@ namespace raspody
         dl->AddCircleFilled(ImVec2(c.x, c.y + size * 0.34f), size * 0.34f, color, 24);
     }
 
-    // -------------------------------------------------------------------------
-    // Header widgets
-    // -------------------------------------------------------------------------
     void Brand(ImVec2 pos, float height, const char* name, const char* tagline)
     {
         ImFont* titleFont = fonts::body ? fonts::body : ImGui::GetFont();
@@ -442,7 +416,6 @@ namespace raspody
         dl->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height),
                           Col(clr.child, 0.92f), S(20));
 
-        // Brand mark: the accent "E" that opens the ETHNIR wordmark.
         DrawText(dl, logoFont, logoSize,
                  ImVec2(pos.x + left + logoBox * 0.5f, pos.y + height * 0.5f),
                  Col(clr.accent), "E", ImVec2(0.5f, 0.5f));
@@ -576,9 +549,6 @@ namespace raspody
         return pressed;
     }
 
-    // -------------------------------------------------------------------------
-    // Cards
-    // -------------------------------------------------------------------------
     void BeginCard(const char* title, ImVec2 pos, float width)
     {
         CardFrame card;
@@ -674,14 +644,6 @@ namespace raspody
                 Col(clr.layout, 0.95f), Col(clr.layout, 0.95f));
     }
 
-    // -------------------------------------------------------------------------
-    // Row label / description stack
-    //
-    // Rows used to place the label and its description with fractional aligns
-    // of the row box, so with the body font's line height the description landed
-    // on top of the label. Both lines are now measured and stacked, and the row
-    // is at least tall enough for them at any menu scale.
-    // -------------------------------------------------------------------------
     inline float RowTextHeight(ImFont* bodyFont, ImFont* smallFont, const char* label,
                                const char* description, float minHeight)
     {
@@ -713,9 +675,6 @@ namespace raspody
                         ImVec2(max.x, top + stackH), Col(clr.text), description, ImVec2(0.0f, 0.0f));
     }
 
-    // -------------------------------------------------------------------------
-    // Checkbox
-    // -------------------------------------------------------------------------
     bool Checkbox(const char* label, const char* description, bool* value, bool settings)
     {
         if (!value || !MatchesSearch(label, description))
@@ -843,9 +802,6 @@ namespace raspody
         EndPopup();
     }
 
-    // -------------------------------------------------------------------------
-    // Sliders
-    // -------------------------------------------------------------------------
     bool SliderFloat(const char* label, const char* description, float* value,
                      float min, float max, const char* format)
     {
@@ -930,7 +886,6 @@ namespace raspody
         if (!value)
             return false;
 
-        // SliderFloat formats a float; never hand a %d format to it.
         char safeFormat[32] = "%.0f";
         if (format && *format)
         {
@@ -1055,9 +1010,6 @@ namespace raspody
         return active;
     }
 
-    // -------------------------------------------------------------------------
-    // Dropdown
-    // -------------------------------------------------------------------------
     bool Dropdown(const char* label, const char* description, int* current,
                   const char* const* items, int itemCount)
     {
@@ -1144,9 +1096,6 @@ namespace raspody
         return pressed;
     }
 
-    // -------------------------------------------------------------------------
-    // Colour row
-    // -------------------------------------------------------------------------
     bool ColorRow(const char* label, const char* description, float color[4])
     {
         if (!MatchesSearch(label, description))
@@ -1214,9 +1163,6 @@ namespace raspody
         return pressed;
     }
 
-    // -------------------------------------------------------------------------
-    // Popup manager
-    // -------------------------------------------------------------------------
     void OpenPopup(const char* name, ImVec2 pos)
     {
         if (!name)
@@ -1387,9 +1333,6 @@ namespace raspody
         fg->AddRectFilled(ImVec2(holeMax.x, holeMin.y), ImVec2(display.x, holeMax.y), color);
     }
 
-    // -------------------------------------------------------------------------
-    // Lists / small controls
-    // -------------------------------------------------------------------------
     bool Selectable(const char* label, bool selected)
     {
         ImFont* bodyFont = fonts::body ? fonts::body : ImGui::GetFont();
@@ -1499,9 +1442,6 @@ namespace raspody
         return loadPressed || savePressed;
     }
 
-    // -------------------------------------------------------------------------
-    // Search
-    // -------------------------------------------------------------------------
     bool SearchButton(ImVec2 pos, float size, bool open)
     {
         ImGui::PushID("##raspody_search_button");
@@ -1577,9 +1517,6 @@ namespace raspody
         return haystack.find(g_searchQuery) != std::string::npos;
     }
 
-    // -------------------------------------------------------------------------
-    // ESP preview
-    // -------------------------------------------------------------------------
     void SetEspPreview(EspPreviewFn fn)
     {
         g_espPreview = fn;
@@ -1602,3 +1539,4 @@ namespace raspody
                  Col(clr.text2), "ESP preview unavailable", ImVec2(0.5f, 0.5f));
     }
 }
+

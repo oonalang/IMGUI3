@@ -32,18 +32,11 @@
 #include "oxorany/source/oxorany_include.h"
 
 #include "FeedbackService.h"
-// NewFeatures must be visible before MainFeatureIncludes.h: the existing
-// Feats.h firing-timing hooks (Firerate / No Sprint Fire Delay / No Fire
-// Delay) call into NewFeatures::NoFireDelayActive() /
-// NoSprintFireDelayActive() so that each dump address is hooked exactly once.
+
 #include "Hacks/Feature/NewFeatures.h"
 #include "Hacks/Feature/Crosshair.h"
 #include "MainFeatureIncludes.h"
 
-// The Raspody port's pages bind straight to Config / the app's own feature
-// state (Config, SaveConfiguration/LoadConfiguration, NewFeatures, the ESP
-// preview), so it has to be included after MainFeatureIncludes.h instead of
-// with the other ImGui headers above.
 #include "ImGui/raspody_menu.h"
 
 #include <jni.h>
@@ -224,13 +217,7 @@ namespace android::anwcreator::detail::framework
                 if (m) builder = env->CallObjectMethod(builder, m, (jint)f, (jint)mask);
                 return *this;
             }
-            // SurfaceControl.SKIP_SCREENSHOT (0x40, AOSP API 31+) makes the
-            // layer and its children invisible to screenshots, mirroring and
-            // screen recording. It is only reachable through the builder's
-            // private setFlags(int, int) helper (see AOSP SurfaceControl.java),
-            // which JNI can call. Returns true only when the call really
-            // reached the framework, so a caller can refuse to build a
-            // "hidden" overlay that is not hidden at all.
+
             bool SetSkipScreenshot(bool skip) {
                 if (!skip || !builder || !builderClass) return false;
                 constexpr int32_t FLAG_SKIP_SCREENSHOT = 0x40;
@@ -307,10 +294,7 @@ namespace android::anwcreator::detail::framework
                 if (m) transaction = env->CallObjectMethod(transaction, m, c, p);
                 return *this;
             }
-            // Public @hide SurfaceControl.Transaction#setSkipScreenshot
-            // (API 31+): the framework's own way of flagging an existing layer
-            // as screenshot / screen-recording invisible. Returns true when the
-            // method exists on this Android version.
+
             bool SetSkipScreenshot(jobject sc, bool skip) {
                 if (!transaction || !sc) return false;
                 jmethodID m = env->GetMethodID(transactionClass, "setSkipScreenshot",
@@ -423,8 +407,7 @@ namespace android
             if (!parentSC && je.CheckException()) return nullptr;
             anwcreator::detail::framework::SurfaceControl::Builder b(je);
             if (!b.IsValid()) return nullptr;
-            // Format 1 == WINDOW_FORMAT_RGBA_8888 == it can carry per-pixel
-            // alpha, which the overlay needs to stay see-through.
+
             b.SetName(o.name).SetBufferSize(w, h).SetFormat(1).SetOpaque(false);
             const bool skipViaBuilder = b.SetSkipScreenshot(o.skipScreenshot);
             if (parentSC) b.SetParent(parentSC);
@@ -490,7 +473,6 @@ namespace android
             return true;
         }
 
-        // True only when the layer really carries SurfaceControl.SKIP_SCREENSHOT.
         static bool SkipScreenshotApplied(ANativeWindow *nw) {
             auto it = m_windowContexts.find(nw);
             return it != m_windowContexts.end() && it->second->skipScreenshotApplied;
@@ -577,8 +559,6 @@ namespace android {
 HideRecAImGui::HideRecAImGui(const Options& o):m_options(o){}
 HideRecAImGui::~HideRecAImGui(){UnInitEnvironment();}
 
-// WINDOW_FORMAT_RGBA_8888 == AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM == 1;
-// no other Android window format carries an alpha channel.
 static bool HideRecConfigIsTranslucent(EGLDisplay d, EGLConfig cfg) {
     if (d == EGL_NO_DISPLAY || !cfg) return false;
     EGLint alpha = 0, visual = 0;
@@ -589,12 +569,7 @@ static bool HideRecConfigIsTranslucent(EGLDisplay d, EGLConfig cfg) {
 
 EGLConfig HideRecAImGui::FindConfig(EGLDisplay d, EGLContext gc) {
     (void)gc;
-    // The overlay is composited ON TOP of the game, so every pixel ImGui does
-    // not draw stays (0,0,0,0) and has to blend through to the game. A config
-    // without an alpha channel turns those pixels into opaque black and the
-    // overlay blacks the whole display out - that is the "Hide Stream black
-    // screen". Do NOT inherit the game's EGLConfig here: the game draws to an
-    // opaque window, so its config usually has EGL_ALPHA_SIZE == 0.
+
     if (d == EGL_NO_DISPLAY) return nullptr;
     const EGLint attrs[] = {
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
@@ -626,9 +601,7 @@ bool HideRecAImGui::InitEnvironment(EGLDisplay d, EGLContext gc, int32_t w, int3
     o.name = "HideRecSecure"; o.width = w; o.height = h; o.skipScreenshot = m_options.skipScreenshot;
     m_nativeWindow = ANwCreator::Create(m_options.activity, o);
     if (!m_nativeWindow) return false;
-    // SKIP_SCREENSHOT needs Android 12 (API 31) or newer. Without it the
-    // overlay hides nothing and would only sit above the game, so bail out and
-    // let the caller draw the menu normally instead.
+
     if (m_options.skipScreenshot && !ANwCreator::SkipScreenshotApplied(m_nativeWindow)) {
         LOGW("Hide Stream: SKIP_SCREENSHOT unavailable (needs Android 12+); drawing the menu normally");
         UnInitEnvironment();
@@ -644,8 +617,7 @@ bool HideRecAImGui::InitEnvironment(EGLDisplay d, EGLContext gc, int32_t w, int3
     EGLint fmt = 0;
     if (eglGetConfigAttrib(m_display, cfg, EGL_NATIVE_VISUAL_ID, &fmt) != EGL_TRUE) { UnInitEnvironment(); return false; }
     ANativeWindow_setBuffersGeometry(m_nativeWindow, w, h, fmt);
-    // Last line of defence against the black screen: never present a window
-    // that cannot carry alpha, whatever the driver claims about the config.
+
     if (fmt != 1 || ANativeWindow_getFormat(m_nativeWindow) != 1) {
         LOGW("Hide Stream: overlay window format %d/%d is not RGBA_8888; drawing the menu normally",
              (int)fmt, (int)ANativeWindow_getFormat(m_nativeWindow));
@@ -654,11 +626,7 @@ bool HideRecAImGui::InitEnvironment(EGLDisplay d, EGLContext gc, int32_t w, int3
     }
     m_surface = eglCreateWindowSurface(m_display, cfg, m_nativeWindow, nullptr);
     if (m_surface == EGL_NO_SURFACE) { UnInitEnvironment(); return false; }
-    // The overlay context MUST live in the game context's share group: ImGui's
-    // shader program, font texture and vertex/index buffers were created on the
-    // game context, and GL object handles are not portable between unshared
-    // contexts. Rendering there without sharing draws nothing at all (the
-    // silently empty overlay), so a failed share is a hard failure.
+
     const EGLint ctxAttrs[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
     m_overlayContext = eglCreateContext(m_display, cfg, gc, ctxAttrs);
     if (m_overlayContext == EGL_NO_CONTEXT) {
@@ -704,9 +672,7 @@ bool HideRecAImGui::RenderDrawData(ImDrawData* dd, EGLDisplay gd, EGLSurface gs,
     glClearColor(0.f, 0.f, 0.f, 0.f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(dd);
-    // Diagnostic: an error here means the overlay context cannot use ImGui's
-    // GL objects (share group refused by the driver, ...). Report it once
-    // instead of silently presenting an empty overlay.
+
     GLenum glErr = glGetError();
     if (glErr != GL_NO_ERROR) {
         static bool loggedOnce = false;
@@ -847,7 +813,7 @@ bool ClearDisplay = false;
 bool ShowFPS;
 bool SnowB = false;
 bool HIDEESP = false;
-bool UnlimitedFly = false;   // <-- Unlimited Fly toggle
+bool UnlimitedFly = false;
 float SnowBsize = 0.0f;
 bool isSpeedHackEnabled = false;
 float speedHackMultiplier = 1.0f;
@@ -896,14 +862,10 @@ static EGLSurface g_imguiSurface = EGL_NO_SURFACE;
 static bool g_imguiBackendReady = false;    struct My_Patches {
     MemoryPatch A1, grap, NoCrouch, SpeedhackX, SpeedhackX1, NoWingsuit, fpss, frame;
     MemoryPatch NoHitFlinch, NoDrift;
-    // 8-byte leaf getters - they can never be inline-hooked, see Feats.h /
-    // NewFeatures.h: A64 hooking writes a 16-byte stub in place and would take
-    // the *next* function in libunity.so with it.
+
     MemoryPatch Em3Eye, KineticArmor;
     MemoryPatch NoHipfireUseGetReadyTime, NoHipfireSpringFireGetReady;
-    // No Slide Fatigue: get_UseSlideTackleLimit is an 8-byte leaf getter whose
-    // next function is LimitSlideTackle(), so it must be a byte patch, never an
-    // inline hook (see the NewFeatures.h note). Pve = the arcade/PVE override.
+
     MemoryPatch NoSlideFatigue, NoSlideFatiguePve;
 } Patches;
 
@@ -946,8 +908,6 @@ static char s[256];
 static bool g_LoginTextLoaded = false;
 static bool g_raspodyOpen = true;
 
-
-
 std::vector<sRegion> trapRegions;
 uintptr_t address = 0;
 std::string md5(std::string s);
@@ -958,21 +918,8 @@ int TABG = 1;
 
 EGLBoolean (*old_eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
 
-// The floating ESP card itself lives in ImGui/esp_preview.h so the shipped
-// code can be rendered and input-tested on a host (see ImGui/tests/). It is
-// included here, not at the top, because it reads Config.
 #include "ImGui/esp_preview.h"
 
-// ---------------------------------------------------------------------------
-// Menu feature patches - the toggles on the LANX "Exploits" page apply their
-// patch here (this block used to live inside the pre-LANX menu shell).
-//
-// A1 / NoCrouch are re-asserted every frame; KittyMemory skips the write while
-// the patched state already matches. The newer targets are EDGE-TRIGGERED:
-// write once on state change, never while idle, because libanogs periodic
-// integrity scans flagged the per-frame rewrites on those (~40s delayed
-// crash). The applied flags only flip when the write actually succeeded.
-// ---------------------------------------------------------------------------
 static void ApplyMenuFeaturePatches()
 {
     if (Config.ExtraMenu.WallHack) Patches.A1.Modify();
@@ -1070,8 +1017,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         F50 = io.Fonts->AddFontFromMemoryTTF((void *)F50_data, F50_size, 30.0f, NULL, io.Fonts->GetGlyphRangesDefault());
         if (!F107) F107 = font::inter_semibold;
         if (font::inter_semibold) io.FontDefault = font::inter_semibold;
-        // Poppins for the login card (ImGui/login_screen.h). Loaded after
-        // FontDefault so its fallback chain lands on Inter, not the built-in.
+
         login_screen::LoadFonts(io);
         raspody::LoadFonts();
         raspody::Style();
@@ -1094,9 +1040,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         Config.sColorsESPOTHERS.PovOTHERS = CREATE_COLOR(225, 0, 0, 180);
         Config.ExtraMenu.NoGravityScale = 1.0f;
         Config.ExtraMenu.StretchAspect = 1.7778f;
-        // Defaults that the memset above would otherwise wipe.
-        // "Blueprint" (MythicAttachments) is deliberately not forced here: it is
-        // OFF by default and stays off unless the player turns it on.
+
         Config.ExtraMenu.Attachment = true;
         Config.ExtraMenu.BlockReportEvidence = true;
         Config.Crosshair.Enabled = true;
@@ -1126,15 +1070,9 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
     DrawESP(ImGui::GetBackgroundDrawList(), screenWidth, screenHeight, get_dpi());
-    // Own dot crosshair, on the same draw list as the ESP (over the game, under
-    // the menu). It is drawn at the exact point the triggerbot aims through.
+
     DrawDotCrosshair(ImGui::GetBackgroundDrawList(), screenWidth, screenHeight);
-    // Mythic kill icon for the LOCAL player's held weapon. The in-match HUD
-    // reads it from the weapon's InventoryInfo record (Weapon : Inventory,
-    // m_InventoryInfo @0x98), so filling that in is what makes an applied mythic
-    // skin show its kill icon - independently of whether the game calls (and
-    // trusts) the getter hooks. Runs once per rendered frame and only writes
-    // when the value actually differs.
+
     KillDecoration_ApplyLocalInventoryInfo();
     floating_info::Render(draw, screenWidth, screenHeight);
 
@@ -1229,25 +1167,10 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
         if (!isLogin && !ui_loading::IsActive()) {
-            // The login screen is a page, not a card: it takes the whole render
-            // surface and draws its own panel inside it, the way the cloudy-ui
-            // reference does. Presentation lives in ImGui/login_screen.h; the
-            // auth flow below is unchanged.
             const float WW = ioDisplaySize.x;
             const float WH = ioDisplaySize.y;
             const ImVec2 origin(0.0f, 0.0f);
 
-            // Artwork: IMAGE/miku.h, the girl off the reference login page.
-            // Decoded on the first login frame - the GL context is current here
-            // - and kept while that context lives. The pixel size comes back
-            // from the decode because GLES3's gl3.h has no GL_TEXTURE_WIDTH.
-            //
-            // The context is part of the key, not just "is there a texture yet":
-            // a texture name belongs to the context that made it, and the swap
-            // hook rebuilds the ImGui backend when the game hands it a different
-            // one (rotation, resume, the hidden overlay surface). A cached name
-            // from the old context still looks valid to this code and to ImGui,
-            // but samples nothing - which is a login panel with no picture on it.
             static GLuint loginArtTex = 0;
             static int loginArtW = 0, loginArtH = 0;
             static EGLContext loginArtCtx = EGL_NO_CONTEXT;
@@ -1270,7 +1193,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings |
                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
                 ImGuiWindowFlags_NoMove)) {
-
                 static bool revealKey = false;
                 static bool rememberKey = true;
 
@@ -1289,8 +1211,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
                 const login_screen::Result loginUi = login_screen::Render(lp);
 
-                // The title bar's X folds the screen away; the collapse bar at
-                // the bottom of the display brings it straight back.
                 if (loginUi.close) {
                     windowCollapsed = true;
                 }
@@ -1328,11 +1248,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             float openAlpha = 0.2f + 0.8f * openEase;
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, openAlpha);
 
-            // Position and size both come from the display, so the window fits
-            // whatever the render surface is (ImGui/menu_layout.h). The login
-            // panel draws itself in this same rectangle - ComputeMenuWindow is
-            // what keeps the two identical, rather than two copies of the
-            // 900x592 cap.
             const MenuWindow menuWin = ComputeMenuWindow(ioDisplaySize);
 
             ImGui::SetNextWindowPos(menuWin.pos, ImGuiCond_Always, ImVec2(0.0f, 0.0f));
@@ -1342,8 +1257,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             raspody::SetEspPreview(&esp_preview::Draw);
             raspody::Render(&g_raspodyOpen);
 
-            // The Raspody header's minimize control collapses the panel to the
-            // thin restore bar drawn above (tap the bar to bring it back).
             if (raspody::minimize_requested)
             {
                 raspody::minimize_requested = false;
@@ -1390,8 +1303,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     ApplyWorldVisualsRuntime();
     ApplyStretchScreen(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
 
-    // Menu toggles that write game memory, applied every frame so they hold
-    // with the menu closed too.
     ApplyMenuFeaturePatches();
 
     auto currentTime = std::chrono::steady_clock::now();
@@ -1414,19 +1325,12 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             rendered = ZEL_Render(ImGui::GetDrawData(), dpy, surface, gameCtx,
                                   (android::HideRecAImGui::SwapBuffersFn)old_eglSwapBuffers);
         }
-        // ZEL_Render swaps its own overlay surface. When it cannot present the
-        // menu there (Android < 12, no translucent EGL config, layer/context
-        // creation failed, ...) the layer has to go BEFORE the visible fallback
-        // below: a half initialised overlay is exactly what blacks the whole
-        // screen out, and it would also cover the menu the fallback draws.
+
         if (!rendered) ZEL_Shutdown();
     }
     if (!rendered) {
-        // Match variant-3 behavior: tear down any stale overlay environment
-        // when returning to the visible path, so the hidden surface never
-        // lingers in the display hierarchy.
         if (ZEL_IsReady()) ZEL_Shutdown();
-        // Fallback: render ImGui directly on the game's context (visible menu)
+
         EGLContext activeCtx = eglGetCurrentContext();
         if (g_imguiBackendReady && activeCtx != EGL_NO_CONTEXT &&
             (g_imguiDisplay != dpy || g_imguiContext != activeCtx)) {
@@ -1441,11 +1345,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             rendered = true;
         }
     }
-    // IMPORTANT: The original eglSwapBuffers must be called EXACTLY ONCE per
-    // frame. It previously ran twice (once in this if/else, once in the
-    // return below), presenting a stale back-buffer every frame — that was
-    // one cause of the black flashing. ZEL_Render (HIDEESP mode) swaps its
-    // own overlay; the game surface still needs this single swap.
+
     feedback::PumpAfterRender();
     return old_eglSwapBuffers(dpy, surface);
 }
@@ -1466,54 +1366,18 @@ void Init_Thread() {
     Patches.A1 = MemoryPatch::createWithHex("libunity.so", 0x8D781DC, "1F 20 03 D5 E0 03 13 AA");
     Patches.NoCrouch = MemoryPatch::createWithHex("libunity.so", 0x511F50C, "00 00 80 D2 C0 03 5F D6");
     Patches.NoWingsuit = MemoryPatch::createWithHex("libunity.so", 0x54A12F4, "00 00 80 D2 C0 03 5F D6");
-    
-
 
     Patches.NoHitFlinch = MemoryPatch::createWithHex("libunity.so", 0xC9C0EDC,
         "00 00 80 D2 C0 03 5F D6");
 
-    // No Drift (Hardscope): kill the breathing/sway tick outright.
-    // Dump.cs (GR .57, WeaponFireComponent_Instant, TypeDefIndex 16555):
-    //   RVA 0xC9BE4C0  private void UpdateBreatheTrembling(float dt)
-    // Returning immediately means m_AimmingBreatheCountDown (field @ 0x774)
-    // never accumulates, so the scope never drifts - far safer than hooking
-    // the shared Tick(0xC9C0B64), whose Dobby trampoline corrupted the game.
     Patches.NoDrift = MemoryPatch::createWithHex("libunity.so", 0xC9BE4C0,
         "00 00 80 D2 C0 03 5F D6");
 
-    // No Slide Fatigue: force SlideTackleComponent::get_UseSlideTackleLimit()
-    // (0x8BF722C, Slot 39) and the PVEArcadeSlideTackleComponent override
-    // (0x651274C) to return false. Both are 8-byte leaf getters - the next
-    // function in .text starts immediately after them, so they are byte patches
-    // ("mov w0,#0 ; ret"), exactly like the set above, and never inline hooks.
-    // false = the component ignores the slide-tackle limit, which is the whole
-    // fatigue system (LimitSlideTackle reduces slide speed/distance as slides
-    // are chained), so slides keep their full length instead of decaying.
     Patches.NoSlideFatigue = MemoryPatch::createWithHex("libunity.so", 0x8BF722C,
         "00 00 80 D2 C0 03 5F D6");
     Patches.NoSlideFatiguePve = MemoryPatch::createWithHex("libunity.so", 0x651274C,
         "00 00 80 D2 C0 03 5F D6");
 
-    // ------------------------------------------------------------------
-    //  8-byte leaf getters: PATCHED, never hooked.
-    //
-    //  GR .57 dump sizes (jeudhehs/dump, "dump (GR .57).cs"); every one of
-    //  these functions is exactly 8 bytes (ldrb/ldr w0,[x0,#..] ; ret) and the
-    //  function that follows it in .text starts 8 bytes later:
-    //    get_IsInEM3Eye          @0x9677554 -> set_IsInEM3Eye @0x967755C
-    //    get_IsKineticArmor      @0x51B3D64 -> Pawn::get_CurrentSeatMode
-    //                                          @0x51B3D6C (virtual, 0xAC bytes)
-    //    get_UseGetReadyTime     @0x50E9F60 -> set_UseGetReadyTime @0x50E9F68
-    //    get_SpringFireGetReady  @0x50E9F28 -> set_SpringFireGetReady @0x50E9F30
-    //
-    //  A64HookFunction (hook()/HOOK_LIB) replaces the target with a 16-byte
-    //  "ldr x17,#8 ; br x17 ; .quad <hook>" stub whenever the replacement is
-    //  further than +/-128MB away, i.e. it overwrites the following 8 bytes -
-    //  the neighbouring setter / virtual seat query. Those neighbours are
-    //  called by the game while it initialises weapon + pawn state, which is
-    //  what made the client crash as soon as a match was joined. Patching
-    //  exactly 8 bytes cannot reach the neighbour. "00 00 80 D2 C0 03 5F D6"
-    //  = mov x0,#0 ; ret (false), "20 00 80 D2 C0 03 5F D6" = mov x0,#1 ; ret.
     Patches.Em3Eye = MemoryPatch::createWithHex("libunity.so", 0x9677554,
         "20 00 80 D2 C0 03 5F D6");
     Patches.KineticArmor = MemoryPatch::createWithHex("libunity.so", 0x51B3D64,
@@ -1523,15 +1387,6 @@ void Init_Thread() {
     Patches.NoHipfireSpringFireGetReady = MemoryPatch::createWithHex("libunity.so", 0x50E9F28,
         "00 00 80 D2 C0 03 5F D6");
 
-    // Dump-verified (both dump.cs and dump (GR .57).cs from the jeudhehs/dump
-    // dataset): CreateBulletLine @ 0xC9B6F90, CreateBulletProjectile @ 0xC9C33A4.
-    // Too small to hook safely: Tick @ 0xC9C0B64, ChangePunchAngleByGetHit @
-    // 0xC9C0EDC, UpdateBreatheTrembling @ 0xC9BE4C0 - those use memory patches.
-    // Installed through Tools::Hook (mprotect PROT_READ|WRITE|EXEC, THEN
-    // DobbyHook) like every other game hook in this file. These two used to be
-    // the only bare DobbyHook calls in Main.cpp, and on a libunity.so whose
-    // .text is mapped read-only they silently did not land - Bullet Track then
-    // had no hook at all and nothing about the shot changed.
     void *bulletLineAddr = (void *)getAbsoluteAddress("libunity.so", 0xC9B6F90);
     if (Tools::IsPtrValid(bulletLineAddr)) {
         Tools::Hook(bulletLineAddr, (void *)&WeaponFireComponent_Instant_CreateBulletLine,
@@ -1551,8 +1406,6 @@ void Init_Thread() {
         LOGE("BulletTrack: CreateBulletProjectile RVA 0xC9C33A4 did not resolve");
     }
 
-    // NewFeatures: Weapon::Tick / Pawn::Tick hooks + 8-byte patches - the
-    // dump-verified targets and citations live in NewFeatures.h.
     NewFeatures::InstallHooks();
 
     InstallBRClassEspConfigHook();
@@ -1608,7 +1461,6 @@ Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x4
 
 __attribute__((constructor))
 	void native_Init(JNIEnv *env, jclass clazz, jobject mContext) {
-	    // DevBypass removed: login bypass was an undocumented backdoor. Auth via the panel only.
 	}
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
@@ -1619,3 +1471,4 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     std::thread(Skins_Thread).detach();
     return JNI_VERSION_1_6;
 }
+

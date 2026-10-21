@@ -25,3 +25,4 @@ inline void SetLogoSizeMultiplier(float size)
 }
 
 #endif
+

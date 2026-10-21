@@ -17,7 +17,6 @@ struct FeedbackState {
 };
 
 namespace feedback {
-
 FeedbackState& State();
 
 bool HasHardcodedBotToken();
@@ -27,5 +26,5 @@ bool IsSending();
 void GetStatus(std::string& outText, bool& outIsError);
 void StartSendAsync(const FeedbackState& snapshot, const std::string& filesDirPath);
 void PumpAfterRender();
-
 }
+

@@ -1,19 +1,5 @@
 #pragma once
 
-// ---------------------------------------------------------------------------
-// Floating ESP character preview card.
-//
-// The character is the software-3D mesh from ImGui/esp_model_preview.h. This
-// file paints the glass card around it, owns the touch handling (drag to spin,
-// double tap to re-centre) and overlays the live ESP decorations (box / health
-// / name / distance / skeleton / line) on the projected silhouette, so every
-// toggle shows up on the preview immediately.
-//
-// It lives in a header rather than in Main.cpp so the exact shipped code can be
-// rendered and input-tested headlessly (see ImGui/tests/). Include it after
-// MainFeatureIncludes.h / Init_Hacks.h: it reads Config.
-// ---------------------------------------------------------------------------
-
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
@@ -23,9 +9,6 @@
 
 namespace esp_preview
 {
-    // The area the 3D model owns inside the card: everything below the title
-    // strip and above the bottom hint. The card draws the model there and the
-    // spin button is registered on it, so both use this one rectangle.
     inline void ModelArea(ImVec2 pos, float width, float height, ImVec2& outMin, ImVec2& outSize)
     {
         const float pad = 9.0f;
@@ -45,10 +28,6 @@ namespace esp_preview
     const ImVec2 cardMax(pos.x + width, pos.y + height);
     const float cardRounding = 14.0f;
 
-    // Glass card: solid base plus one vertical accent wash. The wash used to be
-    // a half-height rect with left/right stops and square corners, which read as
-    // a stray band across the top of the card instead of a gradient; it now
-    // spans the card and shares its rounding.
     draw->AddRectFilled(cardMin, cardMax, IM_COL32(14, 15, 20, 242), cardRounding);
     draw->AddRectFilledMultiColor(cardMin, cardMax,
         IM_COL32(168, 104, 255, 52), IM_COL32(168, 104, 255, 40),
@@ -181,4 +160,5 @@ namespace esp_preview
             ImVec2(cardMin.x + (width - hs.x) * 0.5f, cardMax.y - hintH + 3.0f),
             IM_COL32(140, 134, 140, 190), bottomHint);
     }    }
-} // namespace esp_preview
+}
+

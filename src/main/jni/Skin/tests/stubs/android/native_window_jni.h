@@ -1,5 +1,3 @@
-// Minimal stand-in for the NDK's <android/native_window_jni.h>. Host syntax
-// checks only - see android/native_window.h next to this file.
 #pragma once
 
 #include <jni.h>
@@ -16,3 +14,4 @@ void ANativeWindow_release(ANativeWindow *window);
 #ifdef __cplusplus
 }
 #endif
+

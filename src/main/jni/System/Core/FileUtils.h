@@ -120,9 +120,9 @@ bool LoadTextFromFile() {
     }
 
     std::string textfile = filesDir + "/codm.ini";
-    std::ifstream file(textfile.c_str()); 
+    std::ifstream file(textfile.c_str());
     std::stringstream buffer;
-    
+
     if (file.is_open()) {
         buffer << file.rdbuf();
         file.close();
@@ -135,3 +135,4 @@ bool LoadTextFromFile() {
 }
 
 #endif
+

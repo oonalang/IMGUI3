@@ -109,10 +109,8 @@ namespace custom
             ImFont* titleFont = GetTitleFont();
             const float titleFontSize = (titleFont == F50) ? 24.0f : titleFont->FontSize * 1.45f;
 
-            // Support "Static|Accent" split-color titles
             const char* pipe = title ? strchr(title, '|') : nullptr;
             if (pipe != nullptr) {
-                // Render left part (static white)
                 const ImVec2 leftSize = titleFont->CalcTextSizeA(titleFontSize, FLT_MAX, 0.0f, title, pipe);
                 const float totalW = [&]() {
                     const char* after = pipe + 1;
@@ -122,7 +120,6 @@ namespace custom
                 const float startX = min.x + 14.0f;
                 const float textY   = min.y + (size.y - leftSize.y) * 0.5f - 1.0f;
 
-                // "Zenx" — static warm white
                 drawList->AddText(
                     titleFont, titleFontSize,
                     ImVec2(startX, textY),
@@ -130,7 +127,6 @@ namespace custom
                     title, pipe
                 );
 
-                // "Veld" — accent color with a soft text glow
                 const char* accentPart = pipe + 1;
                 const ImVec2 accentTextSize = titleFont->CalcTextSizeA(titleFontSize, FLT_MAX, 0.0f, accentPart);
                 const float accentX = startX + leftSize.x;
@@ -139,7 +135,7 @@ namespace custom
                     (int)(acc.x * 255), (int)(acc.y * 255),
                     (int)(acc.z * 255), 255
                 );
-                // Soft glow: two blurred shadow layers behind the accent text
+
                 const ImU32 glowCol1 = IM_COL32(
                     (int)(acc.x * 255), (int)(acc.y * 255),
                     (int)(acc.z * 255), 55
@@ -160,7 +156,6 @@ namespace custom
                 drawList->AddText(titleFont, titleFontSize,
                     ImVec2(accentX, textY), accentCol, accentPart);
             } else {
-                // Fallback: plain single-color title
                 const ImVec2 titleSize = titleFont->CalcTextSizeA(titleFontSize, FLT_MAX, 0.0f, title);
                 drawList->AddText(
                     titleFont, titleFontSize,
@@ -279,7 +274,6 @@ namespace custom
             return clicked;
         }
     }
-
 
     const char* keys[] =
     {
@@ -589,7 +583,6 @@ namespace custom
         if (hovered && io.MouseClicked[0])
         {
             if (g.ActiveId != id) {
-
                 memset(io.MouseDown, 0, sizeof(io.MouseDown));
                 memset(io.KeysDown, 0, sizeof(io.KeysDown));
                 *key = 0;
@@ -598,7 +591,6 @@ namespace custom
             ImGui::FocusWindow(window);
         }
         else if (io.MouseClicked[0]) {
-
             if (g.ActiveId == id)
                 ImGui::ClearActiveID();
         }
@@ -1321,7 +1313,7 @@ namespace custom
         if (!ItemAdd(bb, id)) return false;
 
         bool hovered, held, pressed = ButtonBehavior(bb, id, &hovered, &held, NULL);
-        
+
         custom::Checkbox(label, v);
 
         PushFont(font::icomoon_page);
@@ -1512,11 +1504,6 @@ namespace custom
 
         if (!popup_open && it_anim->second.combo_size < 2.f && it_anim->second.popup_alpha < 0.04f) return false;
 
-        // Keep the popup on the screen. It opens below the field, which for a
-        // list near the bottom of the (now taller) menu - the Target Character
-        // dropdown on the Character tab - used to run straight off the display,
-        // where none of its rows could be reached. It flips ABOVE the field when
-        // the room below is not enough for its full height.
         const ImVec2 popup_disp = GetIO().DisplaySize;
         const float popup_h_target = ImMin(ImMax(it_anim->second.combo_size, popup_target),
                                            ImMax(1.0f, popup_disp.y - 8.0f));
@@ -1528,10 +1515,7 @@ namespace custom
         ImGui::SetNextWindowPos(popup_pos);
         ImGui::SetNextWindowSize(ImVec2(field_bb.GetWidth(), ImMax(1.0f, it_anim->second.combo_size)));
         ImGui::SetNextWindowBgAlpha(0.90f * ImMax(0.0f, it_anim->second.popup_alpha));
-        // Scrollable. The list is far longer than this panel (hundreds of
-        // characters), and with the scrollbar and the mouse wheel disabled the
-        // rows past the first ~7 were simply unreachable - which is why a target
-        // character that was not near the top of the list could not be picked.
+
         ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove;
 
         PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.0f, 0.0f, 0.0f, 0.90f));
@@ -2743,5 +2727,5 @@ namespace custom
     {
         return SliderScalar(label, ImGuiDataType_S32, v, &v_min, &v_max, format, flags);
     }
-
 }
+

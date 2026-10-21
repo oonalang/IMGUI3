@@ -86,3 +86,4 @@ inline void ApplyNoGravityRuntime()
     *(float*)((uintptr_t)pawn + NoGravityCfg::LocalGravity) = gravity;
     wasOn = true;
 }
+

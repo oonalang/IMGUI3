@@ -55,8 +55,6 @@ enum class SkinTier {
     Rare
 };
 
-// Skin/Thread.h GetRarityPrefix tags: 5=[M], 4=[L], 3=[E], 2=[R], 1=[U], else [C]
-// (the game's quality colors: red/gold/purple/blue/green/white).
 static SkinTier DetectSkinTier(const std::string& rawName) {
     if (rawName.find("[M]") != std::string::npos || rawName.find("[MYTHIC]") != std::string::npos) return SkinTier::Mythic;
     if (rawName.find("[L]") != std::string::npos || rawName.find("[LEGENDARY]") != std::string::npos) return SkinTier::Legendary;
@@ -67,7 +65,6 @@ static SkinTier DetectSkinTier(const std::string& rawName) {
     return SkinTier::None;
 }
 
-// 0 = show everything; otherwise only entries tagged with that quality.
 static std::string RarityFilterTag(int filter) {
     switch (filter) {
         case 1: return "[M]";
@@ -84,8 +81,7 @@ static bool RarityFilterPass(const std::string& name, int filter) {
     const std::string tag = RarityFilterTag(filter);
     if (tag.empty()) return true;
     if (name.find(tag) != std::string::npos) return true;
-    // Tagless entries (a tier whose ColorID was unknown at load time) show up
-    // under the Common filter instead of vanishing.
+
     return filter == 6 && DetectSkinTier(name) == SkinTier::None;
 }
 
@@ -231,14 +227,14 @@ static bool DrawTieredSkinCheckbox(const char* label, bool* value, std::function
     std::string rawLabel = label;
     const SkinTier tier = DetectSkinTier(rawLabel);
     const std::string cleanLabel = StripTierTag(rawLabel);
-    
+
     ImGui::PushID(label);
-    
+
     const bool pressed = custom::Checkbox("##skin_checkbox", value);
     if (pressed && applySkin) {
-        applySkin(); 
+        applySkin();
     }
-    
+
     const bool hovered = ImGui::IsItemHovered();
     const ImVec2 rowMin = ImGui::GetItemRectMin();
     const ImVec2 rowMax = ImGui::GetItemRectMax();
@@ -247,7 +243,7 @@ static bool DrawTieredSkinCheckbox(const char* label, bool* value, std::function
     ImFont* labelFont = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
     const float labelSize = labelFont->FontSize * 0.84f;
 
-    float currentX = rowMin.x + 35.0f * su; 
+    float currentX = rowMin.x + 35.0f * su;
 
     if (tier != SkinTier::None) {
         const char* badgeText = "";
@@ -268,8 +264,8 @@ static bool DrawTieredSkinCheckbox(const char* label, bool* value, std::function
             badgeFg = IM_COL32(227, 196, 255, 250);
         } else if (tier == SkinTier::Common) {
             badgeText = "COMMON";
-            badgeBg = IM_COL32(23, 74, 40, 200);     
-            badgeFg = IM_COL32(74, 222, 128, 255);    
+            badgeBg = IM_COL32(23, 74, 40, 200);
+            badgeFg = IM_COL32(74, 222, 128, 255);
         } else if (tier == SkinTier::Rare) {
             badgeText = "RARE";
             badgeBg = IM_COL32(16, 62, 96, 190);
@@ -279,7 +275,7 @@ static bool DrawTieredSkinCheckbox(const char* label, bool* value, std::function
             badgeBg = IM_COL32(38, 68, 22, 190);
             badgeFg = IM_COL32(163, 230, 53, 250);
         }
-        
+
         const ImVec2 badgeTextSize = labelFont->CalcTextSizeA(labelSize, FLT_MAX, 0.0f, badgeText);
         const float badgePadX = 6.0f * su;
         const float badgePadY = 2.0f * su;
@@ -292,12 +288,12 @@ static bool DrawTieredSkinCheckbox(const char* label, bool* value, std::function
         dl->AddRectFilled(badgeMin, badgeMax, badgeBg, 4.0f * su);
         dl->AddText(labelFont, labelSize, ImVec2(badgeMin.x + badgePadX, badgeMin.y + badgePadY), badgeFg, badgeText);
 
-        currentX += badgeW + (6.0f * su); 
+        currentX += badgeW + (6.0f * su);
     }
-    
+
     const ImVec2 nameSize = labelFont->CalcTextSizeA(labelSize, FLT_MAX, 0.0f, cleanLabel.c_str());
     const float nameY = rowMin.y + (rowMax.y - rowMin.y - nameSize.y) * 0.5f;
-    
+
     dl->AddText(
         labelFont,
         labelSize,
@@ -305,7 +301,7 @@ static bool DrawTieredSkinCheckbox(const char* label, bool* value, std::function
         hovered ? IM_COL32(240, 232, 248, 255) : IM_COL32(236, 240, 246, 255),
         cleanLabel.c_str()
     );
-    
+
     ImGui::PopID();
     return pressed;
 }
@@ -334,20 +330,19 @@ inline void SelectSnowboardSkin(int skinId)
 }
 
 inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = false) {
-
     ImGui::BeginChild("SkinContent", ImVec2(0, 0));
     ImGui::Dummy(ImVec2(0, 8 * c::scale));
-    
+
     if (drawSubTabs) {
         const float tabSpacing = 8.0f * c::scale;
         const float tabHeight = 34.0f * c::scale;
-        // Pinalitan ang / 5.0f ng / 6.0f para magkasya ang 6 na sub-tabs sa isang linya
+
         const float tabWidth = ImMax(32.0f, (ImGui::GetContentRegionAvail().x - tabSpacing * 6.0f) / 7.0f);
         ImFont* subTabFont = font::inter_semibold ? font::inter_semibold : F50;
-        
+
         if (subTabFont) ImGui::PushFont(subTabFont);
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(tabSpacing, tabSpacing));
-        
+
         if (custom::Page(skinSubTab == 0, "Character", ImVec2(tabWidth, tabHeight), false, false)) skinSubTab = 0;
         ImGui::SameLine();
         if (custom::Page(skinSubTab == 1, "Watch", ImVec2(tabWidth, tabHeight), false, false)) skinSubTab = 1;
@@ -369,19 +364,18 @@ inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = fals
     static bool charSearchWasActive = false;
     bool charActive = false;
     bool charHovered = false;
-    
+
     ImGui::Indent(10.0f);
     float totalAvail = ImGui::GetContentRegionAvail().x - 20.0f;
     float halfWidth = (totalAvail - 10.0f) * 0.5f;
     float searchWidth = (skinSubTab == 0) ? halfWidth : totalAvail;
-    
-    // One search field for the tab; on the Camo sub-tab it is the camo search.
+
     ImGui::TextColored(c::text::text_active, skinSubTab == 5 ? "Search Camo:" : "Search Skin:");
     if (skinSubTab == 0) {
         ImGui::SameLine(halfWidth + 20.0f);
         ImGui::TextColored(c::text::text_active, "Search Custom Char:");
     }
-    
+
     ImGui::AstralInput("##SearchSkin", searchQuery, IM_ARRAYSIZE(searchQuery), ImVec2(searchWidth, 50));
     bool skinClicked = ImGui::IsItemClicked();
     bool skinActive  = ImGui::IsItemActive();
@@ -391,7 +385,7 @@ inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = fals
         showKeyboard = true;
     }
     skinSearchWasActive = skinActive;
-    
+
     if (skinSubTab == 0) {
         ImGui::SameLine(0.0f, 10.0f);
         ImGui::AstralInput("##SearchCustomChar", charSearchQuery, IM_ARRAYSIZE(charSearchQuery), ImVec2(halfWidth, 50));
@@ -404,23 +398,8 @@ inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = fals
         }
         charSearchWasActive = charActive;
     }
-        
-    // (The "tap outside the keyboard closes it" test used to live here. It ran
-    // off the search box's own IsItemActive(), so while the box was active - i.e.
-    // always, while typing - it never fired, and its 0.60f panel height did not
-    // even match the keyboard's 0.56f. RenderVirtualKeyboard owns it now, on the
-    // panel's real rect.)
 
-    // ---- Rarity filter (applies to every skin sub-tab; tag-based) -----------
-    // Drawn with the menu's own combo widget. The stock ImGui::BeginCombo drew
-    // its frame in the default (dark, transparent-over-black) colours this fork
-    // themes away, so on device the row read as a bare "Filter:" label with an
-    // invisible control next to it. custom::Combo is the same control every other
-    // dropdown in this menu uses (Mode / Hitbox / Box Type) and paints its own
-    // label, field, arrow and popup.
-    // The Camo sub-tab deliberately has no filter dropdown - its list is the
-    // whole camo table, narrowed only by the search field.
-    static int rarityFilter = 0;               // 0 = All
+    static int rarityFilter = 0;
     if (skinSubTab != 5) {
         static const char* rarityNames[] = {"All", "Mythic", "Legendary", "Epic",
                                             "Rare", "Uncommon", "Common"};
@@ -497,11 +476,8 @@ inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = fals
     switch (skinSubTab) {
 case 0:
     if (!charData.empty()) {
-
         for (const auto& getchar : charData) {
-
             if (strlen(searchQuery) >= MIN_SEARCH_LENGTH) {
-
                 if (ToLower(getchar.charName).find(searchLower) == std::string::npos)
                     continue;
             }
@@ -511,24 +487,15 @@ case 0:
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 8));
 
             SkinCheckbox(getchar.charName.c_str(), &sBool[getchar.charName], [&]() {
-
                 for (auto& pair : sBool) {
-
                     if (pair.first != getchar.charName)
                         pair.second = false;
                 }
 
-                // Bounds-checked: g_targetCharacters can be rebuilt between two
-                // frames, and an out-of-range index would read past the vector
-                // instead of just doing nothing.
                 if (g_selectedTargetCharIndex < 0 ||
                     g_selectedTargetCharIndex >= (int)g_targetCharacters.size())
                     return;
 
-                // Only the tiers the apply really reads, and no RolePackConf:
-                // the game builds those pack configs lazily, and demanding them
-                // here made the click do nothing in a lobby (see
-                // CharacterApplyReady in Skin/Fields.h).
                 if (!CharacterApplyReady(CharacterModelConfigInstance,
                                          itemResourceConfigInstance,
                                          RoleConfConfigInstance))
@@ -540,10 +507,6 @@ case 0:
                                  selTraitor1P, selTraitor3P,
                                  selItemID, selRoleID, selPackID);
 
-                // The whole apply lives in Skin/Fields.h so the host test
-                // (Skin/tests/character_apply_check.cpp) drives the same code
-                // this button does. Only the SELECTED target's rows are written,
-                // and only the non-zero values of this character.
                 ApplyCharacterSkin(getchar,
                                    selTraitor1P, selTraitor3P,
                                    selItemID, selRoleID, selPackID,
@@ -560,7 +523,6 @@ case 0:
 
 case 1:
     for (const auto& w : watch) {
-
         if (strlen(searchQuery) >= MIN_SEARCH_LENGTH &&
             ToLower(w.watchname).find(searchLower) == std::string::npos)
             continue;
@@ -573,10 +535,6 @@ case 1:
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 8));
 
         SkinCheckbox(w.watchname.c_str(), &sBool[w.watchname], [&]() {
-
-            // Same target resolution the character tab uses, and the same
-            // "selected target only" rule: the old `|| cf->Traitor1P == 710001101`
-            // wrote Charly's model config whatever the dropdown showed.
             int sT1P = 0, sT3P = 0, sItem = 0, sRole = 0, sPack = 0;
             if (g_selectedTargetCharIndex >= 0 &&
                 g_selectedTargetCharIndex < (int)g_targetCharacters.size())
@@ -584,14 +542,12 @@ case 1:
                                  sT1P, sT3P, sItem, sRole, sPack);
 
             for (auto m : CharacterModelConfigInstance) {
-
                 if (!m)
                     continue;
 
                 auto* cf = (CharacterModelFields*)((uintptr_t)m + 0x10);
 
                 if (cf->Traitor1P == sT1P || cf->Traitor3P == sT3P) {
-
                     cf->BindEffect1P = w.watchvalue;
                 }
             }
@@ -603,7 +559,6 @@ case 1:
 
 case 2:
     for (const auto& d : deadboxF) {
-
         if (strlen(searchQuery) >= MIN_SEARCH_LENGTH &&
             ToLower(d.deadname).find(searchLower) == std::string::npos)
             continue;
@@ -613,13 +568,10 @@ case 2:
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 8));
 
         SkinCheckbox(d.deadname.c_str(), &sBool[d.deadname], [&]() {
-
             for (auto db : BRDeadboxSkinConfigInstance) {
-
                 auto* df = (BRDeadboxSkinFields*)((uintptr_t)db + 0x10);
 
                 if (df->ID == 180300004) {
-
                     df->ColorID            = d.dead[0];
                     df->DeadBoxEffectAsset = d.dead[1];
                     df->Flag               = d.dead[2];
@@ -636,7 +588,6 @@ case 2:
 
 case 3:
     for (const auto& p : dropplane) {
-
         if (strlen(searchQuery) >= MIN_SEARCH_LENGTH &&
             ToLower(p.planename).find(searchLower) == std::string::npos)
             continue;
@@ -646,13 +597,10 @@ case 3:
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 8));
 
         SkinCheckbox(p.planename.c_str(), &sBool[p.planename], [&]() {
-
             for (auto pl : BRDropPlaneSkinConfigInstance) {
-
                 auto* dpf = (BRDropPlaneSkinFields*)((uintptr_t)pl + 0x10);
 
                 if (dpf->ID == 0) {
-
                     dpf->ColorID          = p.plane[0];
                     dpf->ModelAsset1P     = p.plane[1];
                     dpf->ModelAsset3P     = p.plane[2];
@@ -712,8 +660,6 @@ case 3:
                             WeaponConfFields *skinFields = (WeaponConfFields *)((uintptr_t)skinConf + 0x20);
                             if (skinFields->ID == getitem.WeaponConf[2])
                             {
-                                // Only copy a name that really exists — a null
-                                // string would blank the weapon's name/desc.
                                 if (Tools::IsPtrValid(skinFields->LOCID_Name))
                                     weaponconfFields->LOCID_Name = skinFields->LOCID_Name;
                                 break;
@@ -735,19 +681,13 @@ case 3:
                     for (int key : effectKeys)
                     {
                         activeKillEffects[key] = effectAssetID;
-                        // The client-side per-weapon record (WeaponAttrData)
-                        // resolves the effect from the ITEM id, so hand it that
-                        // too when LoadWeaponSkins found one.
+
                         if (effectItemID > 0)
                             activeKillEffectItems[key] = effectItemID;
                     }
                 }
                 if (DetectSkinTier(getitem.itemName) == SkinTier::Mythic)
                 {
-                    // Mythic skin applied → behave like mythic level 5 and
-                    // surface the mythic kill icon through InventoryUtil.
-                    // The InventoryUtil hooks gate on val > 0, so weapons
-                    // without a matching SPKillIcon entry stay untouched.
                     const int mythicKeys[5] = {baseID, extraID, skinID, itemID, lootID};
                     for (int key : mythicKeys)
                     {
@@ -777,8 +717,7 @@ case 3:
                                 weaponextraFields->DefaultMythicSig = getitem.WeaponExtra[2];
                             }
                         }
-                        // Guarded: writing a 0 here is what silently deleted the
-                        // weapon's own kill effect / death replay effect.
+
                         if (getitem.WeaponExtra[3] != 0)
                             weaponextraFields->DefaultDeadReplayEffectId = getitem.WeaponExtra[3];
                         if (getitem.WeaponExtra[4] != 0)
@@ -809,12 +748,7 @@ case 3:
                     if (resourceID != skinID && resourceID != itemID && resourceID != lootID &&
                             resourceID != extraID && resourceID != baseID)
                         continue;
-                    // One guarded block per id (the six copies above repeated the
-                    // same writes and one of them missed UISpriteNameIndex). Every
-                    // write is skipped when the value is 0: ItemRes/ItemResInt are
-                    // only non-zero when LoadWeaponSkins matched the item's own
-                    // ItemResourceConfig, and writing the zero of an unmatched
-                    // resource is what blanked the weapon card in the loadout.
+
                     if (getitem.ItemResInt[0] != 0)
                         itemFields->FxAssetID = getitem.ItemResInt[0];
                     if (getitem.ItemResInt[1] != 0)
@@ -854,10 +788,6 @@ case 3:
                         if (!Tools::IsPtrValid(wfFields))
                             continue;
 
-                        // WeaponFireEffectConfigConfig (dump 824278): Id @0x80,
-                        // LevelEffectDelayTimeUI @0x84, ..._King @0x88 — the
-                        // struct's offset comments were 4 bytes out and wrote
-                        // 0x88/0x8C, i.e. 4 bytes past the end of the pair.
                         const int fireConfID = *(int *)((uintptr_t)fireConf + 0x80);
                         if (fireConfID == fireEffectID)
                         {
@@ -953,22 +883,13 @@ case 3:
 
     case 5:
     {
-        // --- Camo: the whole camo table, applied to every gun ---
         ImGui::TextColored(ImVec4(1, 0.8f, 0, 1), "Camo - replaces the equipped camo on every gun");
         ImGui::Dummy(ImVec2(0, 10));
 
-        // --- Every camo in the build, one search field, no filter dropdown ---
-        // The list is camoData, filled by LoadCamos() (Skin/Thread.h) from the
-        // game's own WeaponCamosConfig table - one row per camo the build has,
-        // de-duplicated there (Skin/Fields.h InsertCamo): several table rows for
-        // one camo (one per weapon) are one entry here, not the duplicate list
-        // rows this used to show.
         static std::unordered_map<uint, int> camoOriginals;
         static std::unordered_map<uint, WeaponSkinCamoOriginal> camoSkinOriginals;
-        static int selectedCamoItemID = -1;   // -1 = no override, the tab's OFF
+        static int selectedCamoItemID = -1;
 
-        // The ctor hooks push confs from another thread, so take a copy: the
-        // apply below then walks a list that cannot move under it.
         std::vector<void *> camoConfs;
         std::vector<void *> camoSkinConfs;
         {
@@ -977,13 +898,6 @@ case 3:
             camoSkinConfs = weaponSkinConfigInstance;
         }
 
-        // One pick has to be written in TWO places to reach every gun:
-        //   * WeaponConfConfig.DefWeaponSkinID - the default skin of a gun that has
-        //     no camo chosen (ApplyCamoToEveryGun);
-        //   * WeaponSkinConfig.CamoID - the weapon-skin record the equipped camo of
-        //     a gun is read from (ApplyCamoToEveryWeaponSkin). Writing only the
-        //     first lever left every gun that already had a camo on its own camo -
-        //     the "it only changes the guns without camo" report.
         auto applyCamoEverywhere = [&](int camoItemID) {
             ApplyCamoToEveryGun(camoItemID, camoConfs, camoOriginals);
             ApplyCamoToEveryWeaponSkin(camoItemID, camoSkinConfs, camoSkinOriginals);
@@ -1009,7 +923,7 @@ case 3:
                     CamoNameLower(camo.camoName).find(searchLower) == std::string::npos)
                     continue;
                 shown++;
-                // Names can repeat across rows, so the camo id keys the widget.
+
                 ImGui::PushID((int)camo.camoItemID);
                 bool checked = (selectedCamoItemID == camo.camoItemID);
                 if (DrawTieredSkinCheckbox(camo.camoName.c_str(), &checked)) {
@@ -1031,7 +945,6 @@ case 3:
 
     case 6:
         if (!snowboardData.empty()) {
-            // Selected (ON) first
             for (const auto& sb : snowboardData) {
                 if (strlen(searchQuery) >= MIN_SEARCH_LENGTH &&
                     ToLower(sb.skinName).find(searchLower) == std::string::npos)
@@ -1056,7 +969,7 @@ case 3:
                     ImGui::PopStyleVar();
                 }
             }
-            // Unselected (OFF) below
+
             for (const auto& sb : snowboardData) {
                 if (strlen(searchQuery) >= MIN_SEARCH_LENGTH &&
                     ToLower(sb.skinName).find(searchLower) == std::string::npos)
@@ -1092,3 +1005,4 @@ case 3:
 inline void RenderTab4Content() {
     RenderSkinCategoryContent(skinSubTab, true);
 }
+

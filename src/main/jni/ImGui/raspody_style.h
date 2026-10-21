@@ -1,19 +1,5 @@
 #pragma once
 
-// ---------------------------------------------------------------------------
-// Raspody theme - palette / metrics / animation state.
-//
-// Ported from github.com/eliwoahzja/raspody framework/settings (colors.h,
-// elements.h, variables.h), stripped of every Win32 / DirectX field and wrapped
-// in namespace raspody. The look is the one in the reference screenshot, moved
-// from the raspody coral to a violet scheme: deep purple-charcoal panels, muted
-// lilac text and the accent (168, 104, 255).
-//
-// All sizes below are the 900x592 design-space values. The menu computes a
-// single scale from ComputeMenuLayout() and multiplies them with S(), so the
-// same layout works on a 640px render surface and on a 1440p tablet.
-// ---------------------------------------------------------------------------
-
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
@@ -23,25 +9,17 @@
 
 namespace raspody
 {
-    // ---------------------------------------------------------------------
-    // Design scale (set by Render() every frame).
-    // ---------------------------------------------------------------------
     inline float g_scale = 1.0f;
 
     inline float S(float v) { return v * g_scale; }
     inline ImVec2 S(float x, float y) { return ImVec2(x * g_scale, y * g_scale); }
     inline ImVec2 S(const ImVec2& v) { return ImVec2(v.x * g_scale, v.y * g_scale); }
 
-    // ---------------------------------------------------------------------
-    // Colour helpers.
-    // ---------------------------------------------------------------------
     inline ImVec4 Rgb(int r, int g, int b, float a = 1.0f)
     {
         return ImVec4((float)r / 255.0f, (float)g / 255.0f, (float)b / 255.0f, a);
     }
 
-    // Multiplies the style alpha as well, so fading a page with PushStyleVar
-    // fades every custom-drawn rectangle and text run with it.
     inline ImU32 Col(const ImVec4& color, float alpha = 1.0f)
     {
         ImVec4 c = color;
@@ -59,7 +37,6 @@ namespace raspody
         return ImVec4(color.x, color.y, color.z, color.w * alpha);
     }
 
-    // Raspody's fixed_speed(): speed / framerate, i.e. speed * dt.
     inline float Ease(float& value, float target, float speed)
     {
         const float t = ImMin(1.0f, ImGui::GetIO().DeltaTime * speed);
@@ -67,9 +44,6 @@ namespace raspody
         return value;
     }
 
-    // ---------------------------------------------------------------------
-    // Palette - values copied from raspody framework/settings/colors.h.
-    // ---------------------------------------------------------------------
     struct Palette
     {
         ImVec4 layout              = Rgb(19, 16, 27);
@@ -93,9 +67,6 @@ namespace raspody
 
     inline Palette clr;
 
-    // ---------------------------------------------------------------------
-    // Metrics - raspody framework/settings/elements.h, design-space values.
-    // ---------------------------------------------------------------------
     struct Elements
     {
         struct
@@ -158,9 +129,6 @@ namespace raspody
 
     inline Elements elements;
 
-    // ---------------------------------------------------------------------
-    // Animation / menu state - the useful subset of raspody's c_variables.
-    // ---------------------------------------------------------------------
     struct Variables
     {
         struct
@@ -199,8 +167,6 @@ namespace raspody
 
     inline Variables var;
 
-    // Tab indices, in the order of the rail (raspody gui.cpp uses the same six
-    // pages, only with Aimbot/Visuals/Weapons/Scripts/Configs/Settings labels).
     enum MenuTab
     {
         Tab_Aimbot = 0,
@@ -253,7 +219,7 @@ namespace raspody
         { "Menu appearance and build info.", "Reports, account and performance switches.", nullptr }
     };
 
-    // Popup bookkeeping shared by the widgets and the render loop.
     inline bool g_anyPopupOpen = false;
     inline bool g_popupOpenedThisFrame = false;
-} // namespace raspody
+}
+

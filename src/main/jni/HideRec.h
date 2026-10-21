@@ -19,11 +19,8 @@
 #include <unordered_set>
 #include <functional>
 
-
-
 namespace android::anwcreator::detail::types
 {
-
     enum class SurfaceControlFlags : uint32_t
     {
         eHidden          = 0x00000004,
@@ -54,12 +51,10 @@ namespace android::anwcreator::detail::types
     {
         return (lhs = lhs | rhs);
     }
-
-} // namespace android::anwcreator::detail::types
+}
 
 namespace android::anwcreator::detail::jni
 {
-
     struct JNIEnvironment
     {
         JNIEnv *env;
@@ -88,7 +83,7 @@ namespace android::anwcreator::detail::jni
             return env;
         }
 
-        inline bool CheckException(const char * /*context*/ = nullptr)
+        inline bool CheckException(const char *  = nullptr)
         {
             if (!env || !env->ExceptionCheck())
                 return false;
@@ -166,12 +161,10 @@ namespace android::anwcreator::detail::jni
         inline bool IsValid() const { return obj != nullptr; }
         inline explicit operator bool() const { return obj != nullptr; }
     };
-
-} // namespace android::anwcreator::detail::jni to
+}
 
 namespace android::anwcreator::detail::framework
 {
-
     struct DisplayMetrics
     {
         int32_t widthPixels;
@@ -637,8 +630,7 @@ namespace android::anwcreator::detail::framework
             return env->NewObject(surfaceCls, ctor, surfaceControl);
         }
     };
-
-} // namespace android::anwcreator::detail::framework to
+}
 
 namespace android::anwcreator::detail
 {
@@ -646,7 +638,7 @@ namespace android::anwcreator::detail
     {
         std::unique_ptr<jni::GlobalRef> surfaceControl;
         std::unique_ptr<jni::GlobalRef> surface;
-        std::unique_ptr<jni::GlobalRef> parentSurfaceControl; // parent root
+        std::unique_ptr<jni::GlobalRef> parentSurfaceControl;
         ANativeWindow                  *nativeWindow;
         int32_t                         width;
         int32_t                         height;
@@ -680,8 +672,7 @@ namespace android::anwcreator::detail
             parentSurfaceControl.reset();
         }
     };
-
-} // namespace android::anwcreator::detail end to
+}
 
 namespace android
 {
@@ -773,8 +764,8 @@ namespace android
 
             builder.SetName(options.name)
                 .SetBufferSize(width, height)
-                .SetFormat(1)       // pixil RGBA_8888
-                .SetOpaque(false)   // alpha buffer
+                .SetFormat(1)
+                .SetOpaque(false)
                 .SetSkipScreenshot(options.skipScreenshot);
 
             if (parentSC)
@@ -795,7 +786,6 @@ namespace android
             context->surfaceControl     =
                 std::make_unique<anwcreator::detail::jni::GlobalRef>(jniEnv, localSurfaceControl);
 
-            // Parent root surface store
             if (parentSC)
             {
                 context->parentSurfaceControl =
@@ -904,7 +894,6 @@ namespace android
             return true;
         }
 
-        // Ensure the overlay surface is attached to the current root and visible
         static void EnsureVisible(ANativeActivity *activity, ANativeWindow *nativeWindow)
         {
             if (!activity || !activity->vm || !nativeWindow)
@@ -926,7 +915,6 @@ namespace android
             if (!transaction.IsValid())
                 return;
 
-            // Get current View SurfaceControl
             jobject currentParent =
                 anwcreator::detail::framework::SurfaceControl::GetParentSurfaceControl(
                     jniEnv,
@@ -954,14 +942,13 @@ namespace android
                     std::make_unique<anwcreator::detail::jni::GlobalRef>(jniEnv, currentParent);
             }
 
-
             float scaleX = 1.0f, scaleY = 1.0f;
             auto displayInfo = anwcreator::detail::framework::Display::GetDisplayInfo(jniEnv, activity);
             if (context->width > 0 && context->height > 0 && displayInfo.width > 0 && displayInfo.height > 0)
             {
                 int32_t targetW = displayInfo.width;
                 int32_t targetH = displayInfo.height;
-               
+
                 const bool bufferLandscape = context->width >= context->height;
                 const bool targetLandscape = targetW >= targetH;
                 if (bufferLandscape != targetLandscape)
@@ -982,15 +969,13 @@ namespace android
 
             if (currentParent)
                 jniEnv->DeleteLocalRef(currentParent);
-
         }
 
     private:
         inline static std::unordered_map<ANativeWindow *,
             std::unique_ptr<anwcreator::detail::WindowContext>> m_windowContexts;
     };
-
-} // namespace android
+}
 
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
@@ -1026,7 +1011,6 @@ private:
 };
 }
 
-
 #include <EGL/eglext.h>
 #include <cmath>
 
@@ -1038,7 +1022,7 @@ EGLConfig HideRecAImGui::FindConfig(EGLDisplay display,EGLContext gameContext){
     (void)gameContext;
     const EGLint attrs[]={
         EGL_SURFACE_TYPE,EGL_WINDOW_BIT,
-        EGL_RENDERABLE_TYPE,0x00000040, // EGL_OPENGL_ES3_BIT_KHR
+        EGL_RENDERABLE_TYPE,0x00000040,
         EGL_RED_SIZE,8,EGL_GREEN_SIZE,8,EGL_BLUE_SIZE,8,EGL_ALPHA_SIZE,8,
         EGL_NONE
     };
@@ -1117,7 +1101,6 @@ bool HideRecAImGui::RenderDrawData(ImDrawData* drawData,EGLDisplay gameDisplay,E
     EGLSurface oldRead=eglGetCurrentSurface(EGL_READ);
     EGLContext oldContext=eglGetCurrentContext();
 
-
     if(m_overlayContext==EGL_NO_CONTEXT||eglMakeCurrent(m_display,m_surface,m_surface,m_overlayContext)!=EGL_TRUE)return false;
     EGLint vw=0,vh=0;
     if(eglQuerySurface(m_display,m_surface,EGL_WIDTH,&vw)!=EGL_TRUE||vw<=0)vw=m_screenWidth;
@@ -1130,7 +1113,7 @@ bool HideRecAImGui::RenderDrawData(ImDrawData* drawData,EGLDisplay gameDisplay,E
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClearColor(0.f,0.f,0.f,0.f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-// buffer alpha 0
+
     ImGui_ImplOpenGL3_RenderDrawData(drawData);
     EGLBoolean ok=swapBuffersFn(m_display,m_surface);
 
@@ -1153,7 +1136,7 @@ void HideRecAImGui::UnInitEnvironment(){
         eglDestroyContext(m_display,m_overlayContext);
     m_surface=EGL_NO_SURFACE;
     m_overlayContext=EGL_NO_CONTEXT;
-    // m_gameContext milik game: JANGAN eglDestroyContext / eglTerminate.
+
     if(m_nativeWindow){ANwCreator::Destroy(m_options.activity,m_nativeWindow);m_nativeWindow=nullptr;}
     m_display=EGL_NO_DISPLAY;
     m_gameContext=EGL_NO_CONTEXT;
@@ -1166,12 +1149,9 @@ void HideRecAImGui::UnInitEnvironment(){
 #include <android/log.h>
 #include <cstring>
 
-
-
 static ANativeActivity g_nativeActivity{};
 static bool g_initialized = false;
 
-// JNI_OnLoad removed
 static JavaVM* g_vm = nullptr;
 extern "C" void SetANativeActivityVM(JavaVM* vm)
 {
@@ -1300,7 +1280,6 @@ ANativeActivity* GetANativeActivity()
 
     g_initialized = true;
 
-    
     return &g_nativeActivity;
 }
 

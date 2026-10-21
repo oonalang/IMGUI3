@@ -1,21 +1,3 @@
-// Host test for the Raspody menu port.
-//
-// It compiles the real raspody_menu.h / raspody_widgets.cpp against the same
-// ImGui sources Android.mk builds, then renders every tab and subtab for a few
-// frames with a null backend. That catches the two failure modes a device build
-// hides until launch: API/type errors in the new menu code and ImGui stack
-// misuse (mismatched Begin/End, PushStyleVar counts, popup lifetimes).
-//
-// Android.mk wildcards only ImGui/*.c*, never ImGui/tests/, so this file does
-// not reach the APK.
-//
-// Build:
-//   g++ -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS \
-//       -I src/main/jni -I src/main/jni/ImGui \
-//       src/main/jni/ImGui/imgui.cpp src/main/jni/ImGui/imgui_draw.cpp \
-//       src/main/jni/ImGui/imgui_tables.cpp src/main/jni/ImGui/imgui_widgets.cpp \
-//       src/main/jni/ImGui/raspody_widgets.cpp src/main/jni/ImGui/raspody_font.cpp \
-//       src/main/jni/ImGui/tests/raspody_menu_check.cpp -o /tmp/raspody_menu_check
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -25,8 +7,6 @@
 #include <sys/types.h>
 #include <vector>
 
-// Init_Hacks only needs Vector2 for the Touch struct when it is included on its
-// own; the real build always has it from the SDK first.
 struct Vector2 { float x, y; };
 
 #include "Hacks/Feature/Init_Hacks.h"
@@ -34,7 +14,6 @@ struct Vector2 { float x, y; };
 #include "System/Core/SaveConfig.h"
 #include "ImGui/imgui.h"
 
-// MainFeatureIncludes.h normally brings Logo.h in before the menu header.
 float GetLogoOpacity();
 void  SetLogoOpacity(float v);
 float GetLogoSizeMultiplier();
@@ -55,7 +34,6 @@ bool  isSpeedHackEnabled = false;
 std::string usedKey = "HOST-TEST";
 std::string userType = "PREMIUM";
 
-// The app's customised imgui_widgets.cpp references these Main.cpp globals.
 namespace font { ImFont* inter_semibold = nullptr; }
 ImFont* F50 = nullptr;
 
@@ -66,9 +44,6 @@ float GetLogoOpacity() { return g_logoOpacity; }
 void  SetLogoOpacity(float v) { g_logoOpacity = v; }
 float GetLogoSizeMultiplier() { return g_logoSize; }
 void  SetLogoSizeMultiplier(float v) { g_logoSize = v; }
-
-// SaveConfig.h provides real SaveConfiguration/LoadConfiguration/ListProfiles.
-// Point androidFilesDir at a temp location for the config round-trip check.
 
 static int g_frames = 0;
 static int g_lastVerts = 0;
@@ -118,8 +93,6 @@ int main()
     raspody::Style();
     io.Fonts->Build();
 
-    // First frames also exercise the fade-in path (alpha starts at 1 for the
-    // initial tab, but every page below starts from its own state).
     RenderFrames(4);
 
     for (int tab = 0; tab < raspody::Tab_Count; ++tab)
@@ -145,8 +118,6 @@ int main()
         return 1;
     }
 
-    // Popup paths: the dropdown, the row-settings menu, a colour picker and
-    // the profile menu all begin top-level windows from inside the menu.
     struct PopupCase { int tab; int sub; const char* name; };
     const PopupCase popupCases[] = {
         { raspody::Tab_Aimbot, 0, "Aim trigger##Dropdown" },
@@ -167,13 +138,11 @@ int main()
         RenderFrames(2);
     }
 
-    // Tab fade path: swap the stored tab while the current page is visible.
     raspody::var.tab.current = raspody::Tab_Aimbot;
     raspody::var.tab.stored = raspody::Tab_Settings;
     raspody::var.subtab.current = raspody::var.subtab.stored = 0;
     RenderFrames(8);
 
-    // Search filtering path with a query that hides most rows.
     raspody::ui.searchOpen = true;
     std::snprintf(raspody::ui.search, sizeof(raspody::ui.search), "zzzz-none");
     raspody::var.tab.current = raspody::var.tab.stored = raspody::Tab_Visuals;
@@ -185,7 +154,6 @@ int main()
     raspody::ClearSearch();
     RenderFrames(2);
 
-    // ---- Config round-trip check -----------------------------------------
     {
         androidFilesDir = "/tmp/raspody_test_configs/";
         mkdir(androidFilesDir.c_str(), 0777);
@@ -215,7 +183,6 @@ int main()
             return 1;
         }
 
-        // Older file (KineticArmor, no NewFeatures keys) must still load.
         {
             std::ofstream f(androidFilesDir + "configs/old.json");
             f << "{\"ExtraMenu\":{\"KineticArmor\":true},\"NewFeatures\":{}}";
@@ -230,7 +197,6 @@ int main()
             }
         }
 
-        // Configs page should list the profile written to disk.
         {
             std::vector<std::string> profs = ListProfiles();
             bool found = false;
@@ -252,3 +218,4 @@ int main()
                 g_frames, (int)raspody::Tab_Count);
     return 0;
 }
+

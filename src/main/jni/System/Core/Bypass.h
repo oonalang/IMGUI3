@@ -16,25 +16,24 @@ struct range {
     struct Iter {
       uintptr_t val;
       bool operator!=(const Iter& it) const {
-        return val <= it.val; 
+        return val <= it.val;
       }
       uintptr_t operator*() const {
-        return val; 
+        return val;
       }
       void operator++() {
-        val += 4; 
+        val += 4;
       }
     };
-    Iter begin() const { 
-      return {Irt}; 
+    Iter begin() const {
+      return {Irt};
     }
-    Iter end() const { 
-      return {Ind}; 
+    Iter end() const {
+      return {Ind};
     }
 };
 
 inline void InitializeProtection() {
-// Direct Memory Patch ────────────────
 Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x202680), (void*)hook_bypass, (void**)&orig_bypass);
 Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x204218), (void*)hook_bypass, (void**)&orig_bypass);
 Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x258B6C), (void*)hook_bypass, (void**)&orig_bypass);
@@ -78,5 +77,4 @@ Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x4
 for (auto offs : range{0x1, 0x1000}) {
 MemoryPatch::createWithHex("libanogs.so", offs, armFalse).Modify();
     }
-    
 }

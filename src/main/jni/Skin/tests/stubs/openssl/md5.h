@@ -1,5 +1,3 @@
-// Host stub for the syntax check - Tools.cpp only calls MD5_* (see
-// Tools::CalcMD5); the EVP/PEM/RSA/ERR headers are included but unused there.
 #pragma once
 #include <stddef.h>
 
@@ -16,3 +14,4 @@ int MD5_Init(MD5_CTX *c);
 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
 int MD5_Final(unsigned char *md, MD5_CTX *c);
 }
+

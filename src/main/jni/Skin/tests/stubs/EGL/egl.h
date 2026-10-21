@@ -1,7 +1,3 @@
-// Host stub - only what the header chain needs for a syntax check on desktop
-// g++ (the real headers come from the NDK in the Android build). Constant
-// values are the real EGL ones; the entry points are declared normally, since
-// nothing at host-check time can call them.
 #pragma once
 
 typedef void *EGLDisplay;
@@ -97,3 +93,4 @@ void      *eglGetProcAddress(const char *procname);
 #ifdef __cplusplus
 }
 #endif
+

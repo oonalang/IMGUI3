@@ -1,34 +1,3 @@
-// Host test for the triggerbot anti-wall (LOS) gate - the fix for
-// "BLOCKED: wall in the way even though I can see the player".
-//
-// It builds a FAKE physics world (il2cpp RaycastHit[] arrays laid out per
-// dump.cs 175618 + this repo's Il2CppArray, fake colliders with a readable
-// m_CachedPtr at +0x10, fake transforms wired through the very
-// (m_unity + apiN) accessors Defines.h uses) and drives the real gate code
-// from NewFeatures.h:
-//
-//   * A_FireRayToTarget      - RaycastAll walk: self hits skipped, trigger
-//                              volumes skipped, target named, wall blocked,
-//                              near-origin escape via the game's own
-//                              LastOccVisible verdict, single-ray fallback.
-//   * A_FireRaycastAllNearest - unit checks of the array guards (a bad header
-//                              must be REFUSED, never read as "no hits").
-//   * A_FireCrosshairRayPawn - path A names the enemy past our own body.
-//   * the path A body bound   - the dot has to be ON the enemy's projected
-//                              BODY (its WIDTH, not half its height): a dot
-//                              beside his arm or weapon is refused.
-//   * A_FireScan             - end-to-end: zone candidate + self@0 ray ->
-//                              FireBlock::Fired; self + wall -> NoLineOfSight.
-//
-// Host test, not an on-device run (no NDK needed - the Android/JNI headers
-// are the stubs in Skin/tests, __fastcall is elided like the real build, and
-// Tools::IsPtrValid is stubbed because Tools.cpp is not linked):
-//   g++ -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -D'__fastcall=' \
-//       -I src/main/jni/Skin/tests/stubs -I src/main/jni -I src/main/jni/ImGui \
-//       -I src/main/jni/Includes src/main/jni/Hacks/Feature/tests/los_gate_check.cpp \
-//       -o /tmp/los_gate_check && /tmp/los_gate_check
-// Exits 0 and prints "OK: all LOS gate checks passed" on success.
-// Android.mk does not wildcard Hacks/Feature/tests, so it never reaches the APK.
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -46,27 +15,17 @@
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
 #include "foxcheats/include/ScanEngine.hpp"
 #include "Hacks/StructGame/StructGame.h"
-#include "Hacks/Feature/Init_Hacks.h"   // sConfig Config - referenced by NewFeatures.h
+#include "Hacks/Feature/Init_Hacks.h"
 #include "Hacks/Feature/NewFeatures.h"
 
-// ---------------------------------------------------------------------------
-// Tools::IsPtrValid - Tools.cpp is intentionally not linked; on the host every
-// pointer handed to the gate is either null or inside our fake arena, so a
-// null check is the honest "is this a live object" answer for the fakes.
-// ---------------------------------------------------------------------------
 bool Tools::IsPtrValid(void *addr) { return addr != nullptr; }
 
-// __android_log_print is what LOGI() expands to. The checks below now call
-// A_FireTick(), whose fire path contains a LOGI - the symbol has to exist even
-// though the test never reaches that line.
 extern "C" int __android_log_print(int prio, const char *tag, const char *fmt, ...)
 {
     (void)prio; (void)tag; (void)fmt;
     return 0;
 }
 
-// Substrate's hook entry (pulled in by Includes/Macros.h's non-inline hook()
-// helper) - the test installs no hooks, but the symbol has to exist to link.
 void MSHookFunction(void *symbol, void *replace, void **result)
 {
     (void)symbol; (void)replace;
@@ -83,19 +42,7 @@ static int g_failures = 0;
         else        { printf("ok  : %s\n", msg); }                        \
     } while (0)
 
-// ---------------------------------------------------------------------------
-// Fake il2cpp objects.
-//
-// Layout actually read by the gate:
-//   +0x10  UnityEngine.Object.m_CachedPtr   (A_FireObjectAlive)
-//   +0x38  test-only: identity returned by the fake Component::get_transform
-//   +0x48  test-only: parent returned by the fake Transform::get_parent
-//   +0x100 test-only: Vector3 returned by the fake Transform::get_position
-// Pawns additionally carry the dump-verified fields:
-//   Class_Pawn_m_HeadBone (0x308), Class_Pawn_m_IsAlive (0x548),
-//   Class_Pawn_m_Mesh (0x628)  - all #define'd in Defines.h.
-// ---------------------------------------------------------------------------
-static const size_t OBJ_SIZE = 2048;   // must cover 0x628 + 8
+static const size_t OBJ_SIZE = 2048;
 struct FakeObj { alignas(8) unsigned char b[OBJ_SIZE]; };
 
 static FakeObj g_localRoot, g_targetRoot, g_wallRoot, g_trigRoot, g_deadRoot;
@@ -103,11 +50,7 @@ static FakeObj g_localPawn, g_targetPawn, g_otherPawn;
 static FakeObj g_localHead, g_localMesh, g_targetHead, g_targetMesh;
 static FakeObj g_selfCol, g_targetCol, g_wallCol, g_trigCol, g_deadCol;
 static FakeObj g_camObj, g_camTransform, g_gameObj, g_weaponObj;
-// A fake il2cpp class + type name. NewFeatures' ADS gate only asks the fire
-// component's get_IsAiming on a component whose class name says "Instant"
-// (WeaponFireComponent_Instant is the subclass that owns that non-virtual
-// getter); a fake object with no class header is refused, which is exactly
-// what made this suite's ADS block go stale when that guard landed.
+
 static unsigned char g_fakeKlass[0x20];
 static const char g_instantName[] = "WeaponFireComponent_Instant";
 static FakeObj        g_fireCompObj;
@@ -115,8 +58,8 @@ static FakeObj        g_fireCompObj;
 static void objInit(FakeObj &o, FakeObj *identity = nullptr)
 {
     std::memset(o.b, 0, sizeof o.b);
-    *(void **)(o.b + 0x10) = o.b;                                     // m_CachedPtr
-    *(void **)(o.b + 0x38) = identity ? identity->b : o.b;            // get_transform()
+    *(void **)(o.b + 0x10) = o.b;
+    *(void **)(o.b + 0x38) = identity ? identity->b : o.b;
 }
 static void objParent(FakeObj &t, FakeObj *p)  { *(void **)(t.b + 0x48) = p ? p->b : nullptr; }
 static void objPos(FakeObj &o, float x, float y, float z)
@@ -130,11 +73,7 @@ static Vector3 objGetPos(const FakeObj &o)
     std::memcpy(&v, o.b + 0x100, sizeof v);
     return v;
 }
-// Put the enemy's body exactly under the CENTRE dot (800,450 in the fake world).
-// The fake world has to be self-consistent for path A: a ray through the dot
-// cannot honestly name a body that projects 118 px to the side of it - that IS
-// the beside-the-arm case the bound refuses (X9) - so every check that expects
-// the dot's own ray to fire first puts him where the dot is.
+
 static void objTargetUnderDot(float dist = 3.3f)
 {
     objPos(g_targetHead, 0.0f, 1.7f, dist);
@@ -151,7 +90,6 @@ static void objSetBone(FakeObj &pawn, size_t offset, FakeObj *bone)
     *(void **)(pawn.b + offset) = bone ? bone->b : nullptr;
 }
 
-// ---- scene-graph fakes, installed through the (m_unity + apiN) macros -----
 static Transform *fake_get_transform(Component *c)
 {
     return (Transform *)(*(void **)((char *)c + 0x38));
@@ -168,16 +106,10 @@ static void *fake_get_parent(void *t)
     return p;
 }
 static Vector3 fake_get_forward(void *) { return Vector3{0.0f, 0.0f, 1.0f}; }
-// The rest of the camera basis. Together with the forward above this is an
-// orthonormal basis, which is what the crosshair ray math assumes and what a
-// Unity camera transform actually gives.
+
 static Vector3 fake_get_right(void *)   { return Vector3{1.0f, 0.0f, 0.0f}; }
 static Vector3 fake_get_up(void *)      { return Vector3{0.0f, 1.0f, 0.0f}; }
 
-// Pawn.get_HeadPosition() (m_unity + api18 = 0x51B86EC, Slot 215). This is the
-// game's OWN head getter - the accessor the triggerbot uses instead of the
-// m_HeadBone FIELD offset. The fake answers with the position of the pawn's
-// m_HeadBone transform, i.e. exactly what the real getter returns on device.
 static Vector3 fake_headPosition(Pawn *p)
 {
     void *bone = *(void **)((char *)p + Class_Pawn_m_HeadBone);
@@ -185,7 +117,6 @@ static Vector3 fake_headPosition(Pawn *p)
     return fake_get_position((Transform *)bone);
 }
 
-// ---- camera / screen fakes ------------------------------------------------
 static Camera *fake_camera_main() { return (Camera *)g_camObj.b; }
 static int fake_screen_w() { return 1600; }
 static int fake_screen_h() { return 900; }
@@ -196,11 +127,6 @@ static Vector3 fake_w2s(void *, Vector3 w)
     return g_w2sImpl ? g_w2sImpl(w) : Vector3{0.0f, 0.0f, 0.0f};
 }
 
-// Camera.ScreenToWorldPoint(0x5023D34) - the inverse of the projection above.
-// The camera basis is (+Z forward, +X right, +Y up) with the camera at
-// (0, 1.6, 0), and the focal length is the fallback the code itself would use
-// for a 1600x900 screen, so this is a REAL inverse projection: the ray the scan
-// builds from the dot's pixel can be projected back onto that pixel.
 static Vector3 fake_screen_to_world(void *, Vector3 v)
 {
     const float f = (900.0f * 0.5f) /
@@ -215,12 +141,9 @@ static Vector3 fake_screen_to_world(void *, Vector3 v)
     return Vector3{0.0f + dir.x * v.z, 1.6f + dir.y * v.z, 0.0f + dir.z * v.z};
 }
 
-// ---- physics fakes --------------------------------------------------------
-// One world per ray class: the centre ray uses kCrosshairRayMax (400 m), the
-// LOS / lead rays use a bounded segment - the fake picks the list by maxDist.
 static std::vector<std::pair<float, FakeObj *>> g_centreHits;
 static std::vector<std::pair<float, FakeObj *>> g_losHits;
-static int   g_segmentHit = 0;      // stem-test fallback answer
+static int   g_segmentHit = 0;
 static int   g_rayAllCalls = 0, g_singleRayCalls = 0, g_segmentCalls = 0;
 static float g_lastRayAllMax = -1.0f;
 
@@ -271,9 +194,6 @@ static bool fake_lastOccVisible(void *) { return g_lastOccVisible != 0; }
 static int g_recentlyRendered = 1;
 static bool fake_recentlyRendered(void *) { return g_recentlyRendered != 0; }
 
-// ---------------------------------------------------------------------------
-// World setup
-// ---------------------------------------------------------------------------
 static void resetWorld()
 {
     objInit(g_localRoot);   objInit(g_targetRoot);
@@ -285,11 +205,11 @@ static void resetWorld()
     objInit(g_localHead);  objInit(g_localMesh);
     objInit(g_targetHead); objInit(g_targetMesh);
 
-    objInit(g_selfCol,  &g_localRoot);     // OUR body/weapon collider
-    objInit(g_targetCol, &g_targetRoot);   // the enemy's own collider
-    objInit(g_wallCol,  &g_wallRoot);      // geometry
-    objInit(g_trigCol,  &g_trigRoot);      // invisible trigger volume
-    objInit(g_deadCol,  &g_deadRoot);      // readable collider, dead wrapper
+    objInit(g_selfCol,  &g_localRoot);
+    objInit(g_targetCol, &g_targetRoot);
+    objInit(g_wallCol,  &g_wallRoot);
+    objInit(g_trigCol,  &g_trigRoot);
+    objInit(g_deadCol,  &g_deadRoot);
     *(void **)(g_deadCol.b + 0x10) = nullptr;
 
     objInit(g_camObj, &g_camTransform);
@@ -298,11 +218,6 @@ static void resetWorld()
     objInit(g_gameObj);
     objInit(g_weaponObj);
 
-    // The scope-transition tracker is global state: a scenario that flips
-    // Pawn.IsAiming leaves a settle window behind, and the next scenario's
-    // FIRST scan would then be held as "scope transition" instead of reaching
-    // the gate under test. Each scenario starts un-scoped, with no remembered
-    // fire component and no release waiting behind the window.
     NewFeatures::g_afireAdsLastState   = -1;
     NewFeatures::g_afireAdsSettleUntil = -1000.0;
     NewFeatures::g_afireAdsSettleMax   = -1000.0;
@@ -321,9 +236,7 @@ static void resetWorld()
 
     objPos(g_targetHead, 0.5f, 1.7f, 3.3f);
     objPos(g_targetMesh, 0.5f, 0.0f, 3.3f);
-    // The pawn ROOT transform sits at the feet on device (same place as m_Mesh),
-    // so the body span the trigger now measures (head -> root) is the same body
-    // the old bone-field walk used.
+
     objPos(g_targetRoot, 0.5f, 0.0f, 3.3f);
     objPos(g_localRoot,  0.0f, 0.0f, 0.0f);
     objParent(g_wallRoot, nullptr);
@@ -342,13 +255,11 @@ static void resetWorld()
 
 static void installFns()
 {
-    // The two scene-graph entry points and the camera live behind
-    // (m_unity + apiN) macros in Defines.h -> install the fakes there.
     m_unity = 0;
     api7  = (uintptr_t)&fake_camera_main;
     api9  = (uintptr_t)&fake_get_transform;
     api10 = (uintptr_t)&fake_get_position;
-    api18 = (uintptr_t)&fake_headPosition;     // Pawn.get_HeadPosition
+    api18 = (uintptr_t)&fake_headPosition;
     api4  = (uintptr_t)&fake_screen_w;
     api5  = (uintptr_t)&fake_screen_h;
 
@@ -364,15 +275,13 @@ static void installFns()
     fn_PawnRecentlyRendered   = fake_recentlyRendered;
     fn_WorldToScreen          = fake_w2s;
     fn_ScreenToWorldPoint     = fake_screen_to_world;
-    fn_PawnIsAlive            = nullptr;      // field read already answers
-    fn_CameraGetFov           = nullptr;      // -> kFallbackFov, focal still sane
+    fn_PawnIsAlive            = nullptr;
+    fn_CameraGetFov           = nullptr;
     fn_CameraGetMain          = nullptr;
     fn_WeaponGetAimingTarget  = nullptr;
     fn_WeaponGetAimingTargetDis = nullptr;
-    fn_BaseGameGetTeamPawns   = nullptr;      // no teammates in this world
-    // The triggerbot's ADS + re-press entry points. They are installed per test
-    // (see testAdsGate / testRepressPacing) and nulled here so nothing leaks
-    // from one test into the next.
+    fn_BaseGameGetTeamPawns   = nullptr;
+
     fn_PawnIsAiming                  = nullptr;
     fn_WeaponGetCurrentFireComponent = nullptr;
     fn_FireComponentGetIsAiming      = nullptr;
@@ -380,26 +289,18 @@ static void installFns()
     fn_WeaponRealFireInterval        = nullptr;
     fn_WeaponIsAutoFire              = nullptr;
 
-    // The dot crosshair IS the trigger's crosshair now: its pixel is what the
-    // scan measures from and its radius is the zone it accepts. Put it on the
-    // centre with an 80 px dot (a 40 px radius), which is the zone the worlds
-    // below were built around.
     Config.Crosshair.Enabled = true;
     Config.Crosshair.OffsetX = 0.0f;
     Config.Crosshair.OffsetY = 0.0f;
     Config.Crosshair.Size    = 80.0f;
 }
 
-// ---------------------------------------------------------------------------
-// 1. A_FireRayToTarget - the gate itself
-// ---------------------------------------------------------------------------
 static void testGate()
 {
     const Vector3 from(0.0f, 1.6f, 0.0f);
     const Vector3 to(0.5f, 1.7f, 3.3f);
     const float bodyRadius = A_FireTune::kBodyRadius;
 
-    // --- T1: empty line -> clear ------------------------------------------
     resetWorld();
     {
         bool ident = true; float hd = 5.0f;
@@ -410,7 +311,6 @@ static void testGate()
         CHECK(g_rayAllCalls == 1, "T1 used RaycastAll (the walk, not the single ray)");
     }
 
-    // --- T2: only the enemy on the line -> clear + identified -------------
     resetWorld();
     g_losHits = { {3.3f, &g_targetCol} };
     {
@@ -421,7 +321,6 @@ static void testGate()
         CHECK(std::fabs(hd - 3.3f) < 0.001f, "T2 hit distance reported for the panel");
     }
 
-    // --- T3: OUR OWN BODY at 0 m, nothing else -> clear (THE BUG) ---------
     resetWorld();
     g_losHits = { {0.0f, &g_selfCol} };
     {
@@ -435,7 +334,6 @@ static void testGate()
         CHECK(g_singleRayCalls == 0, "T3 answered from RaycastAll alone");
     }
 
-    // --- T4: self at 0 m THEN the enemy -> clear + identified -------------
     resetWorld();
     g_losHits = { {0.0f, &g_selfCol}, {3.3f, &g_targetCol} };
     {
@@ -447,7 +345,6 @@ static void testGate()
         CHECK(g_triggerDiag.selfHitsSkipped == 1, "T4 exactly one self hit skipped");
     }
 
-    // --- T5: self at 0 m + REAL wall at 2 m -> blocked ---------------------
     resetWorld();
     g_losHits = { {0.0f, &g_selfCol}, {2.0f, &g_wallCol} };
     {
@@ -457,7 +354,6 @@ static void testGate()
         CHECK(g_triggerDiag.occOverrides == 0, "T5 occlusion does NOT rescue a blocker at range");
     }
 
-    // --- T6: invisible trigger volume at the camera, alone -> clear --------
     resetWorld();
     g_losHits = { {0.05f, &g_trigCol} };
     g_isTriggerFlag = 1;
@@ -468,7 +364,6 @@ static void testGate()
         CHECK(g_triggerDiag.triggerHitsSkipped == 1, "T6 trigger hit skipped + counted");
     }
 
-    // --- T7: trigger at the camera, enemy behind -> clear + identified -----
     resetWorld();
     g_losHits = { {0.05f, &g_trigCol}, {3.3f, &g_targetCol} };
     g_isTriggerFlag = 1;
@@ -479,7 +374,6 @@ static void testGate()
         CHECK(r == AF_Ray::Clear && ident, "T7 trigger skipped, enemy behind it still named");
     }
 
-    // --- T8: solid geometry 10 cm from the camera + game says visible ------
     resetWorld();
     g_losHits = { {0.10f, &g_wallCol} };
     g_lastOccVisible = 1;
@@ -490,7 +384,6 @@ static void testGate()
         CHECK(g_triggerDiag.occOverrides == 1, "T8 override counted for the panel");
     }
 
-    // --- T8b: same blocker, game says occluded -> blocked ------------------
     resetWorld();
     g_losHits = { {0.10f, &g_wallCol} };
     g_lastOccVisible = 0;
@@ -502,7 +395,6 @@ static void testGate()
         CHECK(g_triggerDiag.occOverrides == 0, "T8b no override when the game agrees he is hidden");
     }
 
-    // --- T9: wall at range + game says visible -> STILL blocked ------------
     resetWorld();
     g_losHits = { {2.0f, &g_wallCol} };
     g_lastOccVisible = 1;
@@ -512,7 +404,6 @@ static void testGate()
         CHECK(r == AF_Ray::Blocked, "T9 occlusion never overrides a normal-range wall");
     }
 
-    // --- T10: unnameable collider -> conservative stem test ----------------
     resetWorld();
     g_losHits = { {3.0f, &g_deadCol} };
     g_segmentHit = 1;
@@ -530,7 +421,6 @@ static void testGate()
         CHECK(r == AF_Ray::Clear, "T10b unnamed hit but the stem range is empty -> clear");
     }
 
-    // --- T11: RaycastAll symbol missing -> single-ray fallback -------------
     resetWorld();
     fn_PhysicsRaycastAll = nullptr;
     g_losHits = { {0.0f, &g_selfCol} };
@@ -563,7 +453,6 @@ static void testGate()
     }
     fn_PhysicsRaycastAll = fake_raycastAll;
 
-    // --- T12: no ray symbols at all -> Unknown (fail closed) ---------------
     resetWorld();
     fn_PhysicsRaycastAll = nullptr;
     fn_PhysicsRaycastHitOut = nullptr;
@@ -578,38 +467,31 @@ static void testGate()
     fn_PhysicsRaycastSegment = fake_raySegment;
 }
 
-// ---------------------------------------------------------------------------
-// 2. A_FireRaycastAllNearest - the array guards
-// ---------------------------------------------------------------------------
 static void testArrayGuards()
 {
     AF_NamedHit h{};
 
-    // --- G1: null array -> refused (caller falls back) --------------------
     resetWorld();
     CHECK(!A_FireRaycastAllNearest(nullptr, 10.0f, (Pawn *)g_targetPawn.b, (Pawn *)g_localPawn.b, h),
           "G1 null RaycastAll result is refused, not read as 'no hits'");
 
-    // --- G2: absurd length (bad header/layout) -> refused ------------------
     resetWorld();
     std::memset(g_hitArrayBuf, 0, sizeof g_hitArrayBuf);
     *(size_t *)(g_hitArrayBuf + AF_ARRAY_LEN_OFF) = 100000;
     CHECK(!A_FireRaycastAllNearest(g_hitArrayBuf, 10.0f, (Pawn *)g_targetPawn.b, (Pawn *)g_localPawn.b, h),
           "G2 out-of-range length -> refused (degrades to the single-ray path)");
 
-    // --- G3: distance PhysX could not have produced -> refused -------------
     resetWorld();
     std::memset(g_hitArrayBuf, 0, sizeof g_hitArrayBuf);
     *(size_t *)(g_hitArrayBuf + AF_ARRAY_LEN_OFF) = 1;
     {
         unsigned char *e = g_hitArrayBuf + AF_ARRAY_DATA_OFF;
-        *(float *)(e + AF_RAYHIT_DISTOFF) = 999999.0f;   // beyond any maxDistance
+        *(float *)(e + AF_RAYHIT_DISTOFF) = 999999.0f;
         *(void **)(e + AF_RAYHIT_COLLOFF) = g_wallCol.b;
     }
     CHECK(!A_FireRaycastAllNearest(g_hitArrayBuf, 10.0f, (Pawn *)g_targetPawn.b, (Pawn *)g_localPawn.b, h),
           "G3 impossible hit distance -> refused");
 
-    // --- G4: unsorted hits -> nearest one wins -----------------------------
     resetWorld();
     g_losHits = { {4.0f, &g_wallCol}, {1.5f, &g_wallCol}, {3.0f, &g_targetCol} };
     void *arr = fake_raycastAll(Vector3{}, Vector3{}, 5.0f);
@@ -619,16 +501,12 @@ static void testArrayGuards()
           "G4 unsorted records are walked nearest-first (1.5 m wall, not 4 m)");
 }
 
-// ---------------------------------------------------------------------------
-// 3. A_FireCrosshairRayPawn - path A names the enemy past our own body
-// ---------------------------------------------------------------------------
 static void testCentreRay()
 {
     Pawn *items[2] = { (Pawn *)g_targetPawn.b, (Pawn *)g_otherPawn.b };
     const Vector3 camPos(0.0f, 1.6f, 0.0f);
     const Vector3 forward(0.0f, 0.0f, 1.0f);
 
-    // --- C1: our own body at 0.02 m, enemy behind --------------------------
     resetWorld();
     g_centreHits = { {0.02f, &g_selfCol}, {5.0f, &g_targetCol} };
     {
@@ -640,7 +518,6 @@ static void testCentreRay()
         CHECK(g_triggerDiag.selfHitsSkipped == 1, "C1 self hit counted");
     }
 
-    // --- C2: only our body -> nothing centred ------------------------------
     resetWorld();
     g_centreHits = { {0.02f, &g_selfCol} };
     {
@@ -651,7 +528,6 @@ static void testCentreRay()
               "C2 centre ray on empty space (self skipped) -> no centred pawn");
     }
 
-    // --- C3: a wall first -> nothing centred (never a wall-bang) -----------
     resetWorld();
     g_centreHits = { {2.0f, &g_wallCol}, {5.0f, &g_targetCol} };
     {
@@ -661,17 +537,9 @@ static void testCentreRay()
     }
 }
 
-// ---------------------------------------------------------------------------
-// 4. A_FireScan - end to end (path B fires, wall refuses)
-// ---------------------------------------------------------------------------
 static Il2CppArray<Pawn *> g_enemyArr;
 static Il2CppList<Pawn *>  g_enemyList;
 
-// Make the HONEST dot ray unavailable: an off-centre dot that neither the game's
-// projection nor the camera basis can honour -> CrosshairRayDir answers with no
-// flags, so the accuracy gate leaves the zone scan running - the only runner
-// left that can still measure the drawn dot's zone. This is exactly the device
-// condition that needs path A skipped and path B tested on its own.
 static void killHonestDotRay()
 {
     Config.Crosshair.OffsetX = 30.0f;
@@ -691,7 +559,7 @@ static void restoreHonestDotRay()
 
 static void setEnemyList(Pawn **pawns, int n)
 {
-    std::memset(&g_enemyArr, 0, 16 + 8 + 4);          // header only (m_Items untouched zeros)
+    std::memset(&g_enemyArr, 0, 16 + 8 + 4);
     g_enemyArr.max_length = n;
     g_enemyArr.bounds = nullptr;
     for (int i = 0; i < n; i++) g_enemyArr.m_Items[i] = pawns[i];
@@ -702,15 +570,9 @@ static void setEnemyList(Pawn **pawns, int n)
     *(void **)(g_gameObj.b + Class_BaseGame_EnemyPawns) = &g_enemyList;
 }
 
-static Vector3 w2sOnCrosshair(const Vector3 &) { return Vector3{820.0f, 450.0f, 1.0f}; }   // 20 px off centre
+static Vector3 w2sOnCrosshair(const Vector3 &) { return Vector3{820.0f, 450.0f, 1.0f}; }
 static Vector3 w2sAwayFromCrosshair(const Vector3 &) { return Vector3{1400.0f, 450.0f, 1.0f}; }
 
-// The REAL forward projection, the inverse of fake_screen_to_world: the camera
-// at (0,1.6,0) with the basis (+Z forward, +X right, +Y up) and the fallback
-// focal length. Path A's projected-body bound computes the body half-span from
-// head/feet projections - a constant-point fake would make every body a
-// 0-px span and refuse everything, so where path A is expected to fire this
-// projects world positions the way the device camera does.
 static Vector3 w2sTrueProjection(const Vector3 &w)
 {
     const float f = (900.0f * 0.5f) /
@@ -724,19 +586,14 @@ static Vector3 w2sTrueProjection(const Vector3 &w)
 
 static void testScan()
 {
-    // The dot is on the centre of the 1600x900 fake screen, so the scan measures
-    // from (800, 450) and accepts a 40 px radius (installFns' 80 px dot).
     Pawn *enemies[1] = { (Pawn *)g_targetPawn.b };
 
-    // --- S1: enemy in the zone, ray hits OUR body at 0 m first -> FIRES ----
-    // Path B needs a scan with NO honest dot ray: with one, the accuracy gate
-    // would refuse everything the ray does not name before path B even runs.
     resetWorld();
     setEnemyList(enemies, 1);
     killHonestDotRay();
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
     g_w2sImpl = w2sOnCrosshair;
-    g_centreHits = { {0.02f, &g_selfCol} };            // nothing centred
+    g_centreHits = { {0.02f, &g_selfCol} };
     g_losHits    = { {0.0f, &g_selfCol}, {3.3f, &g_targetCol} };
     {
         TriggerTarget out{};
@@ -753,7 +610,6 @@ static void testScan()
     }
     restoreHonestDotRay();
 
-    // --- S2: same, but a real wall between camera and enemy -> BLOCKED -----
     resetWorld();
     setEnemyList(enemies, 1);
     killHonestDotRay();
@@ -770,10 +626,6 @@ static void testScan()
     }
     restoreHonestDotRay();
 
-    // --- S3: centre ray names him -> path A fires --------------------------
-    // Path A now also demands a projected body: the true projection is what
-    // makes head/feet land on real screen positions (the old constant-point
-    // fake turned every body into a 0-px span).
     resetWorld();
     objTargetUnderDot();
     setEnemyList(enemies, 1);
@@ -789,7 +641,6 @@ static void testScan()
               "S3 reported as the centre-ray path");
     }
 
-    // --- S4: nobody near the crosshair -> NoEnemyInZone --------------------
     resetWorld();
     setEnemyList(enemies, 1);
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
@@ -803,7 +654,6 @@ static void testScan()
         CHECK(g_triggerDiag.candidates == 0, "S4 candidate counter agrees");
     }
 
-    // --- S5: dead enemy in the zone -> refused before any ray --------------
     resetWorld();
     setEnemyList(enemies, 1);
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
@@ -820,26 +670,16 @@ static void testScan()
     g_w2sImpl = nullptr;
 }
 
-// ---------------------------------------------------------------------------
-// 6. The target filter is GONE (All / Visible Only / Within 25-50-100 m)
-//
-// The option never changed a shot on device, so it was removed from the scan, the
-// UI and the config. These checks pin the removal down: a pawn the game itself
-// reports as occluded, and a pawn far outside every distance the old filter
-// offered, must both remain shootable - the visibility RAY is the only opinion
-// left about whether a shot is possible.
-// ---------------------------------------------------------------------------
 static void testNoTargetFilter()
 {
     Pawn *enemies[1] = { (Pawn *)g_targetPawn.b };
 
-    // --- F1: the game reports him occluded -> the scan does not care --------
     resetWorld();
     setEnemyList(enemies, 1);
     killHonestDotRay();
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
     g_w2sImpl = w2sOnCrosshair;
-    g_lastOccVisible = 0; g_recentlyRendered = 0;      // what "Visible Only" refused
+    g_lastOccVisible = 0; g_recentlyRendered = 0;
     g_centreHits = { {0.02f, &g_selfCol} };
     g_losHits    = { {3.3f, &g_targetCol} };
     {
@@ -852,13 +692,12 @@ static void testNoTargetFilter()
     }
     restoreHonestDotRay();
 
-    // --- F2: 40 m away, under the crosshair -> still fired ------------------
     resetWorld();
     setEnemyList(enemies, 1);
     killHonestDotRay();
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
     g_w2sImpl = w2sOnCrosshair;
-    objPos(g_targetHead, 0.5f, 1.7f, 40.0f);           // what "Within 25 m" refused
+    objPos(g_targetHead, 0.5f, 1.7f, 40.0f);
     objPos(g_targetMesh, 0.5f, 0.0f, 40.0f);
     objPos(g_targetRoot, 0.5f, 0.0f, 40.0f);
     g_centreHits = { {0.02f, &g_selfCol} };
@@ -872,7 +711,6 @@ static void testNoTargetFilter()
     }
     restoreHonestDotRay();
 
-    // --- F3: both removed rules at once -------------------------------------
     resetWorld();
     setEnemyList(enemies, 1);
     killHonestDotRay();
@@ -896,9 +734,6 @@ static void testNoTargetFilter()
     g_w2sImpl = nullptr;
 }
 
-// ---------------------------------------------------------------------------
-// 7. Tick-hook cost: the hooks fire for every pawn and weapon in the world
-// ---------------------------------------------------------------------------
 static int g_localPawnLookups = 0;
 static Pawn *fake_localPawnCounted()
 {
@@ -906,15 +741,6 @@ static Pawn *fake_localPawnCounted()
     return (Pawn *)g_localPawn.b;
 }
 
-// ---------------------------------------------------------------------------
-// 8. The dot crosshair IS the trigger's crosshair
-//
-// The crosshair_check test proves the geometry; this proves the SCAN obeys it -
-// that the pixel the trigger measures from and the radius it accepts are both
-// the dot, always, with no switch to disconnect them. This is the behaviour the
-// "even with use-dot-for-triggerbot on, and the dot small, it still shot from
-// the game's centre" report asked for.
-// ---------------------------------------------------------------------------
 static void setCrosshair(float offX, float offY, float sizePx, bool drawn = true)
 {
     Config.Crosshair.Enabled = drawn;
@@ -925,34 +751,26 @@ static void setCrosshair(float offX, float offY, float sizePx, bool drawn = true
 
 static FireBlock runScanOnCrosshairSetup(TriggerTarget &out, bool dotSeesPawn = false)
 {
-    // One enemy 20 px right of the 1600x900 centre (820,450). The dot ray's hit
-    // list is separate from the LOS list, so a test can put him under the dot's
-    // ray (path A fires) or leave the ray hitting only our own body - either
-    // way the decision belongs to the ray once an honest dot ray exists.
-    // When path A is expected to FIRE, the projection fake has to be the real
-    // one: the projected-body bound measures the head/feet span on screen, and
-    // a constant-point fake would refuse every accept as a 0-px body.
     Pawn *enemies[1] = { (Pawn *)g_targetPawn.b };
-    objTargetUnderDot();          // the dot HAS to be on him when its ray fires
+    objTargetUnderDot();
     setEnemyList(enemies, 1);
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
     g_w2sImpl = dotSeesPawn ? w2sTrueProjection : w2sOnCrosshair;
     if (dotSeesPawn)
-        g_centreHits = { {0.02f, &g_selfCol}, {5.0f, &g_targetCol} };  // the dot NAMES him
+        g_centreHits = { {0.02f, &g_selfCol}, {5.0f, &g_targetCol} };
     else
-        g_centreHits = { {0.02f, &g_selfCol} };                       // the dot ray misses
+        g_centreHits = { {0.02f, &g_selfCol} };
     g_losHits    = { {0.0f, &g_selfCol}, {3.3f, &g_targetCol} };
     return A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
 }
 
 static void testCrosshairAim()
 {
-    // --- X1: the dot's pixel is what the scan measures from ----------------
     resetWorld();
     setCrosshair(0.0f, 0.0f, 80.0f);
     {
         TriggerTarget out{};
-        FireBlock b = runScanOnCrosshairSetup(out, /*dotSeesPawn=*/true);
+        FireBlock b = runScanOnCrosshairSetup(out, true);
         CHECK(b == FireBlock::Fired && out.path == 0,
               "X1 the enemy under the dot's own ray is fired (path A)");
         CHECK(g_triggerDiag.crosshairCx == 800.0f && g_triggerDiag.crosshairCy == 450.0f,
@@ -965,9 +783,8 @@ static void testCrosshairAim()
               "X1 ... and the accepted shot is INSIDE his projected body (keep <= 1)");
     }
 
-    // --- X2: the zone IS the dot - shrink the dot, tighten the trigger -----
     resetWorld();
-    setCrosshair(0.0f, 0.0f, 10.0f);              // 10 px dot -> 5 px zone
+    setCrosshair(0.0f, 0.0f, 10.0f);
     {
         TriggerTarget out{};
         FireBlock b = runScanOnCrosshairSetup(out);
@@ -980,9 +797,8 @@ static void testCrosshairAim()
               "X2 ... and the refusal came from the dot's own ray, not from the zone");
     }
 
-    // --- X3: moving the dot moves the whole scan ---------------------------
     resetWorld();
-    setCrosshair(40.0f, -25.0f, 100.0f);          // dot at (840,425), 50 px radius
+    setCrosshair(40.0f, -25.0f, 100.0f);
     {
         TriggerTarget out{};
         FireBlock b = runScanOnCrosshairSetup(out);
@@ -990,9 +806,7 @@ static void testCrosshairAim()
               "X3 the scan aims through the dot (800+40, 450-25)");
         CHECK(g_triggerDiag.crosshairRayViaGame == 1,
               "X3 ... and the ray is the ray through that pixel");
-        // The enemy (820,450) is ~32 px off the moved dot - inside the drawn
-        // zone but NOT under the dot's ray. The ray decides, so no fire: this
-        // is exactly the over-fire the report complained about.
+
         CHECK(b == FireBlock::NoEnemyInZone && g_triggerDiag.dotRayDecided,
               "X3 near the dot but NOT under its ray -> NO fire (the over-fire fix)");
     }
@@ -1000,12 +814,11 @@ static void testCrosshairAim()
     setCrosshair(40.0f, -25.0f, 100.0f);
     {
         TriggerTarget out{};
-        FireBlock b = runScanOnCrosshairSetup(out, /*dotSeesPawn=*/true);
+        FireBlock b = runScanOnCrosshairSetup(out, true);
         CHECK(b == FireBlock::Fired && out.path == 0,
               "X3 the same dot ON him still fires (the decision follows the dot)");
     }
 
-    // --- X4: a far-away dot stops firing what is under the old centre ------
     resetWorld();
     setCrosshair(200.0f, 0.0f, 80.0f);
     {
@@ -1016,11 +829,8 @@ static void testCrosshairAim()
         CHECK(b != FireBlock::Fired, "X4 ... so the trigger does NOT fire him");
     }
 
-    // --- X5: there is no way to detach the trigger from the dot ------------
-    // The menu option that used to do it is gone: hiding the DRAWING cannot move
-    // the trigger back to the screen centre.
     resetWorld();
-    setCrosshair(200.0f, 0.0f, 80.0f, /*drawn=*/false);
+    setCrosshair(200.0f, 0.0f, 80.0f, false);
     {
         TriggerTarget out{};
         FireBlock b = runScanOnCrosshairSetup(out);
@@ -1030,7 +840,6 @@ static void testCrosshairAim()
               "X5 ... and the enemy at +20 px stays unfired");
     }
 
-    // --- X6: nothing can honour the offset -> the centre ray, REPORTED -----
     resetWorld();
     setCrosshair(40.0f, -25.0f, 80.0f);
     fn_TransformGetRight  = nullptr;
@@ -1047,7 +856,6 @@ static void testCrosshairAim()
               "X6 the dot's zone still covers the enemy, so the trigger keeps working");
     }
 
-    // --- X7: the game's projection alone is enough (no basis needed) -------
     resetWorld();
     setCrosshair(40.0f, -25.0f, 80.0f);
     fn_TransformGetRight  = nullptr;
@@ -1065,25 +873,15 @@ static void testCrosshairAim()
     fn_TransformGetUp     = fake_get_up;
     fn_ScreenToWorldPoint = fake_screen_to_world;
 
-    // --- X8: THE BESIDE-THE-ARM REPORT, pinned ------------------------------
-    // The dot is 200 px right of centre; the dot ray grazes an UNREGISTERED
-    // piece of the enemy's component hierarchy (his "arm", from the trigger's
-    // point of view) a few centimetres off his silhouette - the wall-collider
-    // in the fake, because that is exactly what an unregistered near-arm hit
-    // looks like. The parent walk reaches his root transform, so the ray does
-    // "name" him; but his projected body sits ~190 px LEFT of the dot, so the
-    // projected-body bound refuses: the dot is BESIDE the arm, not on him.
-    // This is the exact over-fire the report describes.
     resetWorld();
-    // 40 m out: his projected body is ~33 px tall / ~9 px wide, so a dot a
-    // couple hundred px sideways is BESIDE the arm, not inside the silhouette.
+
     objPos(g_targetHead, 0.5f, 1.7f, 40.0f);
     objPos(g_targetMesh, 0.5f, 0.0f, 40.0f);
     objPos(g_targetRoot, 0.5f, 0.0f, 40.0f);
     setCrosshair(200.0f, 0.0f, 80.0f);
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
     g_w2sImpl = w2sTrueProjection;
-    g_centreHits = { {0.02f, &g_selfCol}, {5.0f, &g_targetCol} };  // the ray "names" him
+    g_centreHits = { {0.02f, &g_selfCol}, {5.0f, &g_targetCol} };
     g_losHits    = {};
     {
         TriggerTarget out{};
@@ -1096,24 +894,17 @@ static void testCrosshairAim()
               "X8 ... and the panel counts it as a projected-body refusal");
         CHECK(out.pawn == nullptr, "X8 no target escapes the bound");
     }
-    // --- X9: THE REPORT, pinned at CLOSE RANGE ------------------------------
-    // The screenshot case: an enemy a few metres away who is NOT under the dot,
-    // with the dot ray grazing an unregistered piece of his hierarchy (his
-    // outstretched arm / weapon, the collider the fake world uses for it) so the
-    // parent walk DOES reach him. The bound that used to run here was HALF HIS
-    // BODY HEIGHT used as a radius around his chest - at 3.3 m that is ~200 px,
-    // so a dot 118 px to his side passed and the trigger fired beside his arm.
-    // The body's own WIDTH is the bound now, and 118 px is not inside it.
+
     resetWorld();
     setCrosshair(0.0f, 0.0f, 80.0f);
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
     g_w2sImpl = w2sTrueProjection;
-    g_centreHits = { {0.02f, &g_selfCol}, {5.0f, &g_targetCol} };   // the ray "names" him
+    g_centreHits = { {0.02f, &g_selfCol}, {5.0f, &g_targetCol} };
     g_losHits    = {};
     {
         TriggerTarget out{};
         Pawn *enemies[1] = { (Pawn *)g_targetPawn.b };
-        setEnemyList(enemies, 1);                     // 3.3 m, 118 px to the RIGHT of the dot
+        setEnemyList(enemies, 1);
         FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
         CHECK(b == FireBlock::NoEnemyInZone,
               "X9 close range, dot 118 px beside his body: NO fire (the report)");
@@ -1122,9 +913,6 @@ static void testCrosshairAim()
         CHECK(out.pawn == nullptr, "X9 no target escapes");
     }
 
-    // --- X9b: the same 40 px offset is ON him at 3 m and BESIDE him at 40 m --
-    // The bound is physical (px per metre comes from his own projected body), so
-    // it tightens with distance instead of being a fixed pixel slack.
     resetWorld();
     objTargetUnderDot(3.3f);
     setCrosshair(40.0f, 0.0f, 80.0f);
@@ -1156,14 +944,9 @@ static void testCrosshairAim()
               "X9b the same 40 px at 40 m is 1.4 m to his side -> NO fire");
     }
 
-    // --- X10: an unmeasurable body is not a free pass -----------------------
-    // With no head the body axis cannot be projected at all. That used to skip
-    // the bound ENTIRELY (the shot fired wherever the ray pointed); now the dot
-    // is held to the drawn dot's own radius around his aim point, so a dot far
-    // off a body that cannot be measured is refused instead of accepted.
     resetWorld();
-    objSetBone(g_targetPawn, Class_Pawn_m_HeadBone, nullptr);   // no head -> no axis
-    setCrosshair(0.0f, 0.0f, 10.0f);                            // 10 px dot -> 5 px radius
+    objSetBone(g_targetPawn, Class_Pawn_m_HeadBone, nullptr);
+    setCrosshair(0.0f, 0.0f, 10.0f);
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
     g_w2sImpl = w2sTrueProjection;
     g_centreHits = { {0.02f, &g_selfCol}, {5.0f, &g_targetCol} };
@@ -1177,13 +960,11 @@ static void testCrosshairAim()
               "X10 body unmeasurable AND the dot 88 px off his aim point -> NO fire");
         CHECK(g_triggerDiag.dotRayDeclined >= 1, "X10 ... counted, not silently fired");
     }
-    // ... and the fallback is not a blanket refusal: with the same unmeasurable
-    // body, a small dot sitting exactly ON his aim point still fires. (The
-    // fallback's reference is that aim point, so this is the case it accepts.)
+
     resetWorld();
     objSetBone(g_targetPawn, Class_Pawn_m_HeadBone, nullptr);
     objTargetUnderDot();
-    setCrosshair(0.0f, 130.0f, 10.0f);   // dot at (800,580) = his aim point +0 px
+    setCrosshair(0.0f, 130.0f, 10.0f);
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
     g_w2sImpl = w2sTrueProjection;
     g_centreHits = { {0.02f, &g_selfCol}, {5.0f, &g_targetCol} };
@@ -1200,7 +981,6 @@ static void testCrosshairAim()
     restoreHonestDotRay();
     g_w2sImpl = nullptr;
 
-    // Leave the config as the rest of the suite expects it.
     resetWorld();
     setCrosshair(0.0f, 0.0f, 80.0f);
     Config.Crosshair.Enabled = true;
@@ -1221,26 +1001,20 @@ static void resetLocalPawnCache()
 
 static void testTickHookCost()
 {
-    // GamePlay::get_LocalPawn() is (m_unity + api12) - count the calls.
     api12 = (uintptr_t)&fake_localPawnCounted;
 
-    // --- H0: control - the raw getter really is called once per use --------
-    // Without this, "<= 2 lookups for 200 calls" could just be a counter that
-    // never counts.
     resetLocalPawnCache();
     g_localPawnLookups = 0;
     for (int i = 0; i < 200; i++) { Pawn *p = GamePlay::get_LocalPawn(); (void)p; }
     CHECK(g_localPawnLookups == 200,
           "H0 control: 200 raw get_LocalPawn() calls are 200 native calls");
 
-    // --- H1: the cached local pawn ----------------------------------------
     resetLocalPawnCache();
     g_localPawnLookups = 0;
     for (int i = 0; i < 200; i++) { Pawn *p = A_FireLocalPawnFast(); (void)p; }
     CHECK(g_localPawnLookups <= 2,
           "H1 200 cached local-pawn reads cost <= 2 native GamePlay::get_LocalPawn calls");
 
-    // --- H2: pawn ticks of OTHER pawns ------------------------------------
     resetLocalPawnCache();
     g_localPawnLookups = 0;
     g_triggerDiag = TriggerbotDiag{};
@@ -1249,7 +1023,6 @@ static void testTickHookCost()
           "H2 200 foreign pawn ticks cost <= 2 native lookups (was one each)");
     CHECK(g_triggerDiag.pawnLocalTicks == 0, "H2 no foreign tick was mistaken for ours");
 
-    // --- H3: the feature is OFF -------------------------------------------
     Config.NewFeaturesMenu.Triggerbot = false;
     resetLocalPawnCache();
     g_localPawnLookups = 0;
@@ -1262,35 +1035,9 @@ static void testTickHookCost()
     CHECK(g_triggerDiag.lastTickTime > 0.0, "H3 the heartbeat stays alive");
 }
 
-// ---------------------------------------------------------------------------
-// 9. The two options that crashed the client: No Sprint Fire Delay, ADS Only
-//
-// Both called back into the game from a place no guard on this side could cover:
-//
-//   * the hooked Weapon.get_DelaySprintFire body resolved the local pawn and
-//     called Pawn.get_CurrentWeapon() from INSIDE that getter, on a pawn that may
-//     already have been destroyed (its managed wrapper stays readable, so
-//     Tools::IsPtrValid passes and the native call walks the cleared m_CachedPtr);
-//   * the "ADS only" gate called Pawn.IsAiming() 0x519BB10 after validating the
-//     pawn with Tools::IsPtrValid() alone - which passes for a pawn the game has
-//     already Destroyed, whose managed wrapper stays readable while
-//     Object.m_CachedPtr is cleared. The GUARD was the bug, not the symbol.
-//
-// The sprint-delay gate is PURE now: one pointer compare against a cache
-// refreshed from the local pawn's own tick. Pawn.IsAiming() IS called again (it
-// is the game's own scoping flag and the .57 dump's answer), but only through
-// A_FirePawnCallable(), and the ADS gate has a second, independent source plus a
-// fail-open verdict when neither can answer. Every fake below COUNTS, and the
-// counters must stay at zero where it matters - that is what proves the crash is
-// gone rather than moved.
-// ---------------------------------------------------------------------------
-static int g_isAimingCalls      = 0;   // the api15 macro path - must stay 0
-static int g_currentWeaponCalls = 0;   // Pawn::get_CurrentWeapon - only our tick may call it
+static int g_isAimingCalls      = 0;
+static int g_currentWeaponCalls = 0;
 
-// Pawn::IsAiming through the api15 MACRO (Class_Pawn_IsAiming). The triggerbot
-// resolves its own pointer and goes through A_FirePawnCallable; this trap answers
-// "yes, scoping", so a stray macro call shows up as a shot in a test that expects
-// a block.
 static bool fake_pawnIsAimingTrap(void *)
 {
     g_isAimingCalls++;
@@ -1303,24 +1050,19 @@ static Weapon *fake_currentWeapon(Pawn *)
     return (Weapon *)g_weaponObj.b;
 }
 
-// Weapon.m_IsAiming @0xC21 / m_AimingPercentage @0x460. These offsets are NOT
-// verified anywhere in this repo, so the gate only ever PRINTS them - which is
-// what keeps a wrong offset from turning "ADS only" into "always" or "never".
 static void setWeaponAiming(bool flag, float percent)
 {
     *(bool  *)(g_weaponObj.b + Offsets::Weapon_m_IsAiming)         = flag;
     *(float *)(g_weaponObj.b + Offsets::Weapon_m_AimingPercentage) = percent;
 }
 
-// The world a Fired verdict needs, without running the tree: the mode gate and
-// the re-press pacing below both drive A_FireShouldFire / A_FireTick for real.
 static void armFiringWorld()
 {
     Pawn *enemies[1] = { (Pawn *)g_targetPawn.b };
-    objTargetUnderDot();          // path A fires here, so the dot is ON him
+    objTargetUnderDot();
     setEnemyList(enemies, 1);
     fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
-    g_w2sImpl = w2sTrueProjection;   // path A fires here: real body projection
+    g_w2sImpl = w2sTrueProjection;
     g_centreHits = { {0.02f, &g_selfCol}, {5.0f, &g_targetCol} };
     g_losHits    = { {0.0f, &g_selfCol}, {3.3f, &g_targetCol} };
     setCrosshair(0.0f, 0.0f, 80.0f);
@@ -1350,40 +1092,31 @@ static bool fake_pawnIsFiring(void *) { return g_isFiringValue; }
 
 static void installAdsFakes()
 {
-    // The fake fire component: live (m_CachedPtr) AND carrying a class header
-    // whose name contains "Instant" - the two things the real gate checks
-    // before it ever calls get_IsAiming on it.
     objInit(g_fireCompObj);
     std::memset(g_fakeKlass, 0, sizeof g_fakeKlass);
-    *(const char **)(g_fakeKlass + 0x10) = g_instantName;   // Il2CppClass.name
-    *(void **)(g_fireCompObj.b + 0x00)   = g_fakeKlass;     // object's class ptr
+    *(const char **)(g_fakeKlass + 0x10) = g_instantName;
+    *(void **)(g_fireCompObj.b + 0x00)   = g_fakeKlass;
 
     fn_PawnIsAiming                  = fake_pawnAimingCounted;
     fn_WeaponGetCurrentFireComponent = fake_currentFireComponent;
     fn_FireComponentGetIsAiming      = fake_fireComponentAiming;
 }
 
-// The same crosshair setup the scan tests use, driven through the whole decision
-// tree (A_FireShouldFire) so the mode gate really runs.
 static FireBlock runTreeOnCrosshairSetup(TriggerTarget &out)
 {
-    // The dot's ray NAMES the enemy (path A fires): the mode gate under test
-    // sits in front of the scan, so the scan's Fired verdict has to be
-    // reachable at all.
     armFiringWorld();
     return A_FireShouldFire(out);
 }
 
 static void testCrashFixes()
 {
-    api12 = (uintptr_t)&fake_localPawnCounted;   // GamePlay::get_LocalPawn
-    api15 = (uintptr_t)&fake_pawnIsAimingTrap;   // the api15 macro path - never taken
-    api22 = (uintptr_t)&fake_currentWeapon;      // Pawn::get_CurrentWeapon
+    api12 = (uintptr_t)&fake_localPawnCounted;
+    api15 = (uintptr_t)&fake_pawnIsAimingTrap;
+    api22 = (uintptr_t)&fake_currentWeapon;
     Config.NewFeaturesMenu.Triggerbot = false;
 
-    // --- A0: a destroyed weapon is refused before any ADS call --------------
     resetWorld();
-    *(void **)(g_weaponObj.b + 0x10) = nullptr;    // m_CachedPtr cleared = Destroy()d
+    *(void **)(g_weaponObj.b + 0x10) = nullptr;
     Config.NewFeaturesMenu.TriggerbotMode = 1;
     g_pawnAimingCalls = g_fcAimingCalls = 0;
     {
@@ -1394,11 +1127,8 @@ static void testCrashFixes()
         CHECK(g_pawnAimingCalls == 0 && g_fcAimingCalls == 0,
               "A0 ... and neither ADS source is asked about it");
     }
-    objInit(g_weaponObj);                          // the rest of the suite needs it back
+    objInit(g_weaponObj);
 
-    // --- B1: the sprint-delay gate is pure ----------------------------------
-    // This is the function the hooked Weapon.get_DelaySprintFire calls. The two
-    // counters below are native game calls: the hook body must make NONE.
     resetWorld();
     api12 = (uintptr_t)&fake_localPawnCounted;
     api22 = (uintptr_t)&fake_currentWeapon;
@@ -1415,7 +1145,6 @@ static void testCrashFixes()
               "B1 ... and still recognise the local player's own weapon");
     }
 
-    // --- B2: only THAT weapon, and only while the option is on -------------
     CHECK(!NoSprintFireDelayActive((void *)g_otherPawn.b),
           "B2 a remote player's weapon is never touched");
     CHECK(!NoSprintFireDelayActive(nullptr), "B2 a null instance is refused");
@@ -1424,10 +1153,6 @@ static void testCrashFixes()
           "B2 with the option off the getter falls through to the game's value");
     Config.NewFeaturesMenu.NoSprintToFireDelay = true;
 
-    // --- B3: the cache is filled from the local pawn's OWN tick ------------
-    // A_FirePawnTicked is the game ticking this very pawn - the one moment where
-    // "alive with a real weapon" is not a guess, so the native calls are allowed
-    // there (and only there).
     g_noSprintFireDelayWeapon.store(nullptr, std::memory_order_relaxed);
     {
         g_currentWeaponCalls = 0;
@@ -1438,31 +1163,17 @@ static void testCrashFixes()
               "B3 ... and it caches the held weapon for the hook to compare against");
     }
 
-    // --- B4: switching the option off empties the cache (hook becomes inert) -
     Config.NewFeaturesMenu.NoSprintToFireDelay = false;
     A_FirePawnTicked((void *)g_localPawn.b);
     CHECK(g_noSprintFireDelayWeapon.load() == nullptr,
           "B4 with the option off the cache is cleared, so the hook changes nothing");
 
-    // Leave the suite as it was found.
     Config.NewFeaturesMenu.NoSprintToFireDelay = false;
     Config.NewFeaturesMenu.TriggerbotMode = 0;
     objInit(g_weaponObj);
     resetWorld();
 }
 
-// ---------------------------------------------------------------------------
-// 10. The "ADS only" gate (TriggerbotMode 1)
-//
-// The mode used to read two UNVERIFIED Weapon field offsets, and a wrong offset
-// is exactly what makes it block every shot - the reported "ADS only does not
-// work". The verdict now comes from the game's own getters:
-//   Pawn::IsAiming() 0x519BB10 (the .57 dump's "local player is scoping") and
-//   WeaponFireComponent_Instant::get_IsAiming() 0xC9AF4E0 on the held weapon's
-//   current fire component - each called ONLY on an object that passed the
-//   m_CachedPtr liveness check (the guard the crashed version was missing), and
-//   when NEITHER can answer the mode fires anyway and the panel says so.
-// ---------------------------------------------------------------------------
 static void testAdsGate()
 {
     api12 = (uintptr_t)&fake_localPawnCounted;
@@ -1470,7 +1181,6 @@ static void testAdsGate()
     api22 = (uintptr_t)&fake_currentWeapon;
     Config.NewFeaturesMenu.Triggerbot = false;
 
-    // --- B1: neither source is scoping -> the mode blocks the shot ----------
     resetWorld();
     installAdsFakes();
     setWeaponAiming(false, 0.0f);
@@ -1481,11 +1191,7 @@ static void testAdsGate()
         TriggerTarget out{};
         CHECK(runTreeOnCrosshairSetup(out) == FireBlock::ModeNotAds,
               "B1 ADS Only: neither source is scoping -> the shot is blocked");
-        // Pawn.IsAiming is asked ONCE per scan: the scope-swap probe does it for
-        // every mode, and the mode gate reuses that same answer (the second call
-        // per scan the older version paid was pure waste). The fire component is
-        // asked exactly once, and the probe asks it as well - that read is what
-        // catches the component swap.
+
         CHECK(g_pawnAimingCalls == 1 && g_fcAimingCalls == 1,
               "B1 both ADS sources were asked once (probe -> the gate reuses the pawn answer)");
         CHECK(g_isAimingCalls == 0,
@@ -1496,7 +1202,6 @@ static void testAdsGate()
               "B1 the panel reports who answered and what they said");
     }
 
-    // --- B2: the pawn's own flag (the .57-dump source) fires ----------------
     resetWorld();
     installAdsFakes();
     g_pawnAimingValue = true; g_fcAimingValue = false;
@@ -1508,7 +1213,6 @@ static void testAdsGate()
               "B2 ... and the panel credits the pawn flag");
     }
 
-    // --- B3: the fire component alone is enough ----------------------------
     resetWorld();
     installAdsFakes();
     g_pawnAimingValue = false; g_fcAimingValue = true;
@@ -1522,7 +1226,6 @@ static void testAdsGate()
               "B3 ... and the fire component is credited");
     }
 
-    // --- B4: NO usable source -> FAIL OPEN (never block every shot) --------
     resetWorld();
     fn_PawnIsAiming                  = nullptr;
     fn_WeaponGetCurrentFireComponent = nullptr;
@@ -1537,31 +1240,26 @@ static void testAdsGate()
     }
     installAdsFakes();
 
-    // --- B5: a pawn the game reports as dead is never asked ----------------
     {
         objSetAlive(g_localPawn, false);
         g_pawnAimingCalls = 0; g_fcAimingValue = false;
-        ScopeSettle probe{};                       // no probe answer: the gate asks itself
+        ScopeSettle probe{};
         const AdsRead ads = A_FireAdsGate((void *)g_weaponObj.b, (Pawn *)g_localPawn.b, probe);
         CHECK(g_pawnAimingCalls == 0 && !ads.pawnOk,
               "B5 a pawn whose alive flag is clear is NEVER handed to the native getter");
         objSetAlive(g_localPawn, true);
     }
 
-    // --- B6: the actual crash class - a Destroy()ed native object ----------
     {
-        *(void **)(g_localPawn.b + 0x10) = nullptr;   // Object.m_CachedPtr cleared
+        *(void **)(g_localPawn.b + 0x10) = nullptr;
         g_pawnAimingCalls = 0;
-        ScopeSettle probe{};                       // no probe answer: the gate asks itself
+        ScopeSettle probe{};
         const AdsRead ads = A_FireAdsGate((void *)g_weaponObj.b, (Pawn *)g_localPawn.b, probe);
         CHECK(g_pawnAimingCalls == 0 && !ads.pawnOk,
               "B6 a Destroy()ed pawn (m_CachedPtr cleared) is never passed to the game");
         objInit(g_localPawn);
     }
 
-    // --- B7: the raw field offsets are display-only ------------------------
-    // Whatever those unverified offsets hold must not decide a shot: here they
-    // claim "aiming" while BOTH real sources say "not scoped".
     resetWorld();
     installAdsFakes();
     g_pawnAimingValue = g_fcAimingValue = false;
@@ -1574,7 +1272,6 @@ static void testAdsGate()
               "B7 ... but the panel still reports them for the record");
     }
 
-    // --- B8: "Always" asks neither source ----------------------------------
     resetWorld();
     installAdsFakes();
     Config.NewFeaturesMenu.TriggerbotMode = 0;
@@ -1583,16 +1280,11 @@ static void testAdsGate()
         TriggerTarget out{};
         CHECK(runTreeOnCrosshairSetup(out) == FireBlock::Fired,
               "B8 mode Always fires with a hipfiring weapon");
-        // The mode gate asks neither source in Always mode; the scope-swap
-        // probe still reads Pawn.IsAiming once per scan and reads the held
-        // weapon's current fire component as an OBJECT IDENTITY (a pointer read
-        // - get_IsAiming itself is only ever asked by the ADS gate). That is what
-        // keeps the crash-safe press rule in force in Always mode too.
+
         CHECK(g_pawnAimingCalls == 1 && g_fcAimingCalls == 0,
               "B8 ... and the mode gate asks neither ADS source");
     }
 
-    // --- B9: "Firing only" is untouched by the ADS gate --------------------
     resetWorld();
     installAdsFakes();
     Config.NewFeaturesMenu.TriggerbotMode = 2;
@@ -1616,15 +1308,6 @@ static void testAdsGate()
     resetWorld();
 }
 
-// ---------------------------------------------------------------------------
-// 11. Re-press pacing - an edge-press weapon must not be pressed every scan
-//
-// The old path re-pressed on the very next scan: one StartFire per frame, ~250
-// a second, into the weapon's own state machine for as long as a target stayed
-// under the crosshair. A repeat press now waits for the weapon's own cadence -
-// ended early by Weapon.CanFire() the moment the gun is ready - while the FIRST
-// shot on a target is never delayed at all.
-// ---------------------------------------------------------------------------
 static int   g_startFireCalls = 0;
 static int   g_stopFireCalls  = 0;
 static bool  g_canFireValue   = true;
@@ -1636,9 +1319,6 @@ static bool  fake_canFire(void *)         { return g_canFireValue; }
 static float fake_realInterval(void *)    { return g_realInterval; }
 static bool  fake_autoFire(void *)        { return true; }
 
-// A_FireTick drops everything inside 4 ms of the previous scan, and the local
-// pawn / held weapon are cached for 50 ms: open that window between the calls
-// below instead of sleeping through it.
 static void openTickWindow()
 {
     g_afireLastEvalTime = -1000.0;
@@ -1653,15 +1333,15 @@ static void testRepressPacing()
     fn_WeaponGetCurrentFireComponent = nullptr;
     fn_FireComponentGetIsAiming      = nullptr;
     fn_PawnGetIsFiring               = nullptr;
-    fn_WeaponIsAutoFire              = nullptr;      // unresolved -> edge press
+    fn_WeaponIsAutoFire              = nullptr;
     fn_WeaponRealFireInterval        = fake_realInterval;
     fn_WeaponCanFire                 = fake_canFire;
     fn_Weapon_StartFire              = fake_startFire;
     fn_Weapon_StopFire               = fake_stopFire;
     Config.NewFeaturesMenu.Triggerbot = true;
-    Config.NewFeaturesMenu.TriggerbotMode = 0;       // Always: keep the mode gate out
-    g_realInterval = 0.20f;                          // -> pace = 0.18 s
-    g_canFireValue = false;                          // the gun is still cycling
+    Config.NewFeaturesMenu.TriggerbotMode = 0;
+    g_realInterval = 0.20f;
+    g_canFireValue = false;
 
     resetWorld();
     armFiringWorld();
@@ -1671,7 +1351,6 @@ static void testRepressPacing()
     g_afireLastPressTime   = -1000.0;
     g_afireLastPressWeapon = nullptr;
 
-    // --- P0: the pure helper's clamps --------------------------------------
     CHECK(std::fabs(A_FireRepressPaceSeconds(0.20f) - 0.18f) < 1e-5f,
           "P0 pace = 90% of the weapon's own interval");
     CHECK(A_FireRepressPaceSeconds(0.0001f) == A_FireTune::kMinFireInterval,
@@ -1679,20 +1358,17 @@ static void testRepressPacing()
     CHECK(A_FireRepressPaceSeconds(9.0f) == A_FireTune::kMaxRepressPace,
           "P0 a huge interval is capped, so a repeat press never waits too long");
 
-    // --- P1: the FIRST shot is never paced ---------------------------------
     openTickWindow();
     A_FireTick(nullptr);
     CHECK(g_startFireCalls == 1, "P1 the first press goes out with no delay");
     CHECK(g_triggerDiag.fires == 1, "P1 ... and the panel counts it");
 
-    // --- P2: the release that arms the next round --------------------------
     openTickWindow();
     A_FireTick(nullptr);
     CHECK(g_stopFireCalls == 1 && !g_afireHoldingFire,
           "P2 an edge-press weapon is released on the next scan (one press = one shot)");
     CHECK(g_startFireCalls == 1, "P2 ... and nothing was re-pressed yet");
 
-    // --- P3: too soon AND the gun says "not ready" -> no press -------------
     openTickWindow();
     A_FireTick(nullptr);
     CHECK(g_startFireCalls == 1,
@@ -1702,7 +1378,6 @@ static void testRepressPacing()
     CHECK(GetTriggerbotDebugState() == 1,
           "P3 ... as an 'aimed in, waiting on the gun' state");
 
-    // --- P4: Weapon.CanFire() ends the wait immediately --------------------
     g_canFireValue = true;
     openTickWindow();
     A_FireTick(nullptr);
@@ -1710,28 +1385,22 @@ static void testRepressPacing()
           "P4 the moment the game says the gun can fire, the press goes out (no added delay)");
     g_canFireValue = false;
 
-    // --- P5: a CanFire that never answers "ready" cannot silence it --------
-    // The pace alone allows the next press - it is bounded, so the trigger can
-    // never go quiet, and it is the only thing standing between us and the old
-    // press-per-scan spam.
     openTickWindow();
-    A_FireTick(nullptr);                                  // release
-    g_afireLastPressTime = A_FireNow() - 0.30;            // past the 0.18 s pace
+    A_FireTick(nullptr);
+    g_afireLastPressTime = A_FireNow() - 0.30;
     openTickWindow();
     A_FireTick(nullptr);
     CHECK(g_startFireCalls == 3,
           "P5 past the pace a press goes out even with CanFire stuck 'not ready'");
 
-    // --- P6: a NEW target is never paced -----------------------------------
-    g_afireLastPressTime   = A_FireNow();                 // as if we had just fired
+    g_afireLastPressTime   = A_FireNow();
     g_afireLastPressWeapon = (void *)g_weaponObj.b;
-    g_afireTargetPawn      = (void *)g_otherPawn.b;       // ... at somebody else
+    g_afireTargetPawn      = (void *)g_otherPawn.b;
     openTickWindow();
     A_FireTick(nullptr);
     CHECK(g_startFireCalls == 4, "P6 a new target is pressed immediately, never paced");
 
-    // --- P7: an auto weapon is held, never released, never re-pressed ------
-    A_FireReleaseTrigger(nullptr);                        // clean, released state
+    A_FireReleaseTrigger(nullptr);
     g_afireTargetPawn      = nullptr;
     g_afireLastPressTime   = -1000.0;
     g_afireLastPressWeapon = nullptr;
@@ -1748,35 +1417,27 @@ static void testRepressPacing()
           "P7 an auto weapon is held: no release and no re-press while the target stays");
     CHECK(g_afireHoldingFire, "P7 ... the trigger stays down");
 
-    // --- P9: a held auto weapon re-asserts when the gun becomes ready again
-    // The game clears its own fire request on an auto-reload; without this the
-    // burst never resumes until the player taps the button again.
     const int beforeReassert = g_startFireCalls;
-    g_canFireValue = false;                       // reloading
+    g_canFireValue = false;
     openTickWindow();
     A_FireTick(nullptr);
-    g_canFireValue = true;                        // reload finished
+    g_canFireValue = true;
     openTickWindow();
     A_FireTick(nullptr);
     CHECK(g_startFireCalls == beforeReassert + 1,
           "P9 a held auto weapon re-presses the moment CanFire turns true (reload recovery)");
     CHECK(g_triggerDiag.reasserts >= 1, "P9 ... and the panel counts the re-assert");
 
-    // --- P10: the backstop, for a gun that stays "ready" while held --------
-    g_afireLastPressTime = A_FireNow() - 0.30;    // past kReassertPress
+    g_afireLastPressTime = A_FireNow() - 0.30;
     openTickWindow();
     A_FireTick(nullptr);
     CHECK(g_startFireCalls == beforeReassert + 2,
           "P10 a held trigger also re-asserts on the periodic backstop");
 
-    // --- P8: an unknown fire mode is an EDGE press, not a hold -------------
-    // Holding is how a semi-auto whose flags did not resolve fires once and then
-    // never again.
     fn_WeaponIsAutoFire = nullptr;
     CHECK(GetWeaponFireMode((void *)g_weaponObj.b) == FireMode::Single,
           "P8 an unrecognised weapon behaves as single shot (edge), never as a hold");
 
-    // Leave the suite as it was found.
     g_afireHoldingFire     = false;
     g_afireFiringOn        = nullptr;
     g_afireTargetPawn      = nullptr;
@@ -1791,27 +1452,9 @@ static void testRepressPacing()
     resetWorld();
 }
 
-// ---------------------------------------------------------------------------
-// 12. The scope-swap guard - the "crashes in the middle of the game while
-//     scoping back to back, ADS only" report.
-//
-// Both the press AND the release are native calls into the weapon's fire state
-// machine, and scoping in or out is exactly when that machine is rebuilt. The
-// guard is a FLOOR (0.12 s) plus a condition the GAME answers - the held
-// weapon's current fire component has to be the same object the previous scan
-// saw AND Weapon.CanFire() has to say the gun is ready - with the old 0.35 s as
-// a CEILING. This drives the real tree and the real tick path and pins all of
-// it, including the three things that were wrong on device:
-//   * a blind one-frame window (the crash came straight back, so a shorter
-//     window than the swap is not a fix),
-//   * a window that could only expire on a timer (the delay report), and
-//   * Weapon.StopFire being called on a weapon that was already destroyed.
-// ---------------------------------------------------------------------------
 static FakeObj g_fireCompObj2;
 static bool    g_fireCompSwapped = false;
 
-// The same weapon, but its current fire component can be swapped - which is the
-// exact event a scope-in/out performs.
 static void *fake_currentFireComponentSwappable(void *weapon)
 {
     if (weapon != (void *)g_weaponObj.b)
@@ -1819,12 +1462,10 @@ static void *fake_currentFireComponentSwappable(void *weapon)
     return g_fireCompSwapped ? (void *)g_fireCompObj2.b : (void *)g_fireCompObj.b;
 }
 
-// The window is a real clock; move the clock's own bounds instead of sleeping
-// through them (the pacing test does the same with its pace).
 static void endSettleFloor()
 {
-    g_afireAdsSettleUntil = A_FireNow() - 0.01;   // the floor has elapsed
-    g_afireAdsSettleMax   = A_FireNow() + 10.0;   // the ceiling has not
+    g_afireAdsSettleUntil = A_FireNow() - 0.01;
+    g_afireAdsSettleMax   = A_FireNow() + 10.0;
 }
 
 static void testAdsScopeSwapGuard()
@@ -1836,11 +1477,11 @@ static void testAdsScopeSwapGuard()
     installAdsFakes();
     objInit(g_fireCompObj2);
     *(const char **)(g_fakeKlass + 0x10) = g_instantName;
-    *(void **)(g_fireCompObj2.b + 0x00)  = g_fakeKlass;   // same "Instant" class
+    *(void **)(g_fireCompObj2.b + 0x00)  = g_fakeKlass;
     g_fireCompSwapped = false;
     fn_WeaponGetCurrentFireComponent = fake_currentFireComponentSwappable;
 
-    fn_WeaponIsAutoFire       = nullptr;          // edge press: one press, one shot
+    fn_WeaponIsAutoFire       = nullptr;
     fn_WeaponCanFire          = fake_canFire;
     fn_Weapon_StartFire       = fake_startFire;
     fn_Weapon_StopFire        = fake_stopFire;
@@ -1849,7 +1490,7 @@ static void testAdsScopeSwapGuard()
     g_canFireValue = true;
 
     Config.NewFeaturesMenu.Triggerbot     = true;
-    Config.NewFeaturesMenu.TriggerbotMode = 0;    // Always: the mode gate stays out
+    Config.NewFeaturesMenu.TriggerbotMode = 0;
     armFiringWorld();
     resetLocalPawnCache();
     g_startFireCalls = g_stopFireCalls = 0;
@@ -1858,7 +1499,6 @@ static void testAdsScopeSwapGuard()
     g_pawnAimingValue      = false;
     g_fcAimingValue        = false;
 
-    // --- G1: with no scope motion the guard is not a delay ------------------
     openTickWindow();
     A_FireTick(nullptr);
     CHECK(g_startFireCalls == 1 && g_afireHoldingFire,
@@ -1866,8 +1506,7 @@ static void testAdsScopeSwapGuard()
     CHECK(g_stopFireCalls == 0 && !g_afireReleasePending,
           "G1 ... and nothing is being held back");
 
-    // --- G2: a scope edge must not press INTO the swap ----------------------
-    g_pawnAimingValue = true;                     // the player scopes in
+    g_pawnAimingValue = true;
     openTickWindow();
     A_FireTick(nullptr);
     CHECK(g_startFireCalls == 1,
@@ -1877,8 +1516,7 @@ static void testAdsScopeSwapGuard()
     CHECK(g_stopFireCalls == 0 && g_afireReleasePending,
           "G2 ... and the RELEASE is deferred too: no native fire call inside the swap");
 
-    // --- G3: the floor alone does not end the hold --------------------------
-    g_canFireValue = false;                       // still mid-swap
+    g_canFireValue = false;
     endSettleFloor();
     openTickWindow();
     A_FireTick(nullptr);
@@ -1887,7 +1525,6 @@ static void testAdsScopeSwapGuard()
     CHECK(g_stopFireCalls == 0 && g_afireReleasePending,
           "G3 ... and the release is still waiting behind the window");
 
-    // --- G4: the game's own 'the gun is ready' answer ends it ---------------
     g_canFireValue = true;
     endSettleFloor();
     openTickWindow();
@@ -1897,9 +1534,6 @@ static void testAdsScopeSwapGuard()
     CHECK(g_stopFireCalls == 1 && !g_afireReleasePending,
           "G4 ... and the deferred release goes out on that first settled scan");
 
-    // --- G5: the component swap is an edge on its own -----------------------
-    // The scope flag does not move here at all: what moves is the object the
-    // game hands back for "the weapon's current fire component".
     const int pressesBeforeSwap = g_startFireCalls;
     g_fireCompSwapped = true;
     openTickWindow();
@@ -1908,31 +1542,19 @@ static void testAdsScopeSwapGuard()
           g_triggerDiag.lastBlock == (int)FireBlock::AdsTransition,
           "G5 a changed current-fire-component is a scope edge even with the pawn flag still");
 
-    // --- G5b: the swap edge itself settles ---------------------------------
-    // The component stays on the swapped object (that is the whole point: an
-    // edge is a CHANGE, not the value), so with no further motion the floor
-    // elapsing plus the game's own "ready" answer releases the trigger.
     endSettleFloor();
     openTickWindow();
     A_FireTick(nullptr);
     CHECK(!g_afireAdsSettling && g_triggerDiag.lastBlock != (int)FireBlock::AdsTransition,
           "G5b the component swap edge settles on the floor + a stable component + CanFire");
 
-    // --- G6: the ceiling always ends a hold --------------------------------
-    // This scan has no edge of its own (G5b settled it) and the floor even claims
-    // "still settling" - the ceiling is what has to win, because a build where
-    // the component never settles must not stall the trigger either. The ceiling
-    // is the old 0.35 s and is checked BEFORE the floor.
-    g_afireAdsSettleUntil = A_FireNow() + 10.0;   // floor claims "still settling"
-    g_afireAdsSettleMax   = A_FireNow() - 0.01;   // ...but the window is over
+    g_afireAdsSettleUntil = A_FireNow() + 10.0;
+    g_afireAdsSettleMax   = A_FireNow() - 0.01;
     openTickWindow();
     A_FireTick(nullptr);
     CHECK(!g_afireAdsSettling,
           "G6 the ceiling is absolute: a window that never settles cannot stall the trigger");
 
-    // --- G6b: swapping BACK is an edge as well ------------------------------
-    // The other half of a scope cycle, and the one a "wait 0.35 s after an edge
-    // and hope" window cannot tell apart from the first half.
     const int pressesBeforeSwapBack = g_startFireCalls;
     g_fireCompSwapped = false;
     openTickWindow();
@@ -1940,19 +1562,15 @@ static void testAdsScopeSwapGuard()
     CHECK(g_startFireCalls == pressesBeforeSwapBack &&
           g_triggerDiag.lastBlock == (int)FireBlock::AdsTransition,
           "G6b scoping back out (the component swaps back) is an edge too, and it holds");
-    g_afireAdsSettleUntil = -1000.0;              // drop the window for the rest
+    g_afireAdsSettleUntil = -1000.0;
     g_afireAdsSettleMax   = -1000.0;
 
-    // --- G7: a destroyed weapon never reaches StopFire ---------------------
-    // Held weapons die with the player (death, respawn, round end) while the
-    // trigger is still down; Weapon.StopFire on one of those is a native call
-    // into freed state - the stale-weapon crash this path was exposed to.
     g_afireHoldingFire = true;
     g_afireFiringOn    = (void *)g_weaponObj.b;
     g_afireReleasePending = false;
     g_afireAdsSettling = false;
     const int stopsBefore = g_stopFireCalls;
-    *(void **)(g_weaponObj.b + 0x10) = nullptr;    // m_CachedPtr cleared = Destroy()d
+    *(void **)(g_weaponObj.b + 0x10) = nullptr;
     A_FireReleaseTrigger(nullptr);
     CHECK(g_stopFireCalls == stopsBefore,
           "G7 a Destroy()ed weapon is NEVER handed to Weapon.StopFire");
@@ -1960,14 +1578,12 @@ static void testAdsScopeSwapGuard()
           "G7 ... and the trigger state is dropped anyway (nothing left to release)");
     objInit(g_weaponObj);
 
-    // --- G8: a live weapon is still released normally ----------------------
     g_afireHoldingFire = true;
     g_afireFiringOn    = (void *)g_weaponObj.b;
     A_FireReleaseTrigger(nullptr);
     CHECK(g_stopFireCalls == stopsBefore + 1,
           "G8 a live weapon is released exactly as before (the check is not a mute)");
 
-    // Leave the suite as it was found.
     g_afireHoldingFire     = false;
     g_afireFiringOn        = nullptr;
     g_afireTargetPawn      = nullptr;
@@ -2012,3 +1628,4 @@ int main()
     printf("\n%d check(s) FAILED\n", g_failures);
     return 1;
 }
+

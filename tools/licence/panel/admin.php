@@ -1,12 +1,4 @@
 <?php
-/**
- * admin.php - the panel itself: log in, create keys, see what is bound to what,
- * revoke. Deliberately tiny, deliberately server-rendered, no dependencies.
- *
- * It only ever writes the key store. The signing key stays out of this file's
- * reach beyond what lib.php does: nothing here can leak it, and the page never
- * prints a private key.
- */
 
 declare(strict_types=1);
 
@@ -15,9 +7,6 @@ $config = licence_config();
 $store  = licence_store_open();
 $auth   = licence_auth();
 
-// SameSite=Lax keeps the session off cross-site POSTs, and the token below is
-// the belt to that braces: without it a page the signed-in admin merely visits
-// could post action=create and hand itself a key.
 session_set_cookie_params([
     'samesite' => 'Lax',
     'httponly' => true,
@@ -36,8 +25,6 @@ $notice = '';
 
 $action = $_POST['action'] ?? '';
 
-// Every state-changing post carries the token; a mismatch is a bad request, not
-// a silent no-op, so a broken deploy is visible instead of puzzling.
 if ($action !== '' && !hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
     http_response_code(400);
     echo "<!doctype html><meta charset=utf-8><p style='font:16px system-ui;padding:2rem'>"
@@ -45,11 +32,6 @@ if ($action !== '' && !hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
     exit;
 }
 
-// No hash anywhere yet: a fresh deploy on a host where there is no shell to run
-// password_hash(). The first visitor sets the login and it is stored in
-// data/auth.php; after that this form is unreachable, because $auth is no
-// longer empty. Do it right after uploading - until then anyone who finds this
-// URL can claim the panel.
 $setupNeeded = $auth['hash'] === '';
 
 if ($setupNeeded && $action === 'setup') {
@@ -89,14 +71,8 @@ if ($setupNeeded && $action === 'setup') {
 
 $signedIn = !empty($_SESSION['in']);
 
-// What the deployment looks like from PHP's side. Every "bad" line here has
-// broken a real panel somewhere: openssl not compiled in, a key the PHP user
-// cannot read, a store directory it cannot write, or a private path sitting
-// inside the document root where only .htaccess keeps it back.
 $docRoot    = isset($_SERVER['DOCUMENT_ROOT']) ? rtrim((string)$_SERVER['DOCUMENT_ROOT'], '/') : '';
-// "yes / no / unknown" - unknown when the host does not tell PHP its document
-// root, in which case claiming "outside" would be a guess, and this table exists
-// precisely because guesses about a signing key are not good enough.
+
 $webRootNote = static function (string $path, string $guard) use ($docRoot): array {
     if ($docRoot === '') {
         return ['unknown - DOCUMENT_ROOT is not set', true];
@@ -110,12 +86,6 @@ $keyOk      = is_readable($config['private_key']);
 $storeDir   = dirname($store);
 $storeOk    = is_writable($storeDir);
 
-// Does the key this panel signs with actually match the public half compiled
-// into the app? A mismatch is the worst failure mode this panel has: keys mint
-// fine, connect.php answers 200, and every sign-in dies with "Token was not
-// issued by this service" - which looks like a broken app, not a wrong PEM.
-// So read the modulus out of the private key and compare it with the one in
-// config.php (which mirrors System/Core/LicencePubKey.h).
 $appModulus = strtoupper(preg_replace('/[^0-9a-f]/i', '', (string)($config['app_modulus'] ?? '')));
 $keyModulus = '';
 if ($hasOpenssl && $keyOk) {
@@ -173,21 +143,11 @@ if ($signedIn && $action === 'password') {
     }
 }
 
-// The device id the app sends is its own UUID: letters, digits and hyphens,
-// 8-64 of them (connect.php enforces the same shape). One validator for every
-// place a key can be bound by hand, so a typo is refused here instead of
-// producing a key that can never be used.
 function valid_device(string $hwid): bool
 {
     return (bool)preg_match('/^[A-Za-z0-9-]{8,64}$/', $hwid);
 }
 
-/**
- * "PHONE-AAAA-1111, PHONE-BBBB-2222" -> the ids to allow. Holds at most one
- * lookup bad entry so the first mistake is the one reported.
- *
- * @return array{0:string[],1:?string}
- */
 function split_devices(string $raw): array
 {
     $devices = [];
@@ -251,10 +211,6 @@ if ($signedIn && $action === 'revoke') {
     }
 }
 
-// Allow a device by hand - the trial phone in front of you, a customer whose
-// serial you already know, or a replacement for one that died before it ever
-// signed in. Adds to the list rather than replacing it; the seat count decides
-// how long that list may get (0 = unlimited, which is the free-trial key).
 if ($signedIn && $action === 'bind') {
     $key  = (string)($_POST['key'] ?? '');
     $lic  = licence_find($store, $key);
@@ -283,8 +239,6 @@ if ($signedIn && $action === 'bind') {
     }
 }
 
-// Take one phone off the list. That phone is refused on its next sign-in; the
-// others keep working.
 if ($signedIn && $action === 'dropdevice') {
     $key  = (string)($_POST['key'] ?? '');
     $hwid = trim((string)($_POST['hwid'] ?? ''));
@@ -296,9 +250,6 @@ if ($signedIn && $action === 'dropdevice') {
     }
 }
 
-// The seat count: 0 = unlimited (hand a trial key around), 1 = the old
-// one-phone rule, N = a family/team key. Lowering it below the number of
-// devices already allowed is refused rather than silently dropping phones.
 if ($signedIn && $action === 'seats') {
     $key   = (string)($_POST['key'] ?? '');
     $seats = max(0, (int)($_POST['seats'] ?? 1));
@@ -317,7 +268,6 @@ if ($signedIn && $action === 'seats') {
     }
 }
 
-// Clearing every device puts the key back to "the first phones that use it".
 if ($signedIn && $action === 'rebind') {
     $key = (string)($_POST['key'] ?? '');
     $lic = licence_find($store, $key);
@@ -334,8 +284,6 @@ $now = time();
 
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
-/** Shared by the first-run page and the panel: the same five answers matter in
- *  both places, and on a fresh upload the setup page is the only one you see. */
 function diag_table(array $rows): void
 {
     echo '<section class="diag"><h2>Deployment</h2><div class="tablewrap"><table>'
@@ -354,18 +302,14 @@ function diag_table(array $rows): void
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Licence panel</title>
 <style>
-    /* Neo-brutalist shell, minimal interior: paper and ink, one violet, hard
-       black rules and offset shadows, no gradients and no rounded corners.
-       Everything that is data (keys, device ids, dates) is monospace so a
-       mistyped character is visible; everything that is a label is uppercase
-       and letter-spaced so the page reads as a form, not prose. */
+
     :root {
-        --paper: #f4f1e8;
-        --ink:   #101010;
-        --violet:#8b5cf6;
-        --acid:  #e4ff4f;
-        --muted: #5b574e;
-        --bad:   #b00020;
+        --paper:
+        --ink:
+        --violet:
+        --acid:
+        --muted:
+        --bad:
         color-scheme: light;
     }
     * { box-sizing: border-box }
@@ -374,7 +318,7 @@ function diag_table(array $rows): void
         font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
         -webkit-font-smoothing: antialiased;
     }
-    ::selection { background: var(--violet); color: #fff }
+    ::selection { background: var(--violet); color:
     main { max-width: 1120px; margin: 0 auto; padding: 40px 20px 90px }
 
     header.top {
@@ -389,7 +333,7 @@ function diag_table(array $rows): void
     p.sub { margin: 0; max-width: 62ch; color: var(--muted) }
 
     section {
-        background: #fff; border: 3px solid var(--ink); box-shadow: 6px 6px 0 var(--ink);
+        background:
         padding: 22px; margin: 0 0 24px;
     }
     h2 {
@@ -404,9 +348,9 @@ function diag_table(array $rows): void
     }
     input, select {
         width: 100%; padding: 11px 12px; font: inherit; color: var(--ink);
-        background: #fff; border: 3px solid var(--ink); border-radius: 0;
+        background:
     }
-    input::placeholder { color: #9b968a }
+    input::placeholder { color:
     input:focus, select:focus { outline: none; box-shadow: 4px 4px 0 var(--violet) }
 
     .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end }
@@ -415,15 +359,15 @@ function diag_table(array $rows): void
     button {
         font: 800 12px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .1em;
         text-transform: uppercase; padding: 13px 18px; cursor: pointer;
-        color: #fff; background: var(--violet);
+        color:
         border: 3px solid var(--ink); border-radius: 0; box-shadow: 4px 4px 0 var(--ink);
         transition: transform .06s ease, box-shadow .06s ease;
     }
     button:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--ink) }
     button:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--ink) }
-    button.ghost { background: #fff; color: var(--ink) }
+    button.ghost { background:
     button.acid  { background: var(--acid); color: var(--ink) }
-    button.danger{ background: #fff; color: var(--bad) }
+    button.danger{ background:
     button.small { padding: 9px 12px; font-size: 11px; box-shadow: 3px 3px 0 var(--ink) }
 
     .flash {
@@ -431,7 +375,7 @@ function diag_table(array $rows): void
         box-shadow: 4px 4px 0 var(--ink); font-weight: 700;
     }
     .flash.ok  { background: var(--acid) }
-    .flash.bad { background: #ffd6dc }
+    .flash.bad { background:
 
     .tablewrap { overflow-x: auto; border: 3px solid var(--ink) }
     table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 14px }
@@ -451,7 +395,7 @@ function diag_table(array $rows): void
         font-size: 10px; letter-spacing: .12em; text-transform: uppercase; font-weight: 800;
     }
     .pill.ok  { background: var(--acid) }
-    .pill.bad { background: #ffd6dc; color: var(--bad) }
+    .pill.bad { background:
     .dim { color: var(--muted) }
 
     .device-form { display: flex; gap: 8px; margin-top: 8px; min-width: 240px }
@@ -461,7 +405,7 @@ function diag_table(array $rows): void
 
     .device-chip {
         display: inline-flex; align-items: center; gap: 6px; margin: 0 6px 6px 0;
-        padding: 3px 4px 3px 8px; border: 2px solid var(--ink); background: #fff;
+        padding: 3px 4px 3px 8px; border: 2px solid var(--ink); background:
     }
     .device-chip code { font-size: 12px }
     .device-chip button { padding: 3px 7px; font-size: 10px; box-shadow: none; border-width: 2px }
@@ -679,3 +623,4 @@ function diag_table(array $rows): void
 </main>
 </body>
 </html>
+

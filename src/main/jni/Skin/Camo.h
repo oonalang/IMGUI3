@@ -19,10 +19,6 @@ static std::unordered_map<uint, CamoConfigSnapshot> g_CamoOriginals;
 static std::unordered_map<uint, CamoSkinSnapshot> g_CamoSkinOriginals;
 static bool g_CamoApplied = false;
 
-// The CamoTest "(test)" mode that used to live here is removed; the real
-// camo browser in SkinTab.h (ApplyCamoToEveryGun / ApplyCamoToEveryWeaponSkin)
-// is the camo feature. RestoreCamo stays as the per-frame safety below.
-
 static void RestoreCamo()
 {
     if (!g_CamoApplied) {
@@ -64,3 +60,4 @@ static void UpdateCamoOverride()
 {
     RestoreCamo();
 }
+

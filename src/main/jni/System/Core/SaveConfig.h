@@ -12,7 +12,6 @@
 #include "../foxcheats/include/json.hpp"
 #include "../../Hacks/Feature/Init_Hacks.h"
 
-// Externals defined in Main.cpp
 extern float menu[4];
 extern bool isJumpAdjustmentEnabled;
 extern float jumpHeightMultiplier;
@@ -55,7 +54,7 @@ void SaveConfiguration(const std::string& filename) {
     config["ESPMenu"]["HealthPosition"] = static_cast<int>(Config.ESPMenu.HealthPosition);
     config["ESPMenu"]["CrosshairType"] = static_cast<int>(Config.ESPMenu.CrosshairType);
     config["ESPMenu"]["EspStyle"] = static_cast<int>(Config.ESPMenu.EspStyle);
-    
+
     config["Aim"]["Aimbot360"] = Config.Aim.Aimbot360;
     config["Aim"]["AimSilent"] = Config.Aim.AimSilent;
     config["Aim"]["AimAssistSize"] = Config.Aim.AimAssistSize;
@@ -78,8 +77,7 @@ void SaveConfiguration(const std::string& filename) {
     config["ExtraMenu"]["Switch"] = Config.ExtraMenu.Switch;
     config["ExtraMenu"]["Kinetic"] = Config.ExtraMenu.Kinetic;
     config["ExtraMenu"]["KineticArmor"] = Config.ExtraMenu.Kinetic;
-    // Both unlock switches persist: without this they flipped back to their
-    // startup defaults on every launch.
+
     config["ExtraMenu"]["MythicAttachments"] = Config.ExtraMenu.MythicAttachments;
     config["ExtraMenu"]["Attachment"] = Config.ExtraMenu.Attachment;
     config["ExtraMenu"]["BlockReportEvidence"] = Config.ExtraMenu.BlockReportEvidence;
@@ -96,9 +94,7 @@ void SaveConfiguration(const std::string& filename) {
     config["NewFeatures"]["Triggerbot"] = Config.NewFeaturesMenu.Triggerbot;
     config["NewFeatures"]["TriggerbotMode"] = Config.NewFeaturesMenu.TriggerbotMode;
     config["NewFeatures"]["TriggerbotRadius"] = Config.NewFeaturesMenu.TriggerbotRadius;
-    // LoadConfiguration() already reads these four back (each behind
-    // .contains()), but nothing was ever WRITING them - the new triggerbot
-    // options silently reset to defaults on every save/load cycle.
+
     config["NewFeatures"]["TriggerbotDelay"] = Config.NewFeaturesMenu.TriggerbotDelay;
     config["NewFeatures"]["NoCrouch"] = Config.NewFeaturesMenu.NoCrouch;
     config["NewFeatures"]["NoHitFlinch"] = Config.NewFeaturesMenu.NoHitFlinch;
@@ -107,8 +103,6 @@ void SaveConfiguration(const std::string& filename) {
     config["NewFeatures"]["NoSprintToFireDelay"] = Config.NewFeaturesMenu.NoSprintToFireDelay;
     config["NewFeatures"]["NoHipfireDelay"] = Config.NewFeaturesMenu.NoHipfireDelay;
 
-    // Own dot crosshair. Color[3] is the opacity, stored under its own name so
-    // the JSON reads like the menu (R/G/B + Opacity).
     config["Crosshair"]["Enabled"] = Config.Crosshair.Enabled;
     config["Crosshair"]["Size"] = Config.Crosshair.Size;
     config["Crosshair"]["OffsetX"] = Config.Crosshair.OffsetX;
@@ -206,7 +200,6 @@ bool LoadConfiguration(const std::string& filename) {
         if (config["NewFeatures"].contains("NoSlideFatigue")) Config.NewFeaturesMenu.NoSlideFatigue = config["NewFeatures"]["NoSlideFatigue"].get<bool>();
         if (config["NewFeatures"].contains("NoSprintToFireDelay")) Config.NewFeaturesMenu.NoSprintToFireDelay = config["NewFeatures"]["NoSprintToFireDelay"].get<bool>();
         if (config["NewFeatures"].contains("NoHipfireDelay")) Config.NewFeaturesMenu.NoHipfireDelay = config["NewFeatures"]["NoHipfireDelay"].get<bool>();
-        // DevBypass removed (login bypass).
     }
 
         if (config.contains("Crosshair")) {
@@ -246,3 +239,4 @@ bool LoadConfiguration(const std::string& filename) {
         return false;
     }
 }
+

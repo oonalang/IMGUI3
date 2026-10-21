@@ -28,3 +28,4 @@ struct RectangleShadowSettings
 };
 
 void drawRectangleShadowVerticesAdaptive(RectangleShadowSettings& settings, bool foreground = false);
+

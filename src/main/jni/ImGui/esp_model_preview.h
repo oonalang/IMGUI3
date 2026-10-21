@@ -1,16 +1,5 @@
 #pragma once
 
-// ---------------------------------------------------------------------------
-// ESP tab character preview.
-//
-// The old preview was a flat 2D vector drawing. This one is a real (if tiny)
-// 3D character: the mesh is built once in model space, then every frame it is
-// rotated by the drag input, perspective-projected and painted as shaded
-// quads - back faces culled, faces depth-sorted back to front (painter's
-// algorithm). No GL state, no textures, no engine access: everything goes
-// through ImDrawList, so it draws anywhere the menu draws.
-// ---------------------------------------------------------------------------
-
 #include "Call_ImGui.h"
 
 #include <algorithm>
@@ -21,7 +10,6 @@
 
 namespace esp_model_preview
 {
-
 struct Vec3
 {
     float x, y, z;
@@ -43,15 +31,13 @@ inline Vec3 Normalize(const Vec3 &v)
     return Vec3{v.x / len, v.y / len, v.z / len};
 }
 
-// One flat-shaded polygon of the character. "inner" orientation is resolved at
-// build time, so the winding of the builder loops never has to be perfect.
 struct Face
 {
     Vec3 p[4];
     Vec3 n;
     ImU32 col;
-    int count;       // 3 or 4
-    bool twoSided;   // never culled: the cape is a single-surface shell
+    int count;
+    bool twoSided;
 };
 
 inline std::vector<Face> &Mesh()
@@ -67,7 +53,6 @@ inline void PushPoly(Vec3 a, Vec3 b, Vec3 c, Vec3 d, int count, ImU32 col, Vec3 
     const Vec3 center = (a + b + c + d) * 0.25f;
     if (Dot(n, center - inner) < 0.0f)
     {
-        // Flip the winding so the normal always points away from the solid.
         const Vec3 tmp = b;
         b = d;
         d = tmp;
@@ -114,13 +99,12 @@ inline void AddEllipsoid(Vec3 c, float rx, float ry, float rz, int segs, int rin
             const Vec3 d = P(lat1, lon1);
             const Vec3 e = P(lat1, lon0);
             const Vec3 cen = (a + b + d + e) * 0.25f;
-            if (cen.y < cutY && cen.z > cutZ) continue; // e.g. leave the face open
+            if (cen.y < cutY && cen.z > cutZ) continue;
             PushQuad(a, b, d, e, col, c);
         }
     }
 }
 
-// Tapered tube between two points (limbs, hair tails, straps).
 inline void AddTube(Vec3 p0, Vec3 p1, float r0, float r1, int segs, ImU32 col, bool capEnds = false)
 {
     const Vec3 axis = p1 - p0;
@@ -172,7 +156,6 @@ inline void AddBox(Vec3 c, float hx, float hy, float hz, ImU32 col)
         PushQuad(v[quads[i][0]], v[quads[i][1]], v[quads[i][2]], v[quads[i][3]], col, c);
 }
 
-// Stacked elliptical rings - torso, skirt, hair sheets.
 struct Ring
 {
     float y, rx, rz, cz;
@@ -212,10 +195,6 @@ inline void AddLoft(const Ring *rings, int count, int segs, ImU32 col, bool caps
     }
 }
 
-// Open lofted sheet spanning a slice of the ring - used for the cape, which is
-// a single surface with no thickness, so its faces are never back-face culled.
-// "fold" ripples the radius across the sheet so Lambert shading breaks the
-// cloth into light/dark folds instead of one flat panel.
 inline void AddShell(const Ring *rings, int count, int segs, float a0, float a1, ImU32 col,
                      float fold = 0.0f)
 {
@@ -243,10 +222,6 @@ inline void AddShell(const Ring *rings, int count, int segs, float a0, float a1,
     }
 }
 
-// ---------------------------------------------------------------------------
-// Palette - silver-haired warrior: white cape, gold-trimmed armour, tan boots
-// ---------------------------------------------------------------------------
-
 inline ImU32 Skin()      { return IM_COL32(250, 229, 214, 255); }
 inline ImU32 Hair()      { return IM_COL32(230, 233, 242, 255); }
 inline ImU32 HairDeep()  { return IM_COL32(188, 194, 214, 255); }
@@ -258,7 +233,6 @@ inline ImU32 GoldDark()  { return IM_COL32(157, 120, 62, 255); }
 inline ImU32 Cloth()     { return IM_COL32(40, 38, 48, 255); }
 inline ImU32 Boot()      { return IM_COL32(190, 158, 110, 255); }
 
-// Head geometry is shared by the mesh and by the face overlay.
 inline const Vec3 &HeadCenter()
 {
     static const Vec3 c = mk(0.0f, 0.86f, 0.0f);
@@ -270,18 +244,16 @@ inline void BuildModel()
 {
     Mesh().clear();
 
-    // ---- legs: bare thighs above tan leather knee boots -------------------
     for (int s = -1; s <= 1; s += 2)
     {
         const float x = 0.086f * (float)s;
         AddTube(mk(x, 0.10f, 0.0f), mk(x * 1.05f, -0.26f, 0.010f), 0.090f, 0.062f, 12, Skin());
-        // gold rim at the boot cuff, then the tan shaft down to the ankle
+
         AddTube(mk(x * 1.05f, -0.245f, 0.010f), mk(x * 1.05f, -0.290f, 0.010f), 0.075f, 0.073f, 12, Gold());
         AddTube(mk(x * 1.05f, -0.280f, 0.010f), mk(x * 1.02f, -0.850f, 0.004f), 0.074f, 0.055f, 12, Boot());
         AddBox(mk(x * 1.00f, -0.925f, 0.050f), 0.058f, 0.050f, 0.100f, Boot());
     }
 
-    // ---- shorts, belt, hip plates ----------------------------------------
     const Ring shorts[] = {
         {0.185f, 0.166f, 0.126f, 0.0f},
         {0.090f, 0.180f, 0.134f, 0.0f},
@@ -295,7 +267,6 @@ inline void BuildModel()
     AddLoft(belt, 2, 20, Gold(), false);
     AddBox(mk(0.0f, 0.120f, 0.118f), 0.062f, 0.048f, 0.026f, GoldDark());
 
-    // ---- bare midriff -----------------------------------------------------
     const Ring waistRings[] = {
         {0.350f, 0.128f, 0.096f, 0.0f},
         {0.270f, 0.114f, 0.086f, 0.0f},
@@ -304,7 +275,6 @@ inline void BuildModel()
     };
     AddLoft(waistRings, 4, 20, Skin());
 
-    // ---- chest / shoulders ------------------------------------------------
     const Ring chestRings[] = {
         {0.585f, 0.170f, 0.104f, 0.0f},
         {0.500f, 0.156f, 0.100f, 0.0f},
@@ -313,7 +283,6 @@ inline void BuildModel()
     };
     AddLoft(chestRings, 4, 20, Skin());
 
-    // Armoured bra: white cups with a gold under-rim and shoulder straps.
     for (int s = -1; s <= 1; s += 2)
     {
         const float x = (float)s;
@@ -327,7 +296,6 @@ inline void BuildModel()
     AddLoft(braRim, 2, 20, Gold(), false);
     AddEllipsoid(mk(0.0f, 0.418f, 0.112f), 0.030f, 0.030f, 0.020f, 10, 6, Gold());
 
-    // ---- neck + choker ----------------------------------------------------
     AddTube(mk(0.0f, 0.550f, 0.0f), mk(0.0f, 0.710f, 0.0f), 0.050f, 0.046f, 12, Skin());
     const Ring choker[] = {
         {0.640f, 0.057f, 0.053f, 0.0f},
@@ -340,10 +308,8 @@ inline void BuildModel()
     };
     AddLoft(chokerTrim, 2, 14, Gold(), false);
 
-    // ---- head -------------------------------------------------------------
     AddEllipsoid(HeadCenter(), HeadRadius, HeadRadius * 1.045f, HeadRadius * 0.96f, 20, 14, Skin());
 
-    // ---- hair: silver bob, straight fringe, braid down the back ----------
     AddEllipsoid(mk(0.0f, 0.878f, -0.012f), 0.192f, 0.198f, 0.186f, 20, 14, Hair(), 0.882f, 0.004f);
 
     const Ring backHair[] = {
@@ -354,7 +320,6 @@ inline void BuildModel()
     };
     AddLoft(backHair, 4, 16, HairDeep());
 
-    // straight fringe above the eyes
     for (int i = -2; i <= 2; ++i)
     {
         const float bx = 0.060f * (float)i;
@@ -362,7 +327,7 @@ inline void BuildModel()
         AddTube(mk(bx, 0.958f, 0.050f), mk(bx * 1.20f, 0.958f - len, 0.148f),
                 0.044f, 0.016f, 8, Hair());
     }
-    // side locks framing the jaw
+
     for (int s = -1; s <= 1; s += 2)
     {
         const float x = (float)s;
@@ -371,7 +336,7 @@ inline void BuildModel()
         AddTube(mk(0.188f * x, 0.700f, 0.020f), mk(0.196f * x, 0.640f, 0.018f),
                 0.040f, 0.020f, 10, HairDeep());
     }
-    // braid: alternating beads down the back, blue ribbon at the tip
+
     for (int i = 0; i < 9; ++i)
     {
         const float t = (float)i;
@@ -388,7 +353,6 @@ inline void BuildModel()
         }
     }
 
-    // ---- arms: bare upper arms, black forearm wraps, gold bands ----------
     for (int s = -1; s <= 1; s += 2)
     {
         const float x = (float)s;
@@ -403,7 +367,6 @@ inline void BuildModel()
         AddEllipsoid(mk(0.198f * x, 0.568f, -0.004f), 0.080f, 0.048f, 0.074f, 14, 10, Gold());
     }
 
-    // ---- cape: white two-sided shell around the back ---------------------
     const Ring capeRings[] = {
         {0.620f, 0.196f, 0.150f, -0.010f},
         {0.460f, 0.250f, 0.220f, -0.035f},
@@ -417,10 +380,6 @@ inline void BuildModel()
         AddEllipsoid(mk(0.156f * (float)s, 0.580f, 0.010f), 0.042f, 0.034f, 0.034f, 10, 6, Gold());
     }
 }
-
-// ---------------------------------------------------------------------------
-// Interaction state
-// ---------------------------------------------------------------------------
 
 inline float g_yaw = 3.56f;
 inline float g_pitch = 0.04f;
@@ -453,14 +412,10 @@ struct Result
     ImVec2 head = ImVec2(0.0f, 0.0f);
     float headRadius = 0.0f;
     float facing = 0.0f;
-    // 0 head, 1 neck, 2 shoulderL, 3 shoulderR, 4 elbowL, 5 elbowR, 6 wristL,
-    // 7 wristR, 8 chest, 9 waist, 10 hipL, 11 hipR, 12 kneeL, 13 kneeR,
-    // 14 ankleL, 15 ankleR
+
     ImVec2 joint[16];
 };
 
-// Paints the character inside [pos, pos + size]. The caller owns the card
-// background; the model is drawn on top of it.
 inline Result DrawModel(ImDrawList *draw, const ImVec2 &pos, const ImVec2 &size)
 {
     Result out;
@@ -471,8 +426,6 @@ inline Result DrawModel(ImDrawList *draw, const ImVec2 &pos, const ImVec2 &size)
     g_clock += dt;
     if (!g_dragging)
     {
-        // No idle turntable: the model only turns while a finger drags it, then
-        // coasts to a stop. Pitch settles back to level on its own.
         g_yaw += g_yawVel * dt;
         g_yawVel *= powf(0.08f, dt);
         g_pitch += (0.04f - g_pitch) * dt * 1.6f;
@@ -503,7 +456,6 @@ inline Result DrawModel(ImDrawList *draw, const ImVec2 &pos, const ImVec2 &size)
         return persp;
     };
 
-    // Turntable base: a flat ring under the feet reads as a stage.
     {
         const float baseK = kUnit * camDist / (camDist + 0.0f);
         const float radius = 0.34f;
@@ -547,7 +499,6 @@ inline Result DrawModel(ImDrawList *draw, const ImVec2 &pos, const ImVec2 &size)
         }
         depthSum /= (float)f.count;
 
-        // Bounds come from every vertex so the ESP box wraps the silhouette.
         for (int i = 0; i < f.count; ++i)
         {
             if (scr[i].x < minX) minX = scr[i].x;
@@ -557,7 +508,7 @@ inline Result DrawModel(ImDrawList *draw, const ImVec2 &pos, const ImVec2 &size)
         }
 
         const Vec3 n = Rotate(f.n);
-        if (!f.twoSided && n.z > 0.02f) continue; // back facing
+        if (!f.twoSided && n.z > 0.02f) continue;
 
         float lit = f.twoSided ? fabsf(Dot(n, light)) : Dot(n, light);
         if (lit < 0.0f) lit = 0.0f;
@@ -593,7 +544,6 @@ inline Result DrawModel(ImDrawList *draw, const ImVec2 &pos, const ImVec2 &size)
     out.max = ImVec2(maxX, maxY);
     out.center = ImVec2((minX + maxX) * 0.5f, (minY + maxY) * 0.5f);
 
-    // Joints for the skeleton / line overlays.
     const Vec3 joints[16] = {
         mk(0.0f, 0.98f, 0.0f),
         mk(0.0f, 0.62f, 0.0f),
@@ -608,8 +558,6 @@ inline Result DrawModel(ImDrawList *draw, const ImVec2 &pos, const ImVec2 &size)
     };
     for (int i = 0; i < 16; ++i) Project(Rotate(joints[i]), &out.joint[i], nullptr);
 
-    // Face overlay: crisp anime eyes drawn on the projected head so they turn
-    // with the model and fade out when the head faces away.
     const Vec3 faceNormal = Rotate(mk(0.0f, 0.0f, 1.0f));
     out.facing = ImClamp(-faceNormal.z, 0.0f, 1.0f);
     Project(Rotate(HeadCenter()), &out.head, nullptr);
@@ -625,11 +573,10 @@ inline Result DrawModel(ImDrawList *draw, const ImVec2 &pos, const ImVec2 &size)
             const Vec3 eyeModel = mk(0.068f * (float)s, 0.848f, 0.146f);
             ImVec2 eye;
             const float persp = Project(Rotate(eyeModel), &eye, nullptr);
-            // foreshorten horizontally as the head turns away from the camera
+
             const float w = eyeW * (persp / kUnit) * (0.55f + 0.45f * out.facing);
             const float h = eyeH * (persp / kUnit);
-            // sclera, iris, pupil, highlight and a lash line - no dark ring,
-            // which made the pair read as goggles on a small head.
+
             draw->AddEllipseFilled(eye, w, h, IM_COL32(252, 250, 255, alpha), 0.0f, 18);
             draw->AddEllipseFilled(ImVec2(eye.x, eye.y + h * 0.08f), w * 0.72f, h * 0.80f,
                                    IM_COL32(148, 126, 202, alpha), 0.0f, 18);
@@ -650,5 +597,5 @@ inline Result DrawModel(ImDrawList *draw, const ImVec2 &pos, const ImVec2 &size)
 
     return out;
 }
+}
 
-} // namespace esp_model_preview

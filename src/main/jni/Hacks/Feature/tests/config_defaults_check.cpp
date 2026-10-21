@@ -1,25 +1,3 @@
-// Host test for the feature defaults in the real Config object.
-//
-// The switch defaults have to survive the aggregate init: the whole sConfig
-// global is aggregate-initialised as `sConfig Config{0}`, so a member's default
-// only survives if its default member initialiser really is applied to the
-// members the {0} does not cover. What is pinned here, after the VARIANT4 port:
-//   * "Attachment unlock" (Config.ExtraMenu.Attachment) is ON out of the box,
-//     because it is the feature that has to work without being found first;
-//   * "Blueprint" (Config.ExtraMenu.MythicAttachments) is OFF out of the box,
-//     like VARIANT4's Blueprints switch;
-// plus two pre-existing defaults that rely on the same rule, so a regression in
-// the rule itself shows up here.
-//
-// Host test, no NDK needed (the Android/JNI headers are the stubs in
-// Skin/tests/stubs, __fastcall is elided like the real build):
-//   g++ -std=c++17 -DIMGUI_DEFINE_MATH_OPERATORS -D'__fastcall=' \
-//       -I src/main/jni/Skin/tests/stubs -I src/main/jni -I src/main/jni/ImGui \
-//       -I src/main/jni/Includes -I src/main/jni/foxcheats/include \
-//       src/main/jni/Hacks/Feature/tests/config_defaults_check.cpp -o /tmp/config_defaults_check \
-//       && /tmp/config_defaults_check
-// Exits 0 and prints "OK: ..." on success. Android.mk's wildcards do not cover
-// Hacks/Feature/tests, so this file never reaches the APK.
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
@@ -45,7 +23,6 @@
 #include "foxcheats/include/ScanEngine.hpp"
 #include "Hacks/Feature/Init_Hacks.h"
 
-// Macros.h pulls in the Substrate headers; nothing here hooks anything.
 extern "C" void MSHookFunction(void *symbol, void *replace, void **result)
 {
     (void)symbol; (void)replace; (void)result;
@@ -74,7 +51,6 @@ int main()
     CHECK(Config.ExtraMenu.Kinetic == false && Config.ExtraMenu.Recoil == false,
           "the other ExtraMenu switches still default off");
 
-    // Same aggregate-init rule, pre-existing defaults.
     CHECK(Config.NewFeaturesMenu.TriggerbotRadius == 40,
           "the triggerbot radius default still comes from its initialiser");
     CHECK(Config.NewFeaturesMenu.TriggerbotMode == 0 &&
@@ -91,3 +67,4 @@ int main()
     printf("%d of %d check(s) FAILED\n", g_failures, g_checks);
     return 1;
 }
+

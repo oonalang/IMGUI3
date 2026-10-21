@@ -1,7 +1,3 @@
-// Minimal stand-in for the NDK's <android/native_activity.h>, for the host
-// syntax checks only. The real struct's field ORDER and the callback table are
-// not modelled (nothing in a syntax check reads through them); any code that
-// depends on the true layout must be verified on device.
 #pragma once
 
 #include <jni.h>
@@ -39,3 +35,4 @@ void ANativeActivity_hideSoftInput(ANativeActivity *activity, uint32_t flags);
 #ifdef __cplusplus
 }
 #endif
+

@@ -29,11 +29,10 @@ namespace font {
 }
 
 namespace runtime_preview_menu {
-
 struct Texture {
     GLuint id = 0;
-    int    width = 0;   // pixel size, captured at decode time
-    int    height = 0;  // (GLES3 has no GL_TEXTURE_WIDTH/HEIGHT pname)
+    int    width = 0;
+    int    height = 0;
 };
 
 struct StateRefs {
@@ -459,7 +458,6 @@ inline void RenderSettingsTab(float contentWidth, float contentHeight) {
     ImGui::PopStyleVar();
 }
 
-
 inline bool DrawRuntimeSidebarButton(const char *id, const char *icon, const char *label, bool active, const ImVec2 &min, const ImVec2 &size) {
     if (id == nullptr || label == nullptr) {
         return false;
@@ -527,7 +525,6 @@ inline void DrawRuntimeEspPreviewPanel(const ImVec2 &min, const ImVec2 &size) {
     const ImVec2 previewMax(max.x - 12.0f, max.y - 14.0f);
     drawList->AddRectFilled(previewMin, previewMax, IM_COL32(24, 31, 42, 235), 7.0f);
 
-    // Lightweight visual-only preview. It does not read or modify gameplay state.
     const float groundY = previewMax.y - 34.0f;
     drawList->AddRectFilled(ImVec2(previewMin.x, groundY), previewMax, IM_COL32(18, 26, 30, 255), 0.0f);
     drawList->AddLine(ImVec2(previewMin.x, groundY), ImVec2(previewMax.x, groundY), IM_COL32(80, 92, 108, 180), 1.0f);
@@ -559,5 +556,5 @@ inline void CollapseMenu(StateRefs &state) {
     state.collapseBarOpacityAnim = 1.0f;
     state.collapseBarPressAnim = 0.0f;
 }
+}
 
-} // namespace runtime_preview_menu

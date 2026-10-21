@@ -1,17 +1,5 @@
 #pragma once
 
-// Mythic attachment resolver: writes the real mythic skin id into the
-// attachment records so an applied mythic shows its own attachments.
-//
-// NOT INSTALLED. This is the module github.com/oonalang/VARIANT4 keeps at its
-// root, and VARIANT4's Feats.h does not install it either - its attachment
-// unlock is the single IsWeaponAttachmentUnlock answer in
-// System/Hooks/MythicAttachments.h. Keeping it in the tree but out of the
-// install path is deliberate: on this app its AttachmentGroupNew / SetData
-// trampolines shared prologues with the answer hooks and put EOwnState.Lock
-// back on rows the loadout popup had already drawn, which is what made
-// "Attachment unlock" look broken. Nothing includes this header any more.
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -21,27 +9,15 @@
 #include <vector>
 
 #include "Hacks/Feature/Init_Hacks.h"
-// WeaponSkinFields / Array<int> / weaponskinFields - the same field-layout
-// header the skin tab uses (it is guarded now, so it can be included here and
-// again through Skin/Thread.h without redefining anything).
+
 #include "Skin/Fields.h"
 
 namespace mythic_attachment_system
 {
-// The menu toggle gates the whole system: with "Attachment unlock" off, no mythic
-// id is ever resolved or written, so the game behaves exactly like stock.
-// (MythicAttachments/Blueprint no longer gates this - the two toggles are
-// independent.)
 inline bool MythicAttachmentsEnabled()
 {
     return Config.ExtraMenu.Attachment;
 }
-
-
-// Adapted directly from the user-supplied updated_Attachment Implementation.cpp.
-// WeaponSkinConfig is collected by SkinHaxSystem.h, so this module does not hook it twice.
-
-// Add these definitions once.
 
 std::unordered_map<int, int> activeWeaponSkins;
 std::unordered_map<int, std::array<int, 31>> activeMythicAttachments;
@@ -78,9 +54,6 @@ inline std::vector<void*> SnapshotWeaponPartAssets() {
     return weaponPartAssetInstance;
 }
 
-
-
-
 uintptr_t WeaponPartAssetAddress = 0xAF85628;
 uintptr_t WeaponSkinAddress = 0xAF8B4D4;
 uintptr_t AttachmentConfAddress = 0x6FE9168;
@@ -96,9 +69,6 @@ uintptr_t AttachItemGetModelAttachIdAddress = 0x844A18C;
 uintptr_t AttachSkinDataCtorAddress = 0x75D7DE4;
 uintptr_t LoadoutAttachItemSetDataAddress = 0xB83F1C0;
 uintptr_t WeaponInitPartAddress = 0x517C4D0;
-
-
-// Add the original function pointers once.
 
 inline void (*orig_AttachmentGroupNew_Ctor)(
     void* instance,
@@ -172,16 +142,8 @@ inline void* (*orig_Weapon_InitPart)(
     bool autoActivate,
     bool independent) = nullptr;
 
-
-// ========================================================================================
-//
-//      ATTACHMENT HELPERS
-//
-// ========================================================================================
-
 inline bool AttachPtr(const void* ptr)
 {
-    // Keep the pointer guard lightweight because these hooks run frequently.
     return (uintptr_t)ptr >= 0x10000;
 }
 
@@ -214,7 +176,6 @@ inline int GetAttachmentType(uint attachId)
 
 inline const std::array<int, 9>& MythicAttachTypes()
 {
-    // Array slot order used by WeaponSkinConfig.SkinID1P/SkinID3P.
     static const std::array<int, 9> types = {1, 2, 3, 4, 5, 6, 7, 8, 10};
     return types;
 }
@@ -241,9 +202,6 @@ inline int RealMythicFromArray(Array<int>* ids, int slot)
     if (slot < 0 || len <= slot || len > 64)
         return 0;
 
-    // This project's Il2CppArray declares max_length as 32-bit on arm64,
-    // while the native IL2CPP field is pointer-sized. Logical item 0 is therefore
-    // represented by m_Items[1] in this wrapper.
     const int mythicId = ids->m_Items[slot + 1];
     return IsRealMythicAttachSkin((uint)mythicId) ? mythicId : 0;
 }
@@ -447,17 +405,10 @@ inline uint ActiveWeaponPartSkinId(int weaponId, int partId)
     if (partId <= 0)
         return 0;
 
-    // First follow the exact upstream path: resolve the active blueprint through
-    // the current weapon alias and verify that the selected blueprint actually owns
-    // this part. This prevents a selected skin from bleeding into unrelated weapons.
     uint skinId = ActiveWeaponSkinId(weaponId);
     if (skinId > 0 && FindWeaponPartConf(skinId, partId) != nullptr)
         return skinId;
 
-    // Live-match Weapon instances can expose a different runtime alias from the one
-    // seen by Lobby/Gunsmith. The selected blueprint ID is already captured by
-    // ApplyMythicAttachments; use it only when the requested part exists for that
-    // blueprint. This preserves the upstream placeholder/part-config requirement.
     if (runtimeAttachSkinId > 0 &&
         FindWeaponPartConf(runtimeAttachSkinId, partId) != nullptr) {
         return runtimeAttachSkinId;
@@ -466,23 +417,12 @@ inline uint ActiveWeaponPartSkinId(int weaponId, int partId)
     return 0;
 }
 
-
-// ========================================================================================
-//
-//      RUNTIME HOOKS
-//
-// ========================================================================================
-
 inline void* hook_Weapon_InitPart(
     void* instance,
     void* partInfo,
     bool autoActivate,
     bool independent)
 {
-    // The upstream implementation explicitly identifies the live-match weapon from
-    // Weapon + 0x1030. Keep that as the primary ID. A public getter may return a
-    // different config/actor alias and was the reason Lobby/Gunsmith could work while
-    // the created in-game part missed the selected blueprint.
     const int rawWeaponId = AttachPtr(instance)
         ? *(int*)((uintptr_t)instance + 0x1030)
         : 0;
@@ -912,24 +852,6 @@ inline void hook_AttachSkinData_Ctor(
     }
 }
 
-
-// ========================================================================================
-//
-//      BUILD MYTHIC ATTACHMENT DATA
-//
-// ========================================================================================
-//
-// Add this helper near the code that builds weapon skin rows.
-//
-// confId:
-// - The selected blueprint/skin ID, normally WeaponConf[2].
-//
-// baseId:
-// - The base weapon/item ID used by the target source's weapon row.
-//
-// isMythic:
-// - True only for mythic weapon skins.
-
 inline std::array<int, 31> BuildMythicAttach(
     int confId,
     int baseId,
@@ -967,9 +889,6 @@ inline std::array<int, 31> BuildMythicAttach(
         }
     }
 
-    // These category placeholders let the loadout resolve every available
-    // mythic appearance from WeaponPartAssetGroupConfig. They are replaced
-    // with real 600xxxxxx attachment IDs at runtime.
     if (isMythic && confId > 0) {
         static const std::array<int, 8> previewTypes = {
             1, 4, 5, 6, 8, 9, 10, 12
@@ -987,39 +906,6 @@ inline std::array<int, 31> BuildMythicAttach(
     return result;
 }
 
-
-// Use the helper before pushing a weapon row:
-//
-// const bool isMythic =
-//     AName.find("[M]") != std::string::npos;
-//
-// const std::array<int, 31> mythicAttach =
-//     BuildMythicAttach(confID, itemIDbase, isMythic);
-//
-// itemData.push_back({
-//     AName,
-//     item2InventoryData,
-//     weaponConfData,
-//     weaponExtraData,
-//     weaponAssetData,
-//     weaponAttachData,
-//     mythicAttach,          // REQUIRED POSITION BABY
-//     itemResourceInts,
-//     itemResources
-// });
-//
-// Adjust the initializer names/order po, to the target source's existing itemInfo.
-// The important requirement is that every row stores the returned array.
-
-
-// ========================================================================================
-//
-//      APPLY SELECTED WEAPON ATTACHMENTS
-//
-// ========================================================================================
-//
-// This keeps attachment logic independent from the rest of the weapon-skin apply code.
-
 struct AttachWeaponIds {
     int baseId;
     int extraId;
@@ -1032,8 +918,6 @@ inline void ApplyMythicAttachments(
     const AttachWeaponIds& ids,
     const std::array<int, 31>& mythicAttach)
 {
-    // With the toggle off the tables stay empty, so nothing is resolved and no
-    // attachment is rewritten.
     if (!MythicAttachmentsEnabled()) {
         activeWeaponSkins.clear();
         activeMythicAttachments.clear();
@@ -1044,9 +928,6 @@ inline void ApplyMythicAttachments(
         return;
     }
 
-    // One selected weapon skin owns the attachment state. Clear the previous
-    // aliases first so changing skins cannot leak an old Mythic attachment into
-    // a different weapon or respawned instance.
     activeWeaponSkins.clear();
     activeMythicAttachments.clear();
     runtimeAttachMythicById.clear();
@@ -1072,8 +953,6 @@ inline void ApplyMythicAttachments(
             activeWeaponSkins[key] = ids.skinId;
     }
 
-    // Register every alias carried by the selected WeaponSkinConfig. Lobby, BR
-    // and the live match weapon can use different IDs for the same blueprint.
     for (void* weaponSkin : SnapshotWeaponSkinConfigs()) {
         if (!AttachPtr(weaponSkin)) continue;
         auto* fields = (WeaponSkinFields*)((uintptr_t)weaponSkin + 0x10);
@@ -1122,22 +1001,6 @@ inline void ClearMythicAttachments(const AttachWeaponIds& ids)
     runtimeAttachSkinId = 0;
 }
 
-
-// Call this when a weapon skin is enabled or selected po:
-//
-// ApplyMythicAttachments(
-//     {
-//         skin.WeaponConf[0],       // base weapon ID
-//         skin.WeaponExtra[0],      // extra/base alias
-//         skin.WeaponConf[2],       // selected blueprint/skin ID
-//         skin.Item2Inventory[0],   // inventory item ID
-//         skin.Item2Inventory[3]    // loot/in-game item ID
-//     },
-
-
-// -----------------------------------------------------------------------------
-// Collector/install glue for the fresh Oblivion base.
-// -----------------------------------------------------------------------------
 inline void (*orig_WeaponPartAsset_Ctor)(void*) = nullptr;
 inline void (*orig_AttachmentConf_Ctor)(void*) = nullptr;
 
@@ -1173,9 +1036,6 @@ inline bool InstallMythicAttachmentCollectorsFresh(uintptr_t unityBase) {
         return true;
     };
 
-    // These two hooks are capture-only. They may safely run during startup so
-    // Gunsmith/Mythic config constructors are not missed before the menu opens.
-    // No attachment model/state is modified by this collector phase.
     hookRva(WeaponPartAssetAddress, (void*)hook_WeaponPartAsset_Ctor,
             (void**)&orig_WeaponPartAsset_Ctor);
     hookRva(AttachmentConfAddress, (void*)hook_AttachmentConf_Ctor,
@@ -1196,9 +1056,6 @@ inline bool InstallMythicAttachmentRuntimeFresh(uintptr_t unityBase) {
         return true;
     };
 
-    // Runtime-mutating hooks are intentionally deferred until SkinHax is opened.
-    // This keeps the logo/login critical path capture-only while still preserving
-    // the constructors needed to build the skin/attachment database immediately.
     hookRva(AttachmentGroupNewCtorAddress, (void*)hook_AttachmentGroupNew_Ctor,
             (void**)&orig_AttachmentGroupNew_Ctor);
     hookRva(AttachmentGroupNewItemCtorAddress, (void*)hook_AttachmentGroupNew_ItemCtor,
@@ -1232,5 +1089,5 @@ inline bool InstallMythicAttachmentHooksFresh(uintptr_t unityBase) {
     return InstallMythicAttachmentCollectorsFresh(unityBase) &&
            InstallMythicAttachmentRuntimeFresh(unityBase);
 }
+}
 
-} // namespace mythic_attachment_system

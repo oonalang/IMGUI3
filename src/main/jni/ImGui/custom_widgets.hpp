@@ -8,7 +8,7 @@
 #include <string>
 
 #include "imgui_internal.h"
-#include "imstb_textedit.h"	
+#include "imstb_textedit.h"
 
 #include <cstdlib>
 #include "imgui.h"
@@ -22,7 +22,7 @@ namespace font
     extern ImFont* icomoon_page;
 }
 
-namespace custom 
+namespace custom
 {
     namespace shell
     {
@@ -82,7 +82,7 @@ namespace custom
 
     void                SeparatorEx(ImGuiSeparatorFlags flags, float thickness);
     void                Separator();
-
 }
 
-#endif // CUSTOM_WIDGETS_HPP
+#endif
+

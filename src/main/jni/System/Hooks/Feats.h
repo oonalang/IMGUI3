@@ -11,10 +11,9 @@ extern bool isJumpAdjustmentEnabled;
 extern float jumpHeightMultiplier;
 extern float SlideRange;
 extern bool UnlimitedAmmo;
-extern bool UnlimitedFly;   // <-- Unlimited Fly toggle
+extern bool UnlimitedFly;
 extern std::chrono::steady_clock::time_point lastAmmoRefillTime;
 
-//-- Smart Reload
 namespace SmartReloadCfg
 {
     constexpr uintptr_t CarriedAmmoCountRva = 0x50EC6E8;
@@ -99,8 +98,6 @@ inline void hook_Pawn_StopFire(Pawn *instance, bool isImmidiately)
     SmartReloadRequestAfterStopFire(instance);
 }
 
-
-//-- Clear Terrain
 inline void (*orig_SetGrassShowState)(bool showGrass) = nullptr;
 inline void hook_SetGrassShowState(bool showGrass)
 {
@@ -137,16 +134,6 @@ inline void ApplyWorldVisualsRuntime()
     lastClearTerrain = Config.ExtraMenu.ClearTerrain;
 }
 
-//-- Stretch Screen
-//
-// Writes UnityEngine.Camera.aspect on the main camera (dump .57:
-// get_aspect 0x5022768, set_aspect 0x5022784 - the same block as get_main
-// 0x5024010, so the offsets belong to the build this repo already targets).
-// The camera's own aspect is saved the first time a camera is seen and put
-// back the moment the toggle is switched off, so turning Stretch Screen off
-// restores the stock view exactly instead of leaving the game stretched.
-// Only values inside the 1.0-3.0 range are ever written; anything else falls
-// back to the aspect the game had.
 inline void ApplyStretchScreen(float displayW, float displayH)
 {
     static Camera *lastCamera = nullptr;
@@ -181,7 +168,6 @@ inline void ApplyStretchScreen(float displayW, float displayH)
     applied = true;
 }
 
-//-- Aim Assist
 inline float (*orig_GetAssitAimSpeed)(void *, Vector3, float, float, float, bool, bool) = nullptr;
 inline float GetAssitAimSpeed(void * instance, Vector3 assistCentorPos, float assistDis, float dis, float angle, bool isPVE, bool gamepadInput) {
     if (instance != NULL) {
@@ -192,7 +178,6 @@ inline float GetAssitAimSpeed(void * instance, Vector3 assistCentorPos, float as
     return orig_GetAssitAimSpeed(instance, assistCentorPos, assistDis, dis, angle, isPVE, gamepadInput);
 }
 
-//-- Anti Flashbang
 inline void (*orig_OnFlashBangExplode)(void *, int, float, float, float) = nullptr;
 inline void hook_OnFlashBangExplode(void *instance, int weaponItemID, float whiteTime, float whiteAlphaTime, float initIntensity) {
     if (instance != nullptr && Config.ExtraMenu.Flash) {
@@ -203,22 +188,6 @@ inline void hook_OnFlashBangExplode(void *instance, int weaponItemID, float whit
     orig_OnFlashBangExplode(instance, weaponItemID, whiteTime, whiteAlphaTime, initIntensity);
 }
 
-//-- Firerate Speed  (+ Unlimited Fly reuses these hooks)
-//
-// These three Weapon getters are also the hook points for the NewFeatures
-// firing-timing toggles (see NewFeatures.h, Task 3).  There is exactly ONE
-// hook per address - the new toggles are folded into these bodies instead of
-// installing a second trampoline on the same prologue:
-//   get_FireBoltTime    @0x51237F4 (No Fire Delay feature removed per request)
-//   get_FireInterval    @0x5105C74 (No Fire Delay feature removed per request)
-//   get_DelaySprintFire @0x513CBC4 -> No Sprint Fire Delay (sprint-out timer)
-// NewFeatures::NoSprintFireDelayActive() answers "is this the local player's held
-// weapon?" from a CACHE refreshed by the local pawn's own tick, because this body
-// runs inside game code on every weapon of the world: it must not resolve the local
-// pawn or call Pawn::get_CurrentWeapon() itself. That native call from inside the
-// getter is what crashed the option (a pawn the game already destroyed passes a plain
-// readability check), so the body is now a pure pointer compare - nothing is changed
-// for remote players either way.
 inline float (*orig_get_FireBoltTime)(void *) = nullptr;
 inline float get_FireBoltTime(void * instance) {
     if (instance != NULL) {
@@ -266,43 +235,16 @@ void hooked_SetUltraFrameRateDeviceInfo(void* thiz, bool enableUltraFrameRate, i
     orig_SetUltraFrameRateDeviceInfo(thiz, enableUltraFrameRate, ultraFrameRate, ultraFrameRateBR, ultraFrameRateQualityLimit, customizedFrameRate);
 }
 
-//-- High Jump
 inline float (*orig_GetMaxJumpHeight)(void*) = nullptr;
 inline float hook_GetMaxJumpHeight(void* instance) {
     float orig_ = orig_GetMaxJumpHeight(instance);
     return (jumpHeightMultiplier > 1.0f) ? orig_ * jumpHeightMultiplier : orig_;
 }
 
-//-- Increase Damage
-// ---------------------------------------------------------------------------
-// Bullet Track (Config.Aim.AimSilent) -- the HIT path, not just the tracer.
-//
-// The DrawESP.h hooks (WeaponFireComponent_Instant::CreateBulletLine /
-// CreateBulletProjectile) only bend the *visible* bullet line towards the
-// enemy. Whether a shot REGISTERS is decided by the game's own sweep,
-// WeaponFireComponent_Instant::SingleLineCheckPhysics @0xC9B2A9C (Slot 90,
-// dump.cs 769628) -- the override a real gun actually dispatches to (the base
-// WeaponFireComponent::SingleLineCheckPhysics @0xC1514C0 is the one hooked
-// above for Hitbox). Redirecting `dir` on THAT ray is what turns a tracer that
-// hits nothing into shots that land.
-//
-// Guards, so nothing but the local player's own shot is ever touched:
-//   * the feature has to be on (AimSilent / Aimbot360), including the Trigger
-//     (None / Shooting / Scoping) setting -- exactly the gate the DrawESP
-//     tracer handler uses, so ray and tracer always agree;
-//   * the fire component must belong to the weapon the local player is holding
-//     (WeaponFireComponent::m_WeaponEntity @0x10, dump.cs 764177), so a bot's
-//     shot is never redirected;
-//   * without a live enemy the original `dir` is passed through untouched and
-//     the shot resolves exactly as the game intended.
-// ---------------------------------------------------------------------------
 inline bool A_BulletTrackIsLocalShot(void *fireComponent)
 {
     if (!Tools::IsPtrValid(fireComponent)) return false;
 
-    // WeaponFireComponent::m_WeaponEntity @0x10 (dump.cs 764173/764177).
-    // NOTE: there is no owner-pawn field at +0x28 - m_Owner there is a const
-    // PropertyName, which is why the weapon pointer is used instead.
     void *weapon = *(void **)((uintptr_t)fireComponent + 0x10);
     if (!Tools::IsPtrValid(weapon)) return false;
 
@@ -312,7 +254,6 @@ inline bool A_BulletTrackIsLocalShot(void *fireComponent)
     return (void *)local->get_CurrentWeapon() == weapon;
 }
 
-// Same Trigger gate DrawESP.h's WeaponHandlerByAstral uses.
 inline bool A_BulletTrackTriggerReady()
 {
     Pawn *local = GamePlay::get_LocalPawn();
@@ -322,12 +263,9 @@ inline bool A_BulletTrackTriggerReady()
         return ((bool (*)(uintptr_t))(Class_Pawn_get_IsFiring))((uintptr_t)local);
     if (Config.Aim.Trigger == EAimTrigger::Scoping)
         return ((bool (*)(uintptr_t))(Class_Pawn_IsAiming))((uintptr_t)local);
-    return true;                                    // EAimTrigger::None
+    return true;
 }
 
-// Target head to aim the ray at. Distance mode (the default) takes the enemy
-// nearest the shot origin - the same choice GetClosestTarget() makes in
-// DrawESP.h; FOV mode takes the enemy whose head lies closest to the ray.
 inline bool A_BulletTrackTargetHead(const Vector3 &startPos, const Vector3 &dir, Vector3 &outHead)
 {
     auto getMatchGame = (uintptr_t (*)()) (Class_Gameplay_get_MatchGame);
@@ -360,10 +298,10 @@ inline bool A_BulletTrackTargetHead(const Vector3 &startPos, const Vector3 &dir,
         float metric;
         if (byFov) {
             const float along = Vector3::Dot(toHead, rayAxis);
-            if (along <= 0.0f) continue;             // behind the shot
-            metric = Vector3::Dot(toHead, toHead) - along * along;  // perpendicular^2
+            if (along <= 0.0f) continue;
+            metric = Vector3::Dot(toHead, toHead) - along * along;
         } else {
-            metric = Vector3::SqrMagnitude(toHead);  // nearest to the shooter
+            metric = Vector3::SqrMagnitude(toHead);
         }
 
         if (!found || metric < best) {
@@ -375,8 +313,6 @@ inline bool A_BulletTrackTargetHead(const Vector3 &startPos, const Vector3 &dir,
     return found;
 }
 
-// Rewrites the shot ray. No-op (dir passed through untouched) unless every
-// guard above lines up.
 inline void A_BulletTrackAimRay(void *fireComponent, const Vector3 &startPos, Vector3 &dir)
 {
     if (!Config.Aim.AimSilent && !Config.Aim.Aimbot360) return;
@@ -387,7 +323,7 @@ inline void A_BulletTrackAimRay(void *fireComponent, const Vector3 &startPos, Ve
     if (!A_BulletTrackTargetHead(startPos, dir, head)) return;
 
     const Vector3 toTarget = head - startPos;
-    if (!(Vector3::SqrMagnitude(toTarget) > 0.0001f)) return;   // also rejects NaN
+    if (!(Vector3::SqrMagnitude(toTarget) > 0.0001f)) return;
 
     dir = toTarget;
 }
@@ -410,7 +346,6 @@ inline bool SingleLineCheckPhysics(void* instance, int hitType, void* hitTarget,
     return orig_SingleLineCheckPhysics(instance, hitType, hitTarget, hitCollider, startPos, dir, impactInfo);
 }
 
-//-- Long Slide
 inline float (*o_get_SlideTackleAcclerationSpeed)(void*) = nullptr;
 inline float h_get_SlideTackleAcclerationSpeed(void* ins) {
     if (SlideRange > 0.0f) {
@@ -450,7 +385,6 @@ inline void h_TickLocalPlayer(void* ins, float deltaTime) {
     }
 }
 
-//-- No Overheat
 inline float (*orig_get_AddHotTime)(void* instance) = nullptr;
 inline float get_AddHotTime(void* instance) {
     if (instance != NULL) {
@@ -461,7 +395,6 @@ inline float get_AddHotTime(void* instance) {
     return orig_get_AddHotTime(instance);
 }
 
-//-- No Parachute
 inline void (*orig_OpenParachute)(void* instance, bool isAuto) = nullptr;
 inline void OpenParachute(void* instance, bool isAuto) {
     if (instance != NULL) {
@@ -472,7 +405,6 @@ inline void OpenParachute(void* instance, bool isAuto) {
     return orig_OpenParachute(instance, isAuto);
 }
 
-//-- Quick Reload
 inline float (*orig_get_ChangeClipTime)(void* instance) = nullptr;
 inline float get_ChangeClipTime(void* instance) {
     if (instance != NULL) {
@@ -493,7 +425,6 @@ inline float get_ChangeClipLoopTime(void* instance) {
     return orig_get_ChangeClipLoopTime(instance);
 }
 
-//-- Quick Scope
 inline float (*orig_get_AimingTime)(void* instance) = nullptr;
 inline float get_AimingTime(void* instance) {
     if (instance != NULL) {
@@ -504,7 +435,6 @@ inline float get_AimingTime(void* instance) {
     return orig_get_AimingTime(instance);
 }
 
-//-- Quick Switch
 inline float (*orig_get_EquipTime)(void* instance) = nullptr;
 inline float get_EquipTime(void* instance) {
     if (instance != NULL) {
@@ -525,14 +455,6 @@ inline float get_UnequipTime(void* instance) {
     return orig_get_UnequipTime(instance);
 }
 
-//-- Red Wallhack
-// get_IsInEM3Eye() @0x9677554 is only 8 bytes long (ldrb w0,[x0,#..]; ret) and
-// the very next function in libunity.so is set_IsInEM3Eye() @0x967755C. A64
-// inline hooking (hook()/HOOK_LIB/And64InlineHook) overwrites the target with a
-// 16-byte LDR/BR stub whenever the replacement sits further than +/-128MB away,
-// which wipes out that neighbour. The flag is forced with Patches.Em3Eye
-// (mov x0,#1 ; ret) from Main.cpp instead - exactly the 8 bytes of the getter.
-
 float (*orig_GetAccDistance)(void *instance);
 float GetAccDistance(void *instance) {
     if (instance != NULL) {
@@ -543,12 +465,10 @@ float GetAccDistance(void *instance) {
     return orig_GetAccDistance(instance);
 }
 
-//-- Skip Tutorial
 inline bool IsTutorialEnabled() {
     return false;
 }
 
-//-- Sky Diving Speed
 inline float (*orig_get_AccelerationForwardSpeedUp)(void* instance) = nullptr;
 inline float get_AccelerationForwardSpeedUp(void* instance) {
     if (instance != NULL) {
@@ -569,7 +489,6 @@ inline float get_MaxVelocityForwardSpeedUp(void* instance) {
     return orig_get_MaxVelocityForwardSpeedUp(instance);
 }
 
-//-- Snowboard Boost
 inline float (*get_m_PhysSkisMaxSpeed)(void*) = nullptr;
 inline float hooked_get_m_PhysSkisMaxSpeed(void* instance) {
     if (SnowBsize > 0.0f) {
@@ -578,7 +497,6 @@ inline float hooked_get_m_PhysSkisMaxSpeed(void* instance) {
     return get_m_PhysSkisMaxSpeed(instance);
 }
 
-//-- Speed Hack
 inline float (*original_CalcFinalMoveScale)(void*) = nullptr;
 inline float hooked_CalcFinalMoveScale(void* instance) {
     if (instance == nullptr) {
@@ -590,13 +508,6 @@ inline float hooked_CalcFinalMoveScale(void* instance) {
     return original_CalcFinalMoveScale(instance);
 }
 
-//-- Weapon Kinetic
-// get_IsKineticArmor() @0x51B3D64 is only 8 bytes long and the very next
-// function is the *virtual* Pawn::get_CurrentSeatMode() @0x51B3D6C (0xAC bytes),
-// so a 16-byte inline stub here would break every seat query in the game. The
-// flag is forced with Patches.KineticArmor (mov x0,#1 ; ret) from Main.cpp.
-
-//-- Zero Recoil
 inline float (*orig_GetScaleRecoil)(void* instance) = nullptr;
 inline float GetScaleRecoil(void* instance) {
     if (instance != NULL) {
@@ -607,7 +518,6 @@ inline float GetScaleRecoil(void* instance) {
     return orig_GetScaleRecoil(instance);
 }
 
-//-- Zero Spread
 inline float (*orig_MinInaccuracy)(void *) = nullptr;
 inline float MinInaccuracy(void * instance) {
     if (instance != NULL) {
@@ -636,11 +546,8 @@ inline float DisperseBase(void * instance) {
         }
     }
     return orig_DisperseBase(instance);
-} 
+}
 
-// BlueprintWeaponInfo.IsUnlocked() @0x901F988 - no parameters. The menu calls
-// this switch "Blueprint"; it is OFF out of the box (Init_Hacks.h), and with it
-// off the game's own answer is passed through.
 inline bool (*orig_IsUnlocked)(void *instance) = nullptr;
 inline bool IsUnlocked(void *instance) {
     if (instance != NULL && Config.ExtraMenu.MythicAttachments)
@@ -648,26 +555,12 @@ inline bool IsUnlocked(void *instance) {
     return orig_IsUnlocked != nullptr ? orig_IsUnlocked(instance) : false;
 }
 
-// Attachment unlock ("treat every attachment as owned") lives in its own
-// header: ONE answer, WeaponPromotionInfo.IsWeaponAttachmentUnlock 0xA61AA00,
-// gated by Config.ExtraMenu.Attachment - the same single question
-// github.com/oonalang/VARIANT4 asks. See System/Hooks/MythicAttachments.h.
-//
-// MythicAttachmentSystem.h (the mythic-skin-id resolver and its OwnState
-// rewrites) is deliberately NOT included: VARIANT4 ships that module but its
-// install path is not used, and on this tree its trampolines are what the
-// working answer was fighting. The file is kept for reference.
 #include "MythicAttachments.h"
-// Block Report Evidence (HOME tab switch, ON by default): swallows the four
-// report-path entries your client uses to send evidence when you get reported.
-// See System/Hooks/ReportBlock.h.
+
 #include "ReportBlock.h"
-// Anti-Login (Account tab switch): refuses the forced relogin the client
-// performs when the account is accessed from another location (the
-// 0E100004 CONNECT popup). See System/Hooks/AntiLogin.h.
+
 #include "AntiLogin.h"
 
-// No Spectate Deelay
 inline bool (*o_NeedDelayProcess)(void *instance, int a, int b);
 inline bool h_NeedDelayProcess(void *instance, int a, int b) {
     bool orig_val = o_NeedDelayProcess(instance, a, b);
@@ -722,7 +615,6 @@ int get_DeviceCapacityLevel(void *instance) {
     return orig_get_DeviceCapacityLevel(instance);
 }
 
-// Hook for CheckTargetIsValid_DyingInAzurGameMode
 inline bool (*orig_CheckTargetIsValid_DyingInAzurGameMode)(void* instance, void* targetPawn);
 inline bool CheckTargetIsValid_DyingInAzurGameMode_Hook(void* instance, void* targetPawn) {
     if (instance != nullptr && targetPawn != nullptr) {
@@ -733,7 +625,6 @@ inline bool CheckTargetIsValid_DyingInAzurGameMode_Hook(void* instance, void* ta
     return orig_CheckTargetIsValid_DyingInAzurGameMode(instance, targetPawn);
 }
 
-// Hook for CheckTargetIsValid_PhysState
 inline bool (*orig_CheckTargetIsValid_PhysState)(void* instance, void* targetPawn);
 inline bool CheckTargetIsValid_PhysState_Hook(void* instance, void* targetPawn) {
     if (instance != nullptr && targetPawn != nullptr) {
@@ -744,7 +635,6 @@ inline bool CheckTargetIsValid_PhysState_Hook(void* instance, void* targetPawn) 
     return orig_CheckTargetIsValid_PhysState(instance, targetPawn);
 }
 
-// Hook for CheckTargetIsValid_ManualParameter
 inline bool (*orig_CheckTargetIsValid_ManualParameter)(void* instance, void* tempPawn, float* distance);
 inline bool CheckTargetIsValid_ManualParameter_Hook(void* instance, void* tempPawn, float* distance) {
     if (instance != nullptr && tempPawn != nullptr) {
@@ -755,7 +645,6 @@ inline bool CheckTargetIsValid_ManualParameter_Hook(void* instance, void* tempPa
     return orig_CheckTargetIsValid_ManualParameter(instance, tempPawn, distance);
 }
 
-// Hook for CheckTargetIsValid_Ult
 inline bool (*orig_CheckTargetIsValid_Ult)(void* instance, void* targetPawn);
 inline bool CheckTargetIsValid_Ult_Hook(void* instance, void* targetPawn) {
     if (instance != nullptr && targetPawn != nullptr) {
@@ -806,7 +695,6 @@ inline bool CheckCanExcution_Extra(void *ins) {
     return oCheckCanExcution_Extra(ins);
 }
 
-
 inline bool (*o_CheckExecution_ObstacleAround)(void *ins);
 inline bool CheckExecution_ObstacleAround(void *ins) {
     if (ins!=nullptr) {
@@ -817,7 +705,6 @@ inline bool CheckExecution_ObstacleAround(void *ins) {
     return o_CheckExecution_ObstacleAround(ins);
 }
 
-/// Walk Under Water
 inline bool (*oPawn_GetCurrentDistToWaterSurface)(void *instance);
 inline bool Pawn_GetCurrentDistToWaterSurface(void *instance) {
     if (instance != NULL) {
@@ -848,7 +735,6 @@ inline bool CheckInWaterComponent_get_CurrentWaterSurfaceHeight(void *instance) 
     return oCheckInWaterComponent_get_CurrentWaterSurfaceHeight(instance);
 }
 
-///Camera Pov
 float (*oInputSettingConfig_Instant_GetMainCameraFov_3p)(void *instance);
 float InputSettingConfig_Instant_GetMainCameraFov_3p(void *instance) {
     if (instance && Config.ExtraMenu.CameraPov) {
@@ -857,7 +743,6 @@ float InputSettingConfig_Instant_GetMainCameraFov_3p(void *instance) {
     return oInputSettingConfig_Instant_GetMainCameraFov_3p(instance);
 }
 
-//-- No Smoke
 inline bool NameHasSmokeToken(const char *name)
 {
     if (!name)
@@ -887,100 +772,61 @@ inline void hook_GameObjectSetActive(void *instance, bool value)
 }
 
 inline void InitializeAllHooks() {
-
-    //-- Smart Reload
     HOOK_LIB("libunity.so", "0x5260B78", hook_Pawn_StopFire, orig_Pawn_StopFire);
 
-    //-- Aim Assist
     HOOK_LIB("libunity.so", "0x666FD90", GetAssitAimSpeed, orig_GetAssitAimSpeed);
 
-    //-- Anti Flashbang
     HOOK_LIB("libunity.so", "0x51E977C", hook_OnFlashBangExplode, orig_OnFlashBangExplode);
-    
-    //-- Firerate Speed  (+ Unlimited Fly reuses these hooks)
+
     HOOK_LIB("libunity.so", "0x51237F4", get_FireBoltTime, orig_get_FireBoltTime);
     HOOK_LIB("libunity.so", "0x5105C74", get_FireInterval, orig_get_FireInterval);
     HOOK_LIB("libunity.so", "0x513CBC4", get_DelaySprintFire, orig_get_DelaySprintFire);
 
-    //-- High Jump
     HOOK_LIB("libunity.so", "0x5221D00", hook_GetMaxJumpHeight, orig_GetMaxJumpHeight);
 
-    //-- Increase Damage
     HOOK_LIB("libunity.so", "0xC1514C0", SingleLineCheckPhysics, orig_SingleLineCheckPhysics);
 
-    //-- Bullet Track (silent aim): the hit ray a real gun dispatches to.
-    //   See the A_BulletTrack* block above - this is what makes the redirected
-    //   shot actually register instead of only bending the tracer.
     HOOK_LIB("libunity.so", "0xC9B2A9C", SingleLineCheckPhysics_Instant_Hook, orig_SingleLineCheckPhysics_Instant);
 
-    //-- No Parachute
     HOOK_LIB("libunity.so", "0x68823FC", OpenParachute, orig_OpenParachute);
 
-    //-- Quick Reload
     HOOK_LIB("libunity.so", "0x50ECADC", get_ChangeClipTime, orig_get_ChangeClipTime);
 
-    //-- Quick Scope
     HOOK_LIB("libunity.so", "0x50EB944", get_AimingTime, orig_get_AimingTime);
 
-    //-- Quick Switch
     HOOK_LIB("libunity.so", "0x50ED8D4", get_EquipTime, orig_get_EquipTime);
 
-    //-- Red Wallhack
-    //   get_IsInEM3Eye @0x9677554 is an 8-byte getter: never inline-hook it,
-    //   it stays a patch (Patches.Em3Eye, Main.cpp).
     HOOK_LIB("libunity.so", "0xAD1DD78", GetAccDistance, orig_GetAccDistance);
 
-    //-- Skip Tutorial
     HOOK_LIB_NO_ORIG("libunity.so", "0x9DE0E58", IsTutorialEnabled);
-    
-    //-- Sky Diving Speed
+
     HOOK_LIB("libunity.so", "0x5DE981C", get_AccelerationForwardSpeedUp, orig_get_AccelerationForwardSpeedUp);
     HOOK_LIB("libunity.so", "0x5DE9880", get_MaxVelocityForwardSpeedUp, orig_get_MaxVelocityForwardSpeedUp);
 
-    //-- Snowboard Boost
     HOOK_LIB("libunity.so", "0x522860C", hooked_get_m_PhysSkisMaxSpeed, get_m_PhysSkisMaxSpeed);
 
-    //-- Speed Hack
     HOOK_LIB("libunity.so", "0x51D2EB8", hooked_CalcFinalMoveScale, original_CalcFinalMoveScale);
 
-    //-- Weapon Kinetic
-    //   get_IsKineticArmor @0x51B3D64 is an 8-byte getter: never inline-hook it,
-    //   it stays a patch (Patches.KineticArmor, Main.cpp).
-
-    //-- Zero Recoil
     HOOK_LIB("libunity.so", "0xC9BAFF8", GetScaleRecoil, orig_GetScaleRecoil);
 
-    //-- Zero Spread
     HOOK_LIB("libunity.so", "0xC9B8F78", MinInaccuracy, orig_MinInaccuracy);
     HOOK_LIB("libunity.so", "0xC159288", MaxInaccuracy, orig_MaxInaccuracy);
     HOOK_LIB("libunity.so", "0xC9C76C4", DisperseBase, orig_DisperseBase);
-    
-    //-- Spectate
-    // NOTE: ObserverDelayManager::ProcessForDelay @0x519676C must be hooked
-    // exactly ONCE. It used to be hooked twice into the same orig pointer; the
-    // second A64 hook built its trampoline from the *already patched* prologue,
-    // so o_ProcessForDelay ended up branching back into h_ProcessForDelay, which
-    // calls o_ProcessForDelay - unbounded recursion (stack overflow / SIGSEGV)
-    // the first time the game ran ProcessForDelay.
+
     HOOK_LIB("libunity.so", "0x519676C", h_ProcessForDelay, o_ProcessForDelay);
     HOOK_LIB("libunity.so", "0x51966D8", h_NeedDelayProcess, o_NeedDelayProcess);
 
-    //-- No smoke
     UnityObject_get_name = reinterpret_cast<String *(*)(void *)>(
           getAbsoluteAddress("libunity.so", 0x5052F10));
 
     DobbyHook((void *)getAbsoluteAddress("libunity.so", 0x5036EB8),
           (void *)&hook_GameObjectSetActive,
           (void **)&orig_GameObjectSetActive);
-          
-    //-- Throwable Alert      
+
     DobbyHook((void *)getAbsoluteAddress("libunity.so", ThrowAlertCfg::TickRva),
           (void *)&hook_WeaponProjectileTick,
           (void **)&orig_WeaponProjectileTick);
 
-    //-- Placed Items ESP (tripmines / C4 / trophy / trip sensors: the
-    //   Stick base Tick catches every Stick subclass, the three class Ticks
-    //   cover the placables that override Tick themselves - see PlacableEsp.h)
     DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::StickTickRva),
           (void *)&hook_StickTick,
           (void **)&orig_StickTick);
@@ -994,22 +840,11 @@ inline void InitializeAllHooks() {
           (void *)&hook_TripWireTick,
           (void **)&orig_TripWireTick);
 
-    // Which of the four landed? A DobbyHook that fails leaves its original
-    // pointer null, so that IS the verdict - and the ESP page prints these bits
-    // next to the tracker's counters, because "no devices drawn" and "the hook
-    // never installed" are two different problems with two different fixes.
     NotePlacableHookLanded(PlcHookStick,    orig_StickTick    != nullptr);
     NotePlacableHookLanded(PlcHookTripMine, orig_TripMineTick != nullptr);
     NotePlacableHookLanded(PlcHookTrapChip, orig_TrapChipTick != nullptr);
     NotePlacableHookLanded(PlcHookTripWire, orig_TripWireTick != nullptr);
 
-    // Route 3: the game's own live-projectile table. PushProjectile is called
-    // for every projectile that enters BaseGame.m_WeaponProjectileList, so a
-    // device placed by somebody else is registered even if its Tick override
-    // is never called on this client - the failure the two Tick routes alone
-    // could not rule out. RemoveWeaponProjectile drops the marker with it.
-    // RVAs from dump.cs GR .57 (BaseGame @702371: PushProjectile 0x9CBEE0C,
-    // RemoveWeaponProjectile 0x9CBDAC4); see PlacableEsp.h.
     DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::PushProjectileRva),
           (void *)&hook_PushProjectile,
           (void **)&orig_PushProjectile);
@@ -1018,58 +853,40 @@ inline void InitializeAllHooks() {
           (void **)&orig_RemoveWeaponProjectile);
     NotePlacablePushLanded(orig_PushProjectile != nullptr);
 
-    // The same tracker also rides the base WeaponProjectile.Tick hook that
-    // ThrowableAlert installed above, so a device whose own Tick chains to the
-    // base is still seen (see PlacableEsp.h).
     g_placableProjectileTickSink = &PlacableOnProjectileTick;
 
-    //-- Clear Terrain
     DobbyHook((void *)getAbsoluteAddress("libunity.so", 0xAE2E1B0),
           (void *)&hook_SetGrassShowState,
           (void **)&orig_SetGrassShowState);
 
     DobbyHook((void *)getAbsoluteAddress("libunity.so", 0x7B4E290),
           (void *)&hook_SetGrassLODBias,
-          (void **)&orig_SetGrassLODBias);         
-          
+          (void **)&orig_SetGrassLODBias);
+
     DobbyHook((void*)getAbsoluteAddress("libunity.so", 0x9FDEE28), (void*)hooked_SetUltraFrameRateDeviceInfo, (void**)&orig_SetUltraFrameRateDeviceInfo);
 
-    ///Walk Under Water
-    DobbyHook((void *) getAbsoluteAddress("libunity.so", 0x51D31BC), (void *)  &Pawn_GetCurrentDistToWaterSurface, (void **) &oPawn_GetCurrentDistToWaterSurface); 
-    DobbyHook((void *) getAbsoluteAddress("libunity.so", 0x54BC450), (void *)  &PlayerPawn_IsUnderWaterSurface, (void **) &oPlayerPawn_IsUnderWaterSurface); 
-    DobbyHook((void *) getAbsoluteAddress("libunity.so", 0x757162C), (void *)  &CheckInWaterComponent_get_CurrentWaterSurfaceHeight, (void **) &oCheckInWaterComponent_get_CurrentWaterSurfaceHeight); 
+    DobbyHook((void *) getAbsoluteAddress("libunity.so", 0x51D31BC), (void *)  &Pawn_GetCurrentDistToWaterSurface, (void **) &oPawn_GetCurrentDistToWaterSurface);
+    DobbyHook((void *) getAbsoluteAddress("libunity.so", 0x54BC450), (void *)  &PlayerPawn_IsUnderWaterSurface, (void **) &oPlayerPawn_IsUnderWaterSurface);
+    DobbyHook((void *) getAbsoluteAddress("libunity.so", 0x757162C), (void *)  &CheckInWaterComponent_get_CurrentWaterSurfaceHeight, (void **) &oCheckInWaterComponent_get_CurrentWaterSurfaceHeight);
 
-  ///Camera Pov
-  DobbyHook((void *) getAbsoluteAddress("libunity.so", 0xC347950), (void *)  &InputSettingConfig_Instant_GetMainCameraFov_3p, (void **) &oInputSettingConfig_Instant_GetMainCameraFov_3p); 
+  DobbyHook((void *) getAbsoluteAddress("libunity.so", 0xC347950), (void *)  &InputSettingConfig_Instant_GetMainCameraFov_3p, (void **) &oInputSettingConfig_Instant_GetMainCameraFov_3p);
 
-    //-- Blueprint / skin display unlock: BlueprintWeaponInfo.IsUnlocked()
-    //   @0x901F988 - no parameters.
     HOOK_LIB("libunity.so", "0x901F988", IsUnlocked, orig_IsUnlocked);
 
-    //-- Unlock Attachments: WeaponPromotionInfo.IsWeaponAttachmentUnlock(void*)
-    //   @0xA61AA00, exactly as github.com/oonalang/VARIANT4 asks it - one
-    //   question, gated by Config.ExtraMenu.Attachment. See
-    //   System/Hooks/MythicAttachments.h for why the seven-hook stack this tree
-    //   had grown (the three extra answers, the two OwnState row rewrites and
-    //   the MythicAttachmentSystem builders) is gone: they fought each other on
-    //   shared prologues and put locked states back on the objects the loadout
-    //   popup had already drawn.
     HOOK_LIB("libunity.so", "0xA61AA00", IsWeaponAttachmentUnlock, orig_IsWeaponAttachmentUnlock);
 
-    //-- Block Report Evidence.
     report_block::InstallReportBlockHooks();
     report_block::NoteLanded(report_block::GateDoReport,       report_block::orig_DoReport != nullptr);
     report_block::NoteLanded(report_block::GateDoReportPlayer, report_block::orig_DoReportPlayer != nullptr);
     report_block::NoteLanded(report_block::GateBeginReport,    report_block::orig_BeginReportPlayerPull != nullptr);
     report_block::NoteLanded(report_block::GateFillReportData, report_block::orig_FillPlayerFullData != nullptr);
     report_block::NoteLanded(report_block::GateEndReport,      report_block::orig_EndReportPlayerPull != nullptr);
-    //-- Block ACE Report Data.
+
     report_block::NoteLanded(report_block::GateAceGetData,  report_block::orig_AceGetReportData != nullptr);
     report_block::NoteLanded(report_block::GateAceGetData2, report_block::orig_AceGetReportData2 != nullptr);
     report_block::NoteLanded(report_block::GateAceGetData3, report_block::orig_AceGetReportData3 != nullptr);
     report_block::NoteLanded(report_block::GateAceGetData4, report_block::orig_AceGetReportData4 != nullptr);
 
-    //-- Anti-Login.
     anti_login::InstallAntiLoginHooks();
     anti_login::NoteLanded(anti_login::GateHeartbeatExec,  anti_login::orig_ExecuteReloginByRandomDelay != nullptr);
     anti_login::NoteLanded(anti_login::GateCheckState,     anti_login::orig_CheckReloginState != nullptr);

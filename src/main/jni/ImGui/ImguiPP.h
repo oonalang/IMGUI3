@@ -1,15 +1,9 @@
 #pragma once
 
 #include "imgui.h"
-/**
- * @autor SPraditya
- * email help : foxcheatsid@gmail.com
- */
 
 namespace ImguiPP
 {
-
-
     float getx();
     float gety();
 
@@ -32,5 +26,5 @@ namespace ImguiPP
     }
 
     ImVec4 to_vec4(float r, float g, float b, float a);
-
 }
+

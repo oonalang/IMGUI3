@@ -4,16 +4,15 @@ inline void DrawTopContainer(ImDrawList *drawList, const ImVec2 &min, const ImVe
     }
 
     const ImVec2 max = min + size;
-   
+
     drawList->AddRectFilled(min, max, IM_COL32(22, 29, 34, 220), 7.0f);
-    
+
     drawList->AddLine(ImVec2(min.x + 12.0f, max.y - 1.0f), ImVec2(max.x - 12.0f, max.y - 1.0f), IM_COL32(210, 134, 10, 120), 1.0f);
 
     const ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
     const ImVec2 textPos(min.x + (size.x - textSize.x) * 0.5f, min.y + (size.y - textSize.y) * 0.5f);
     drawList->AddText(font, fontSize, textPos, IM_COL32(228, 213, 185, 255), label);
 }
-
 
 inline bool DrawSidebarButton(const char *id, const char *label, const Texture &icon, bool active, const ImVec2 &size) {
     const ImVec2 min = ImGui::GetCursorScreenPos();
@@ -23,10 +22,9 @@ inline bool DrawSidebarButton(const char *id, const char *label, const Texture &
 
     ImDrawList *drawList = ImGui::GetWindowDrawList();
 
-    
     if (active) {
         drawList->AddRectFilled(min, min + size, IM_COL32(38, 48, 56, 200), 6.0f);
-        
+
         drawList->AddRectFilled(
             ImVec2(min.x + 4.0f, min.y + size.y - 3.0f),
             ImVec2(min.x + size.x - 4.0f, min.y + size.y - 1.0f),
@@ -42,7 +40,6 @@ inline bool DrawSidebarButton(const char *id, const char *label, const Texture &
         : hovered ? IM_COL32(185, 162, 110, 220)
         : IM_COL32(112, 100, 78, 190);
 
-    // Center icon
     ImFont *labelFont = F50 ? F50 : (font::inter_semibold ? font::inter_semibold : ImGui::GetFont());
     const float labelSize = (labelFont == F50) ? 13.5f : labelFont->FontSize * 0.95f;
     const ImVec2 textSize = labelFont->CalcTextSizeA(labelSize, FLT_MAX, 0.0f, label);
@@ -197,7 +194,7 @@ inline void DrawToggleRow(const char *label, bool *value) {
     const float statusSize = (statusFont == F50) ? 13.5f : (labelFont->FontSize * 0.84f);
     const char *statusText = *value ? "ON" : "OFF";
     const ImVec2 statusTextSize = statusFont->CalcTextSizeA(statusSize, FLT_MAX, 0.0f, statusText);
-    // OFF: muted slate, ON: warm amber
+
     const int offR = 90, offG = 100, offB = 108;
     const int onR = 210, onG = 134, onB = 10;
     const int statusR = (int)(offR + (onR - offR) * animT);
@@ -602,3 +599,4 @@ inline void RenderPriceListPopupModal() {
     ImGui::PopStyleColor(3);
     ImGui::PopStyleVar(3);
 }
+

@@ -1,8 +1,3 @@
-// Minimal stand-in for the NDK's <android/native_window.h>, used ONLY by the
-// host (x86-64 g++) syntax checks in Skin/tests and Hacks/Feature/tests.
-// ANativeWindow is an opaque struct in the real NDK too, so every declaration
-// below is faithful; nothing here reaches the APK (Android.mk only wildcards
-// top-level *.cpp plus a few subdirectories).
 #pragma once
 
 #include <jni.h>
@@ -38,3 +33,4 @@ void    ANativeWindow_release(ANativeWindow *window);
 #ifdef __cplusplus
 }
 #endif
+

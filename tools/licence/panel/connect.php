@@ -1,25 +1,4 @@
 <?php
-/**
- * connect.php - the endpoint the app's sign-in posts to.
- *
- * This is the same request the app already sends
- * (game / user_key / serial), so the client's transport did not have to change:
- * what changed is the ANSWER. It no longer returns an MD5 that the app could
- * also have computed by itself; it returns a payload plus an RSA-SHA256
- * signature made with the private key in config.php, and the app verifies that
- * against the public key compiled into it.
- *
- * A swapped panel - the attack this replaces - can still answer whatever it
- * likes. It cannot sign with your key, so the app refuses its tokens
- * ("Token was not issued by this service") instead of accepting them.
- *
- *   POST game=CODMGR&user_key=...&serial=<device hwid>
- *
- *   200 {"status":true,"data":{"payload":"v1|KEY|HWID|EXP|BUILD","sig":"<b64>","expires":EXP}}
- *   200 {"status":false,"reason":"..."}
- *
- * Requires PHP 7.4+ with the openssl extension (standard on shared hosting).
- */
 
 declare(strict_types=1);
 
@@ -62,10 +41,6 @@ if ($lic['expires'] !== 0 && $lic['expires'] < time()) {
     fail('This licence key has expired');
 }
 
-// Bind this phone the first time it signs in. A key carries a list of allowed
-// devices and a seat count (0 = unlimited, the free-trial key): a phone that is
-// already in the list is let through forever, a new one is added while there is
-// room, and past that the key is simply in use elsewhere.
 $devices = licence_devices($lic);
 if (!in_array($serial, $devices, true)) {
     if (!licence_has_room($lic)) {
@@ -80,8 +55,7 @@ if (!in_array($serial, $devices, true)) {
 }
 
 $build   = $config['build'];
-// exp 0 in the store means "never" - it is signed as a concrete 2100-01-01 so
-// the app never has a zero-means-forever branch of its own.
+
 $expires = licence_signable_expiry((int)$lic['expires']);
 $payload = 'v1|' . $key . '|' . $serial . '|' . (string)$expires . '|' . (string)$build;
 
@@ -98,3 +72,4 @@ echo json_encode([
         'expires' => $expires,
     ],
 ]);
+

@@ -6,11 +6,6 @@
 static GLuint astralTextureID = 0;
 static bool astralLoaded = false;
 
-// outWidth / outHeight are optional. GLES3's gl3.h exposes no
-// GL_TEXTURE_WIDTH / GL_TEXTURE_HEIGHT pname (and glGetTexLevelParameteriv is
-// not part of the ES 3.0 core profile the NDK headers describe), so callers
-// that need the pixel size take it from stbi here instead of querying the
-// texture back from the driver.
 inline GLuint LoadTextureFromMemory(const unsigned char* imageData, int imageSize,
                                     int* outWidth = nullptr, int* outHeight = nullptr)
 {
@@ -57,11 +52,11 @@ inline GLuint LoadAstralTexture(const unsigned char* logoData, int logoSize)
     }
 
     astralTextureID = LoadTextureFromMemory(logoData, logoSize);
-    
+
     if (astralTextureID != 0) {
         astralLoaded = true;
     }
-    
+
     return astralTextureID;
 }
 
@@ -79,11 +74,3 @@ inline void CleanupAllTextures()
     astralLoaded = false;
 }
 
-/*
-inline float GetLogoOpacity() {
-    return 1.0f;
-}
-
-inline float GetLogoSizeMultiplier() {
-    return 1.0f;
-} */

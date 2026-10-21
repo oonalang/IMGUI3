@@ -1,22 +1,5 @@
 #pragma once
 
-// ---------------------------------------------------------------------------
-// Raspody menu - Android / OpenGL ES port of github.com/eliwoahzja/raspody.
-//
-// The upstream framework is one DirectX11 / Win32 application: gui.cpp owns the
-// render loop, settings/variables.h owns the D3D device and HWND, and every
-// widget resolves through a config database. This port keeps the layout and the
-// interaction model but binds each row straight to sConfig (or the app's own
-// feature globals), which is what this build's ESP / triggerbot / hooks read.
-//
-// Namespace isolation: everything below lives in namespace raspody. It never
-// touches c::, custom:: or font::.
-//
-// This header is included from Main.cpp after MainFeatureIncludes.h (the same
-// place the LANX header used to live), so it can see Config, the save/load
-// helpers and the app's feature globals.
-// ---------------------------------------------------------------------------
-
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
@@ -37,7 +20,6 @@
 #include <vector>
 #include <fstream>
 
-// Feature state owned by Main.cpp (same declarations the LANX header used).
 extern bool  HIDEESP;
 extern bool  UnlimitedFly;
 extern float SnowBsize;
@@ -45,27 +27,17 @@ extern float SlideRange;
 extern float speedHackMultiplier;
 extern float jumpHeightMultiplier;
 
-// Session strings from Includes/Jni_Stuff.h.
 extern std::string usedKey;
 extern std::string userType;
 
-// Implemented in System/Core/SaveConfig.h.
 void SaveConfiguration(const std::string& filename);
 bool LoadConfiguration(const std::string& filename);
 std::vector<std::string> ListProfiles();
 
 namespace raspody
 {
-    // Set by the header's minimize control. Main.cpp turns it into the existing
-    // thin restore bar (`windowCollapsed`) and clears the flag.
     inline bool minimize_requested = false;
 
-    // UiState and the shared `ui` instance live in raspody_widgets.h.
-
-    // ---------------------------------------------------------------------
-    // Small helpers
-    // ---------------------------------------------------------------------
-    // Tab history, so the breadcrumb's back control can climb out again.
     inline int g_tabHistory[Tab_Count] = { 0 };
     inline int g_tabHistoryCount = 0;
 
@@ -94,9 +66,6 @@ namespace raspody
         }
     }
 
-    // The "<" in the breadcrumb. It used to be decoration only: a second
-    // subtab steps back to the first one, and the first subtab steps back to
-    // the tab the user came from.
     inline void GoBack()
     {
         if (var.subtab.stored != 0)
@@ -131,8 +100,6 @@ namespace raspody
         return out;
     }
 
-    // Row heights are the larger of the design metric and the measured text, so
-    // a row never shrinks below the font it draws when the menu scale drops.
     inline float TextRowHeight(float designHeight, float textSize, const char* text, float padY)
     {
         ImFont* font = fonts::small ? fonts::small : ImGui::GetFont();
@@ -156,8 +123,6 @@ namespace raspody
         ImGui::Dummy(ImVec2(width, height));
     }
 
-    // Paragraphs wrap. They used to be one clipped line, so any sentence wider
-    // than the card was cut mid-word at the card edge.
     inline void ParagraphRow(const char* text)
     {
         const ImVec2 pos = RowOrigin();
@@ -199,7 +164,7 @@ namespace raspody
 
                 if (atEnd)
                     break;
-                ++p; // skip the space
+                ++p;
             }
             if (!current.empty())
                 lines.push_back(current);
@@ -312,9 +277,6 @@ namespace raspody
         return changed || active;
     }
 
-    // ---------------------------------------------------------------------
-    // Page grid / cards
-    // ---------------------------------------------------------------------
     struct PageLayout
     {
         ImVec2 origin = ImVec2(0, 0);
@@ -369,9 +331,6 @@ namespace raspody
         return ImMax(layout.leftY, layout.rightY);
     }
 
-    // ---------------------------------------------------------------------
-    // Aimbot
-    // ---------------------------------------------------------------------
     inline void AimbotPage(PageLayout& p, int subtab)
     {
         static const char* triggers[] = { "None", "Shooting", "Scoping" };
@@ -418,8 +377,6 @@ namespace raspody
                           &Config.NewFeaturesMenu.TriggerbotDelay, 0, 500, "%.0f ms");
             });
 
-            // The crosshair itself lives on Scripts -> Crosshair; this page
-            // used to repeat all three of its cards.
             AddPageCard(p, 1, "Trigger zone", [&] {
                 InfoRow("Trigger point", "Crosshair dot");
                 InfoRow("Dot state", Config.Crosshair.Enabled ? "Enabled" : "Disabled");
@@ -428,16 +385,13 @@ namespace raspody
                 {
                     if (var.tab.stored != Tab_Scripts)
                         RequestTab(Tab_Scripts);
-                    // RequestTab resets the subtab, so set it afterwards.
+
                     var.subtab.stored = 1;
                 }
             });
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Visuals
-    // ---------------------------------------------------------------------
     inline void VisualsPage(PageLayout& p, int subtab)
     {
         static const char* boxTypes[] = { "Fill", "Outline", "Corner", "3D" };
@@ -497,7 +451,6 @@ namespace raspody
                            Config.sColorsESPBOT.DistanceBOT,
                            Config.sColorsESPBOT.SkeletonBOT);
             });
-
         }
         else
         {
@@ -559,9 +512,6 @@ namespace raspody
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Weapons
-    // ---------------------------------------------------------------------
     inline void WeaponsPage(PageLayout& p, int subtab)
     {
         if (subtab == 0)
@@ -620,9 +570,6 @@ namespace raspody
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Scripts
-    // ---------------------------------------------------------------------
     inline void ScriptsPage(PageLayout& p, int subtab)
     {
         if (subtab == 0)
@@ -696,17 +643,11 @@ namespace raspody
                          Config.Crosshair.Color);
                 DrawCrosshairPreview();
             });
-
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Configs
-    // ---------------------------------------------------------------------
     inline void ConfigsPage(PageLayout& p, int subtab)
     {
-        // Enumerate profiles from disk (configs/*.json), not a hardcoded list.
-        // Refreshed every frame so newly saved/deleted files show up.
         std::vector<std::string> profiles = ListProfiles();
         if (profiles.empty())
             profiles.push_back("ethnir");
@@ -826,15 +767,8 @@ namespace raspody
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Settings
-    // ---------------------------------------------------------------------
     inline void SettingsPage(PageLayout& p, int subtab)
     {
-        // Settings is the *menu's* tab: the game switches live on Visuals,
-        // Weapons and Scripts, and every one of them used to be repeated here
-        // (world physics, camera, display and movement were a full second copy
-        // of those pages). This page only owns what is unique to the menu.
         static bool logoInit = false;
         static float logoOpacity = 1.0f;
         static float logoSize = 1.0f;
@@ -899,9 +833,6 @@ namespace raspody
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Page dispatcher
-    // ---------------------------------------------------------------------
     inline void RenderPage(int tab, int subtab, ImVec2 origin, float width)
     {
         PageLayout layout = MakePageLayout(origin, width);
@@ -922,9 +853,6 @@ namespace raspody
         ImGui::Dummy(ImVec2(1, 1));
     }
 
-    // ---------------------------------------------------------------------
-    // Header / tab bar / content
-    // ---------------------------------------------------------------------
     inline void RenderHeader(ImVec2 pos, ImVec2 size, float pad, float headerH)
     {
         Brand(ImVec2(pos.x + pad, pos.y + pad), headerH, "ETHNIR", "The cheat, if there is one.");
@@ -1029,7 +957,6 @@ namespace raspody
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
 
-        // Breadcrumb pill.
         float nextX = contentX;
         const float nameW = TextSize(fonts::small ? fonts::small : ImGui::GetFont(), S(11),
                                      kTabNames[tab]).x;
@@ -1037,7 +964,6 @@ namespace raspody
         const ImVec2 breadcrumbMin(contentX, centerY - pillH * 0.5f);
         const ImVec2 breadcrumbMax(breadcrumbMin.x + breadcrumbW, breadcrumbMin.y + pillH);
 
-        // The pill is the back control: tap it to leave the subtab (then the tab).
         ImGui::PushID("##raspody_breadcrumb");
         ImGui::SetCursorScreenPos(breadcrumbMin);
         ImGui::InvisibleButton("##breadcrumb", ImVec2(breadcrumbW, pillH));
@@ -1058,7 +984,6 @@ namespace raspody
                  kTabNames[tab], ImVec2(0.0f, 0.5f));
         nextX = breadcrumbMax.x + S(10);
 
-        // Subtabs.
         for (int i = 0; i < 2; ++i)
         {
             const char* label = kSubtabNames[tab][i];
@@ -1100,7 +1025,6 @@ namespace raspody
             nextX = max.x + S(6);
         }
 
-        // Search.
         if (ui.searchOpen)
             Ease(ui.searchAnim, 1.0f, 16.0f);
         else
@@ -1134,9 +1058,6 @@ namespace raspody
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Main render loop - the gui.cpp render() equivalent.
-    // ---------------------------------------------------------------------
     inline void Render(bool* open)
     {
         if (open && !*open)
@@ -1144,7 +1065,6 @@ namespace raspody
 
         BeginFrame();
 
-        // The tab the menu opened on is the root the breadcrumb walks back to.
         static bool historySeeded = false;
         if (!historySeeded)
         {
@@ -1153,8 +1073,7 @@ namespace raspody
         }
 
         const ImVec2 display = ImGui::GetIO().DisplaySize;
-        // The window the login panel also draws itself in (menu_layout.h):
-        // 92% of the display, capped at the 900x592 design, centred.
+
         const MenuWindow win = ComputeMenuWindow(display);
         const ImVec2 pos = win.pos;
         const ImVec2 size = win.size;
@@ -1189,9 +1108,6 @@ namespace raspody
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
 
-        // Coral halo + charcoal outline behind the panel. The reference draws a
-        // full-screen accent field behind the window; on an overlay that would
-        // paint over the game, so the same idea is kept as a contained glow.
         {
             dl->PushClipRect(ImVec2(0, 0), display, false);
             dl->AddRectFilled(ImVec2(pos.x - S(12), pos.y - S(12)),
@@ -1209,8 +1125,6 @@ namespace raspody
         RenderHeader(pos, size, pad, headerH);
         RenderTabRail(pos, pad, headerH, gap, tabW, contentH);
 
-        // Tab / subtab easing. The current page is swapped only while invisible,
-        // exactly like raspody's gui.cpp.
         bool switched = false;
         const float dt = ImGui::GetIO().DeltaTime;
 
@@ -1263,10 +1177,6 @@ namespace raspody
             ui.scrollToTop = false;
         }
 
-        // ---- Drag-to-scroll for touch: press -> move past ~10 px -> scroll.
-        // A drag never toggles the control it started on: once dragging, the
-        // row under the finger is not clicked (dragScrolling gates the
-        // widgets' click handling).
         {
             ImGuiIO& io = ImGui::GetIO();
             static bool dragging = false;
@@ -1311,7 +1221,6 @@ namespace raspody
         RenderPage(var.tab.current, var.subtab.current, origin, availW);
         ImGui::PopStyleVar();
 
-        // ---- Coral scrollbar (the fork's ImGui::Scrollbar hardcodes amber).
         if (scrollMax > 0.0f)
         {
             ImDrawList* sdl = ImGui::GetWindowDrawList();
@@ -1345,10 +1254,6 @@ namespace raspody
         ImGui::PopStyleColor(2);
         ImGui::PopStyleVar(2);
 
-        // ---- Floating ESP character preview ------------------------------
-        // A draggable card beside the menu instead of a card inside the ESP
-        // page: it stays visible while the settings list scrolls. Drag the top
-        // strip to move it, drag the model to spin it.
         if (var.tab.current == Tab_Visuals)
         {
             static ImVec2 cardPos(-1.0f, -1.0f);
@@ -1356,27 +1261,18 @@ namespace raspody
 
             float cardW = ImClamp(size.x * 0.21f, S(150), S(226));
 
-            // The gap is the point of the dock, so the *card* gives way, not
-            // the gap: menu + gap + card only fits when the card narrows. On a
-            // surface where not even the floor fits, keep the card at its floor
-            // and let it tuck under the menu edge as it always did.
             const float roomW = display.x - (pos.x + size.x) - S(16) - S(6);
             if (roomW >= S(150))
                 cardW = ImMin(cardW, roomW);
 
             const float cardH = ImClamp(cardW * 1.34f, S(196), S(310));
 
-            // Docked tight to the menu until the user drags it, and re-docked
-            // whenever the display or the menu moves. It used to be placed once,
-            // so after the first frame (or a surface resize) it sat wherever it
-            // happened to be left, far away from the panel.
             if (!cardMoved)
             {
                 float cardX = pos.x + size.x + S(16);
                 if (cardX + cardW > display.x - S(6))
                     cardX = display.x - cardW - S(6);
-                // Centred on the menu's vertical axis: pinned to the menu top it
-                // read as a header for the page instead of a sibling panel.
+
                 cardPos = ImVec2(cardX, pos.y + (size.y - cardH) * 0.5f);
             }
             cardPos.x = ImClamp(cardPos.x, 0.0f, ImMax(0.0f, display.x - cardW));
@@ -1419,9 +1315,6 @@ namespace raspody
         Ease(ui.blackout, AnyPopupOpen() ? 1.0f : 0.0f, 8.0f);
         DrawBlackout(ui.blackout);
 
-        // On-screen keyboard for the two text fields. Each has its own flag so
-        // they never share a buffer. Rendered after the menu window so the
-        // tap-outside logic in RenderVirtualKeyboard can see the panel rect.
         if (ui.searchKeyboard)
             RenderVirtualKeyboard("##raspody_search_keyboard", ui.search,
                                   (int)sizeof(ui.search), &ui.searchKeyboard);
@@ -1429,4 +1322,5 @@ namespace raspody
             RenderVirtualKeyboard("##raspody_profile_keyboard", ui.newProfile,
                                   (int)sizeof(ui.newProfile), &ui.profileKeyboard);
     }
-} // namespace raspody
+}
+

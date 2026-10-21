@@ -1,5 +1,3 @@
-// Host stub - only what the header chain needs for a syntax check on desktop
-// g++ (the real headers come from the NDK in the Android build).
 #pragma once
 
 #include "egl.h"
@@ -30,3 +28,4 @@ EGLImageKHR eglCreateImageKHR(EGLDisplay dpy, EGLContext ctx, EGLenum target,
 EGLBoolean eglDestroyImageKHR(EGLDisplay dpy, EGLImageKHR image);
 EGLBoolean eglPresentationTimeANDROID(EGLDisplay dpy, EGLSurface surface, EGLint64 time);
 }
+

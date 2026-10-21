@@ -1,6 +1,3 @@
-// Host check for System/Hooks/ReportBlock.h: the four gates swallow their
-// call when the switch is on, pass through exactly once when it is off, and
-// the switch defaults ON.
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -42,25 +39,20 @@ int main()
     report_block::orig_FillPlayerFullData   = fakeFill;
     report_block::orig_EndReportPlayerPull  = fakeEnd;
 
-    // Default: ON.
     CHECK(Config.ExtraMenu.BlockReportEvidence == true);
 
-    // ON: the request is still BUILT (the caller owns the pointer, so a null
-    // here used to be a null deref in game code the moment somebody reported
-    // you), but no evidence is filled in and nothing is sent.
     Config.ExtraMenu.BlockReportEvidence = true;
     report_block::hook_DoReport((void *)1);
     CHECK(report_block::hook_DoReportPlayer((void *)1, nullptr) == 0);
     CHECK(report_block::hook_BeginReportPlayerPull(0, 0, nullptr, nullptr, 0, 0, nullptr) == (void *)0x1234);
-    CHECK(g_begin == 1); // original ran: the request exists
+    CHECK(g_begin == 1);
     CHECK(report_block::g_pullsSeen == 1);
     report_block::hook_FillPlayerFullData((void *)1, (void *)0x1234);
     report_block::hook_EndReportPlayerPull((void *)0x1234);
     CHECK(g_doReport == 0 && g_doReportPlayer == 0);
-    CHECK(g_fill == 0 && g_end == 0); // evidence never written, never sent
+    CHECK(g_fill == 0 && g_end == 0);
     CHECK(report_block::g_payloadsDropped == 1 && report_block::g_sendsDropped == 1);
 
-    // OFF: exactly once, answers passed through.
     Config.ExtraMenu.BlockReportEvidence = false;
     report_block::hook_DoReport((void *)1);
     CHECK(report_block::hook_DoReportPlayer((void *)1, nullptr) == 7);
@@ -69,14 +61,11 @@ int main()
     report_block::hook_EndReportPlayerPull((void *)0x1234);
     CHECK(g_doReport == 1 && g_doReportPlayer == 1 && g_begin == 2);
     CHECK(g_fill == 1 && g_end == 1);
-    CHECK(report_block::g_pullsSeen == 1); // pull counter only moves while ON
+    CHECK(report_block::g_pullsSeen == 1);
 
-    // With no original installed the switches still never hand game code a
-    // null request from a gate that is meant to protect it.
     report_block::orig_BeginReportPlayerPull = nullptr;
     CHECK(report_block::hook_BeginReportPlayerPull(0, 0, nullptr, nullptr, 0, 0, nullptr) == nullptr);
 
-    // Landing bookkeeping.
     report_block::NoteLanded(report_block::GateDoReport, true);
     report_block::NoteLanded(report_block::GateFillReportData, true);
     CHECK(report_block::g_landed[report_block::GateDoReport]);
@@ -88,3 +77,4 @@ int main()
     std::printf("FAILED: %d\n", fails);
     return 1;
 }
+

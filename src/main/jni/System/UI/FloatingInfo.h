@@ -16,8 +16,6 @@ namespace font {
 extern std::chrono::steady_clock::time_point appStartTime;
 
 namespace floating_info {
-
-// --- MATCH TRACKING VARIABLES ---
 inline int totalMatches = 0;
 inline bool wasInMatch = false;
 
@@ -30,7 +28,6 @@ inline std::string FormatTimeDuration(std::chrono::steady_clock::duration durati
     return std::string(buffer);
 }
 
-// Helper: Animated Neon Color
 inline ImColor GetNeonColor(float t, float speed = 1.0f, float offset = 0.0f) {
     float r = 0.5f + 0.5f * std::sin(t * speed + offset);
     float g = 0.5f + 0.5f * std::sin(t * speed + offset + 2.094f);
@@ -48,11 +45,10 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
         return;
     }
 
-    // --- MATCH TRACKING LOGIC ---
     bool isInMatch = false;
     auto* get_LocalPawn = GamePlay::get_LocalPawn();
     if (Tools::IsPtrValid(get_LocalPawn)) {
-        isInMatch = true; 
+        isInMatch = true;
     }
 
     if (isInMatch && !wasInMatch) {
@@ -62,15 +58,14 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
         wasInMatch = false;
     }
 
-    // --- TIME & DATE CALCULATION ---
     const auto now = std::chrono::system_clock::now();
     std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
     std::tm* localTime = std::localtime(&currentTime);
 
     char dateStr[64] = {};
     char timeStr[64] = {};
-    std::strftime(dateStr, sizeof(dateStr), "%b %d, %Y", localTime); 
-    std::strftime(timeStr, sizeof(timeStr), "%I:%M:%S %p", localTime); 
+    std::strftime(dateStr, sizeof(dateStr), "%b %d, %Y", localTime);
+    std::strftime(timeStr, sizeof(timeStr), "%I:%M:%S %p", localTime);
 
     for (char* p = dateStr; *p; ++p) *p = (char)std::toupper((unsigned char)*p);
     for (char* p = timeStr; *p; ++p) *p = (char)std::toupper((unsigned char)*p);
@@ -81,7 +76,6 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
     char totalMatchesStr[32] = {};
     std::snprintf(totalMatchesStr, sizeof(totalMatchesStr), "%d", totalMatches);
 
-    // --- ANIMATED VISUALS ---
     static float animTime = 0.0f;
     static float popIn = 0.0f;
     static float slideY = 0.0f;
@@ -91,24 +85,22 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
         popIn += ImGui::GetIO().DeltaTime * 4.0f;
         if (popIn > 1.0f) popIn = 1.0f;
     }
-    slideY = (1.0f - popIn) * 30.0f; // Slide up from bottom
+    slideY = (1.0f - popIn) * 30.0f;
 
-    // --- PREMIUM BOX RENDER ---
     const float boxW = 245.0f * c::scale;
-    const float boxH = 152.0f * c::scale; 
+    const float boxH = 152.0f * c::scale;
     const float padding = 24.0f * c::scale;
-    
+
     const float boxX = padding;
-    const float boxY = (screenHeight - padding - boxH) + slideY; // Add slideY here
-    
+    const float boxY = (screenHeight - padding - boxH) + slideY;
+
     const float lineSpacing = 19.0f * c::scale;
     const float textStartX = boxX + 18.0f * c::scale;
-    const float textEndX = boxX + boxW - 18.0f * c::scale; 
+    const float textEndX = boxX + boxW - 18.0f * c::scale;
     const float startY = boxY + 16.0f * c::scale;
 
-    // --- CYBERPUNK BACKGROUND EFFECTS ---
     draw->AddRectFilled(ImVec2(boxX - 4.0f, boxY - 4.0f), ImVec2(boxX + boxW + 4.0f, boxY + boxH + 4.0f), ImColor(0, 255, 255, 15), 12.0f * c::scale);
-    
+
     draw->AddRectFilled(ImVec2(boxX, boxY), ImVec2(boxX + boxW, boxY + boxH), ImColor(8, 8, 12, 245), 10.0f * c::scale);
 
     static float scanY = 0.0f;
@@ -126,7 +118,6 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
     draw->AddRect(ImVec2(boxX, boxY), ImVec2(boxX + boxW, boxY + boxH), borderColor, 10.0f * c::scale, 0, 1.8f * c::scale);
     draw->AddRect(ImVec2(boxX - 2.0f, boxY - 2.0f), ImVec2(boxX + boxW + 2.0f, boxY + boxH + 2.0f), ImColor(borderColor.Value.x, borderColor.Value.y, borderColor.Value.z, 60.0f / 255.0f), 12.0f * c::scale, 0, 1.0f);
 
-    // --- TEXT RENDERING ---
     auto drawTextWithSpacing = [&](const char* text, ImVec2 pos, ImColor color, float customTracking = 1.1f, bool rightAlign = false) {
         float xOffset = 0.0f;
         const float charSpacing = customTracking * c::scale;
@@ -148,23 +139,22 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
         }
     };
 
-    // --- DRAWING THE INTERFACE ---
     ImColor neonPurple = GetNeonColor(animTime, 1.5f, 0.0f);
     ImColor neonCyan = GetNeonColor(animTime, 1.5f, 2.0f);
     ImColor neonPink = GetNeonColor(animTime, 1.5f, 4.0f);
     ImColor pureWhite = ImColor(255, 255, 255, 255);
 
     drawTextWithSpacing("ETHNIR FREEMIUM", ImVec2(textStartX, startY), neonPurple, 1.4f);
-    
+
     float dotRadius = 3.0f * c::scale;
     float premiumTextWidth = font::inter_semibold->CalcTextSizeA(11.5f * c::scale, FLT_MAX, 0.0f, "PREMIUM").x + (1.4f * 6);
     ImVec2 dotPos = ImVec2(textEndX - premiumTextWidth - (8.0f * c::scale), startY + (6.0f * c::scale));
-    
+
     draw->AddCircleFilled(dotPos, dotRadius, neonCyan);
     draw->AddCircle(dotPos, dotRadius + (1.5f * c::scale), ImColor(0, 255, 255, 50), 0, 1.0f);
 
     drawTextWithSpacing("PREMIUM", ImVec2(textEndX, startY), neonCyan, 1.4f, true);
-    
+
     float dividerY = startY + 18.0f * c::scale;
     draw->AddLine(ImVec2(textStartX, dividerY), ImVec2(textEndX, dividerY), borderColor, 1.0f);
 
@@ -172,13 +162,13 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
 
     drawTextWithSpacing("DATE", ImVec2(textStartX, currentY), neonPink, 1.0f);
     drawTextWithSpacing(dateStr, ImVec2(textEndX, currentY), pureWhite, 1.1f, true);
-    
+
     currentY += lineSpacing;
     drawTextWithSpacing("TIME", ImVec2(textStartX, currentY), neonPink, 1.0f);
     drawTextWithSpacing(timeStr, ImVec2(textEndX, currentY), pureWhite, 1.1f, true);
-    
+
     currentY += lineSpacing;
-    drawTextWithSpacing("SESSION", ImVec2(textStartX, currentY), neonPink, 1.0f); 
+    drawTextWithSpacing("SESSION", ImVec2(textStartX, currentY), neonPink, 1.0f);
     drawTextWithSpacing(playTime.c_str(), ImVec2(textEndX, currentY), neonCyan, 1.1f, true);
 
     currentY += lineSpacing;
@@ -186,9 +176,8 @@ inline void Render(ImDrawList* draw, float screenWidth, float screenHeight) {
     drawTextWithSpacing(totalMatchesStr, ImVec2(textEndX, currentY), pureWhite, 1.1f, true);
 
     currentY += lineSpacing + 8.0f * c::scale;
-    
+
     draw->AddLine(ImVec2(textStartX, currentY - 3.0f * c::scale), ImVec2(textStartX + 20.0f * c::scale, currentY - 3.0f * c::scale), borderColor, 2.0f);
     drawTextWithSpacing("DEVELOPER @Shaiaintshyy", ImVec2(textStartX, currentY), neonPurple, 2.0f);
 }
-
-} // namespace floating_info
+}

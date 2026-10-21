@@ -49,3 +49,4 @@ inline void DrawArmorEsp(ImDrawList* draw, Pawn* pawn, const Rect& rect)
     const float x = rect.x - (hasSideHealth ? 14.0f : 8.0f);
     DrawArmorEspBar(draw, x, rect.y, rect.height, data);
 }
+

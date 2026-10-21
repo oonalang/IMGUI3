@@ -25,47 +25,45 @@ void RenderLicenseInfo(ImDrawList* draw, const ImVec2& startPos)
     ImGui::TextColored(titleColor, "LICENSE");
     ImGui::SetWindowFontScale(1.0f);
     ImGui::PopFont();
-    
+
     if (!usedKey.empty())
     {
         ImGui::SameLine(0, 15.0f);
         ImGui::TextColored(valueColor, ": %s", usedKey.c_str());
     }
-    
+
     custom::Separator_line();
-    
-    
+
     std::string countdownText = getExpiryCountdown();
-    
+
     ImGui::SetCursorPosX(15);
     ImGui::PushFont(F50);
     ImGui::SetWindowFontScale(0.6f);
     ImGui::TextColored(titleColor, "EXPIRY");
     ImGui::SetWindowFontScale(1.0f);
     ImGui::PopFont();
-    
+
     if (!EXP.empty())
     {
         ImGui::SameLine(0, 15.0f);
         ImGui::TextColored(valueColor, ": %s", EXP.c_str());
-        
+
         if (!countdownText.empty())
         {
             ImGui::SetCursorPosX(15);
             ImGui::TextColored(valueColor, "                 (%s)", countdownText.c_str());
         }
     }
-    
+
     custom::Separator_line();
-    
-    
+
     ImGui::SetCursorPosX(15);
     ImGui::PushFont(F50);
     ImGui::SetWindowFontScale(0.6f);
     ImGui::TextColored(titleColor, "SUBSCRIPTION");
     ImGui::SetWindowFontScale(1.0f);
     ImGui::PopFont();
-    
+
     if (!userType.empty())
     {
         ImGui::SameLine(0, 15.0f);
@@ -84,7 +82,7 @@ void RenderLogoSettings(ImDrawList* draw)
 {
     float tempOpacity = GetLogoOpacity();
     float tempSize = GetLogoSizeMultiplier();
-    
+
     custom::SliderFloat("Opacity", &tempOpacity, 0.0f, 1.0f, "%.2f");
     SetLogoOpacity(tempOpacity);
 
@@ -95,7 +93,7 @@ void RenderLogoSettings(ImDrawList* draw)
     const float buttonInsetX = 10.0f;
     ImGui::SetCursorPosX(buttonInsetX);
     ImVec2 buttonSize = ImVec2(ImMax(1.0f, ImGui::GetContentRegionAvail().x - buttonInsetX), buttonHeight);
-    
+
     ImGui::PushStyleColor(ImGuiCol_Button, c::button::background_hovered);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, c::button::background_active);
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, c::button::background_active);
@@ -103,19 +101,17 @@ void RenderLogoSettings(ImDrawList* draw)
     ImGui::PushStyleColor(ImGuiCol_Text, c::text::text_active);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, c::button::rounding);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-    
+
     if (ImGui::Button("RESET LOGO", buttonSize))
     {
         SetLogoOpacity(1.0f);
         SetLogoSizeMultiplier(1.0f);
     }
-    
+
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(5);
 }
 
-// Config management is handled by the side panel (SAV/LOD/RST buttons).
-// Kept as empty stub for any legacy call sites.
 void RenderConfigManagement(ImDrawList* draw) {}
 
 void RenderEnhancement()
@@ -204,8 +200,6 @@ namespace settings_tab
 
     inline void RenderConfigCard()
     {
-        // Config load/save is handled by the side panel (SAV/LOD buttons).
-        // Nothing to render here — kept for layout spacing only.
         const float sidePad = 15.0f;
         ImGui::SetCursorPosX(sidePad);
         ImGui::TextColored(c::text::text, "Config is managed");
@@ -238,3 +232,4 @@ namespace settings_tab
             Config.ExtraMenu.ResetGuest = true;
     }
 }
+

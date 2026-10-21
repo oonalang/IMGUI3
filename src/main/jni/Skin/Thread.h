@@ -1,12 +1,9 @@
 std::unordered_map<std::string, bool> sBool;
 std::unordered_map<int, int> activeKillEffects;
 std::unordered_map<int, int> activeKillIcons;
-// Same idea as activeKillIcons, but keyed to the KillEffectItemConfConfig ID that
-// the client-side WeaponAttrData records (`m_KillEffectItem`): the in-match kill
-// effect is resolved from the item ID, so both have to be surfaced.
+
 std::unordered_map<int, int> activeKillEffectItems;
-// Filled by LoadWeaponSkins: weapon id -> kill effect asset id, and
-// kill effect asset id -> KillEffectItemConfConfig item id.
+
 std::unordered_map<int, int> killEffectByWeapon;
 std::unordered_map<int, int> killEffectItemByAssetId;
 std::unordered_map<int, int> activeBulletTrackEffects;
@@ -63,37 +60,35 @@ MythicArmorFields *mythicarmorFields;
 MythicSightFields *mythicsightFields;
 KillEffectItemFields *killeffectFields;
 
-// SPKillIconItemConfConfig (dump.cs 819793): fields are dump-resolved here
-// (first field @0x10), ColorID distinguishes the mythic kill icons.
 struct SPKillIconItemFields
 {
-    bool IsAutoDemolition;             // 0x10
-    bool ShowInBag;                    // 0x11
-    char pad_12[2];                    // 0x12
-    int AssetID;                       // 0x14
-    int ColorID;                       // 0x18
-    int ColorSubID;                    // 0x1C
-    uint CurrencyID;                   // 0x20
-    int EffectAssetID;                 // 0x24
-    int GoGetPos;                      // 0x28
-    uint ID;                           // 0x2C
-    int SecondTab;                     // 0x30
-    int SellPrice;                     // 0x34
-    int SellProtection;                // 0x38
-    int ThirdTab;                      // 0x3C
-    void *BoardUIName;                 // 0x40
-    void *GoGetUrl;                    // 0x48
-    void *LOCID_Desc;                  // 0x50
-    void *LOCID_HowToGet;              // 0x58
-    void *LOCID_Name;                  // 0x60
-    void *TieUIName;                   // 0x68
-    void *WeaponCanEquip;              // 0x70 (int[])
+    bool IsAutoDemolition;
+    bool ShowInBag;
+    char pad_12[2];
+    int AssetID;
+    int ColorID;
+    int ColorSubID;
+    uint CurrencyID;
+    int EffectAssetID;
+    int GoGetPos;
+    uint ID;
+    int SecondTab;
+    int SellPrice;
+    int SellProtection;
+    int ThirdTab;
+    void *BoardUIName;
+    void *GoGetUrl;
+    void *LOCID_Desc;
+    void *LOCID_HowToGet;
+    void *LOCID_Name;
+    void *TieUIName;
+    void *WeaponCanEquip;
 };
 SPKillIconItemFields *killiconFields;
 BRDeadboxSkinFields *deadboxFields;
 BRDropPlaneSkinFields *dropplaneFields;
 
-VehicleSkinConfFields* vehicleSkinFields;   // struct lives in Skin/Fields.h (offset-tested)
+VehicleSkinConfFields* vehicleSkinFields;
 
 uintptr_t Item2InventoryAddress = 0x6971D34;
 uintptr_t WeaponConfAddress = 0xAF7E7FC;
@@ -106,9 +101,9 @@ uintptr_t WeaponAssetGroupAddress = 0xAF7A080;
 uintptr_t MythicArmorConfigAddress = 0x5C90E84;
 uintptr_t MythicSightConfigAddress = 0x90DDEEC;
 uintptr_t KillEffectItemConfConfigAddress = 0x90C54CC;
-uintptr_t SPKillIconItemConfConfigAddress = 0xAF67F1C;   // SPKillIconItemConfConfig..ctor (dump 819836)
-uintptr_t GetWeaponKillIconByExtraAddress = 0xC366318;   // GetWeaponKillIcon(SyncWeaponExtraInfo) (dump 1089440)
-uintptr_t GetWeaponKillIconOwnAddress     = 0xC37F220;   // GetWeaponKillIcon(out object decorations) (dump 1089443)
+uintptr_t SPKillIconItemConfConfigAddress = 0xAF67F1C;
+uintptr_t GetWeaponKillIconByExtraAddress = 0xC366318;
+uintptr_t GetWeaponKillIconOwnAddress     = 0xC37F220;
 uintptr_t WeaponSkinAddress = 0xAF8B4D4;
 uintptr_t WeaponCamosAddress = 0xAF7E148;
 uintptr_t ItemResourceAddress = 0x6985AB8;
@@ -118,7 +113,7 @@ uintptr_t RolePackConfAddress = 0x90F784C;
 
 uintptr_t WeaponConfName = 0xAF7FDC8;
 uintptr_t GetDropPlaneName = 0xB198B08;
-uintptr_t GetVehicleSkinName = 0xAF74B38;   // VehicleSkinConfConfig.get_Name (dump 823011)
+uintptr_t GetVehicleSkinName = 0xAF74B38;
 uintptr_t GetNameRoleSkin = 0x90F98F4;
 uintptr_t GetRoleConfName = 0x90F4214;
 uintptr_t GetDeadBoxIDAddress = 0x90F2CA0;
@@ -179,23 +174,19 @@ VehicleItemConfCtor orig_VehicleItemConfCtor = nullptr;
 
 std::mutex g_dataMutex;
 
-// Visible in the skin menu: which stage of the kill-effect / kill-icon data
-// pipeline actually produced values. A zero here names the broken stage without
-// another rebuild.
 struct KillDecorationDiag {
-    int killIconConfigs = 0;    // SPKillIconItemConfConfig instances captured
-    int killIconWeapons = 0;    // weapon -> kill icon entries built
-    int killEffectWeapons = 0;  // weapon -> kill effect asset entries built
-    int killEffectItemIDs = 0;  // asset -> KillEffectItem item id entries built
-    int iconHookCalls = 0;      // WeaponAttrData.get_KillIconItemID calls
-    int iconHookHits = 0;       // ... that returned our kill icon
+    int killIconConfigs = 0;
+    int killIconWeapons = 0;
+    int killEffectWeapons = 0;
+    int killEffectItemIDs = 0;
+    int iconHookCalls = 0;
+    int iconHookHits = 0;
     int effectItemHookCalls = 0;
     int effectItemHookHits = 0;
     int effectGroupHookCalls = 0;
     int effectGroupHookHits = 0;
-    int lastAttrKey = 0;        // last m_BlueprintWeaponId asked about
-    // InventoryInfo writes (the copy the HUD actually reads): how many times the
-    // local weapon's record had its kill icon / level filled in.
+    int lastAttrKey = 0;
+
     int inventoryKillIconWrites = 0;
     int inventoryLevelWrites = 0;
 };
@@ -466,17 +457,6 @@ int _GetCurrentWeaponBrocast(Weapon weapon) {
     return 0;
 }
 
-// ── InventoryUtil (GameEngine) kill decorations overrides ───────────────
-// The in-match kill effect / kill icon consumers are InventoryUtil statics
-// (dump 1089418-1089460): GetWeaponKillEffectGroup / GetWeaponKillIcon /
-// GetWeaponKillEffectLevel, each with a (SyncWeaponExtraInfo) overload and
-// an (out object decorations) overload. WeaponPromotionInfo above only
-// feeds the lobby upgrade UI, which is why kill effects never fired in
-// match. Killing bullets never send our four WeaponPromotionInfo hooks
-// so the maps have to surface through here.
-
-// Resolve a map key from a SyncWeaponExtraInfo object.
-// Layout (dump 1430872): VirtualItemID 0x20, ItemID 0x28, BluePrintID 0x30.
 static bool FindInMapExtra(const std::unordered_map<int, int> &m, void *extraInfo, int &outVal) {
     if (!extraInfo || !Tools::IsPtrValid(extraInfo)) return false;
     uintptr_t p = (uintptr_t)extraInfo;
@@ -498,7 +478,6 @@ static bool FindInMapExtra(const std::unordered_map<int, int> &m, void *extraInf
     return false;
 }
 
-// Resolve a map key from the local pawn's current weapon.
 static bool FindInMapLocal(const std::unordered_map<int, int> &m, int &outVal) {
     Pawn *localPawn = GamePlay::get_LocalPawn();
     if (!localPawn) return false;
@@ -541,9 +520,6 @@ uint my_GetWeaponKillIconDecor(void *decorations) {
     return orig_GetWeaponKillIconDecor ? orig_GetWeaponKillIconDecor(decorations) : 0;
 }
 
-// Mythic-L5 behavior: when the weapon carries an applied mythic skin
-// (activeKillIcons), report kill-effect level 5 so the game picks the
-// level-5 mythic tier everywhere (kill icons, kill feed, killcam).
 uint (*orig_GetWeaponKillEffectLevelExtra)(void *extraInfo) = nullptr;
 uint8_t my_GetWeaponKillEffectLevelExtra(void *extraInfo) {
     int val;
@@ -564,9 +540,6 @@ uint8_t my_GetWeaponKillEffectLevelDecor(void *decorations) {
     return orig_GetWeaponKillEffectLevelDecor ? orig_GetWeaponKillEffectLevelDecor(decorations) : 0;
 }
 
-// ── SPKillIcon lookup ─────────────────────────────────────────────────────
-// weapon/OBB item ID → SPKillIconItemConfConfig ID (mythic/highest tier wins).
-// Built from SPKillIconItemConfConfig instances hooked via my_SPKillIconCtor.
 static std::unordered_map<int, int> killIconByWeapon;
 static bool loadKillIcons = false;
 
@@ -581,8 +554,6 @@ void LoadKillIcons() {
 
     if (killIcons.empty()) return;
 
-    // Absolute config offsets per dump (SPKillIconItemConfConfig, dump 819794):
-    // ColorID 0x18, ID 0x2C, ThirdTab 0x3C, WeaponCanEquip 0x70.
     for (void *icon : killIcons) {
         if (!icon || !Tools::IsPtrValid(icon)) continue;
         int id = *(int *)((uintptr_t)icon + 0x2C);
@@ -618,29 +589,9 @@ void LoadKillIcons() {
     loadKillIcons = true;
 }
 
-// ── The InventoryInfo the HUD reads (local player only) ─────────────────────
-//
-// `public class Weapon : Inventory` (dump 737390, TypeDefIndex 16255), and
-// Inventory carries the record the in-match pipeline reads its kill decorations
-// from: `protected InventoryInfo m_InventoryInfo; // 0x98` (dump 761114, with
-// get_InventoryInfo 0xC362DCC / SetInventoryInfo 0xC362DD4). InventoryInfo
-// itself (dump 1088476, TypeDefIndex 23000, GameEngine) is where the kill feed
-// and the death effect look for them:
-//     CrossHairID 0x30, SkinID 0x34, BluePrintID 0x38, FireEffectGroupID 0x3C,
-//     KillEffectGroupID 0x40, KillBoard 0x48, KillIcon 0x4C, MythicArmorID 0x50,
-//     MythicSigID 0x54, KillBroadcast 0x58, KillEffectLevel 0x5C
-//
-// The InventoryUtil / WeaponAttrData getter hooks above only change the local
-// weapon's kill icon if the game really calls them for the local player AND
-// accepts the id they return (an inlined getter cannot be hooked at all - see
-// the install-time flag in the Camo tab). Writing the same values into this
-// record covers both cases: it is the very object the HUD already holds, so the
-// icon shows whether or not the getter path ran. Only the local player's own
-// held weapon is ever touched, and only when the applied skin map has a value
-// that differs from what the record already says (no per-frame writes).
 inline void KillDecoration_ApplyLocalInventoryInfo()
 {
-    if (activeKillIcons.empty()) return;   // nothing applied -> nothing to write
+    if (activeKillIcons.empty()) return;
 
     Pawn *localPawn = GamePlay::get_LocalPawn();
     if (!localPawn || !Tools::IsPtrValid((void *)localPawn)) return;
@@ -648,8 +599,6 @@ inline void KillDecoration_ApplyLocalInventoryInfo()
     Weapon *held = localPawn->get_CurrentWeapon();
     if (!held || !Tools::IsPtrValid((void *)held)) return;
 
-    // Inventory.m_InventoryInfo - inherited by Weapon, so this is the live
-    // record the game hands to the HUD.
     void *info = *(void **)((uintptr_t)held + 0x98);
     if (!info || !Tools::IsPtrValid(info)) return;
 
@@ -660,41 +609,25 @@ inline void KillDecoration_ApplyLocalInventoryInfo()
     const int killIcon = (iconIt != activeKillIcons.end()) ? iconIt->second : 0;
     if (killIcon <= 0) return;
 
-    // Only the kill icon and the level are written. KillEffectGroupID (0x40) is
-    // deliberately left alone: kill effects already work through the getter
-    // hooks, and this map holds an effect id / asset id depending on which
-    // source won at load time - writing that into the live record could replace
-    // a working effect with the wrong id, which is a far worse outcome than a
-    // missing icon.
     auto *p = (uint8_t *)info;
     if (killIcon > 0 && *(int *)(p + 0x4C) != killIcon) {
         *(int *)(p + 0x4C) = killIcon;
         g_killDecorationDiag.inventoryKillIconWrites++;
     }
-    // Level 5 is what the mythic tier keys on (icon, killcam, death effect).
+
     if (*(uint8_t *)(p + 0x5C) != 5) {
         *(uint8_t *)(p + 0x5C) = 5;
         g_killDecorationDiag.inventoryLevelWrites++;
     }
 }
 
-// ── WeaponAttrData / Weapon: the LOCAL player's own weapon ───────────────────
-// The four InventoryUtil overloads above resolve decorations for weapon data the
-// client only knows through SyncWeaponExtraInfo. The local player's own weapon is
-// not one of those: it is described by the client-side WeaponAttrData record
-// (dump 49510) — m_BlueprintWeaponId @0x20, m_KillEffectItem @0x68,
-// m_KillIconItem @0x78 — and by Weapon (dump 16255), whose
-// get_KillEffectGroupIDOverride()@0x5167BDC is the kill effect the in-match
-// pipeline actually plays. These three hooks are the local-player path.
+uintptr_t WeaponAttrDataKillIconItemIDAddress = 0x8479334;
+uintptr_t WeaponAttrDataKillEffectItemIDAddress = 0x847924C;
+uintptr_t WeaponKillEffectGroupOverrideAddress = 0x5167BDC;
 
-uintptr_t WeaponAttrDataKillIconItemIDAddress = 0x8479334;   // WeaponAttrData.get_KillIconItemID
-uintptr_t WeaponAttrDataKillEffectItemIDAddress = 0x847924C; // WeaponAttrData.get_KillEffectItemID
-uintptr_t WeaponKillEffectGroupOverrideAddress = 0x5167BDC;  // Weapon.get_KillEffectGroupIDOverride
-
-// Look a map up by the WeaponAttrData key (its blueprint weapon id).
 static bool FindInMapAttrData(const std::unordered_map<int, int> &m, void *attrData, int &outVal) {
     if (!attrData || !Tools::IsPtrValid(attrData)) return false;
-    const int key = (int)*(uint *)((uintptr_t)attrData + 0x20);   // m_BlueprintWeaponId
+    const int key = (int)*(uint *)((uintptr_t)attrData + 0x20);
     g_killDecorationDiag.lastAttrKey = key;
     if (key == 0) return false;
     auto it = m.find(key);
@@ -745,11 +678,6 @@ int my_WeaponKillEffectGroupOverride(void *weapon) {
 #define ReadByte(base, offset) (*(uint8_t *)((uintptr_t)(base) + (offset)))
 #define READ_PTR(type, base, offset) (*(type **)((uintptr_t)(base) + (offset)))
 
-// Game quality ladder (dump.cs 683883-683888, WEAPON_QUALITY_COLOR_WHITE /
-// GREEN / BULE / PURPLE / GOLD / RED): ColorID 0 = Common (white), 1 = Uncommon
-// (green), 2 = Rare (blue), 3 = Epic (purple), 4 = Legendary (gold),
-// 5 = Mythic (red). The old map folded 0/1/2 into [C], which made a
-// mythic/legendary/epic/rare/uncommon/common search filter impossible.
 inline std::string GetRarityPrefix(int colorID) {
     switch (colorID) {
         case 5: return "[M] ";
@@ -762,7 +690,6 @@ inline std::string GetRarityPrefix(int colorID) {
 }
 
 void LoadCharacterSkins() {
-
     if (loadCharacter)
         return;
 
@@ -784,13 +711,6 @@ void LoadCharacterSkins() {
         deadboxSkins = BRDeadboxSkinConfigInstance;
     }
 
-    // Each skin family is built from its own config tiers and must not wait for
-    // all of them. The CHARACTER join only needs CharacterModelConfig x
-    // ItemResourceConfig x RoleConfConfig (RolePackConfConfig just refines the
-    // pack fields), so one tier the game never constructs in a lobby - a
-    // BRDeadboxSkin or a RoleSkin watch config - used to keep this whole
-    // function early-returning forever: the characters tab stayed empty while
-    // the weapon tab loaded, which is the "character skins not loading" report.
     const bool charTiersReady = !charModels.empty() && !itemRes.empty() && !roleConfs.empty();
 
     if (!loadWatch && !roleSkins.empty()) {
@@ -819,7 +739,6 @@ void LoadCharacterSkins() {
 
     if (!loadWatch && !roleSkins.empty())
     for (auto &a : roleSkins) {
-
         if (!a || !Tools::IsPtrValid(a))
             continue;
 
@@ -829,11 +748,9 @@ void LoadCharacterSkins() {
             continue;
 
         if ((fx->FxAssetID_1P ^ 0) != 0) {
-
             std::string n = GetNameString(GetNameRoleSkin, (void*)a);
 
             if (!n.empty()) {
-
                 watch.push_back({
                     GetRarityPrefix(fx->ColorID) + n,
                     fx->FxAssetID_1P
@@ -843,13 +760,12 @@ void LoadCharacterSkins() {
     }
 
     if (!roleSkins.empty())
-        loadWatch = true;      // every RoleSkin config was walked once
+        loadWatch = true;
 
     std::string _g = "";
 
     if (!loadDeadbox && !deadboxSkins.empty() && !roleConfs.empty())
     for (auto &z : deadboxSkins) {
-
         if (!z || !Tools::IsPtrValid(z))
             continue;
 
@@ -861,7 +777,6 @@ void LoadCharacterSkins() {
         bool __b = false;
 
         for (auto &q : roleConfs) {
-
             if (!q || !Tools::IsPtrValid(q))
                 continue;
 
@@ -870,7 +785,6 @@ void LoadCharacterSkins() {
             std::string boxClueName = s + " Deadbox";
 
             if ((y->ID & 0xFFFFFFF) != 0) {
-
                 auto fx = (int (*)(void *))(getRealOffset(GetDeadBoxIDAddress));
 
                 if (!Tools::IsPtrValid((void*)fx))
@@ -879,9 +793,7 @@ void LoadCharacterSkins() {
                 int k = fx(q);
 
                 if (y->ID == k && !__b) {
-
                     auto dump = [&](const std::string &nm) {
-
                         deadboxF.push_back({
                             GetRarityPrefix(y->ColorID) + nm,
                             {
@@ -896,15 +808,12 @@ void LoadCharacterSkins() {
                     };
 
                     if (y->ColorID == 5) {
-
                         _g = boxClueName;
 
                         dump(boxClueName);
 
                         __b = true;
-
                     } else {
-
                         dump(boxClueName);
                     }
                 }
@@ -913,11 +822,9 @@ void LoadCharacterSkins() {
                     break;
 
                 if (k + 1 == y->ID) {
-
                     if (y->ColorID == 5 &&
                         y->FlagAsset != 0 &&
                         !_g.empty()) {
-
                         std::string v = _g + " (Variant)";
 
                         deadboxF.push_back({
@@ -938,11 +845,10 @@ void LoadCharacterSkins() {
     }
 
     if (!deadboxSkins.empty())
-        loadDeadbox = true;    // every BRDeadboxSkin config was walked once
+        loadDeadbox = true;
 
     if (!loadCharacter && charTiersReady)
     for (auto X0 : charModels) {
-
         if (!X0 || !Tools::IsPtrValid(X0))
             continue;
 
@@ -968,7 +874,6 @@ void LoadCharacterSkins() {
         auto N = X1->Traitor1P;
 
         for (auto Y0 : itemRes) {
-
             if (!Y0 || !Tools::IsPtrValid(Y0))
                 continue;
 
@@ -992,14 +897,9 @@ void LoadCharacterSkins() {
             auto W = Y1->ID;
 
             for (auto Z0 : roleConfs) {
-
                 if (!Z0 || !Tools::IsPtrValid(Z0))
                     continue;
 
-                // RoleConfConfig's first field is at 0x10 (dump 818159). Casting
-                // at +0x18 made every read land 8 bytes high, so the ID this
-                // join matches on was KeepInCatalog (0x3C) instead of ID (0x34)
-                // and NO character ever matched - the empty Character tab.
                 auto *Z1 = (RoleConfFields *)((uintptr_t)Z0 + 0x10);
 
                 if (!Tools::IsPtrValid(Z1))
@@ -1026,12 +926,9 @@ void LoadCharacterSkins() {
                 int killS = 0;
 
                 for (auto RP : rolePacks) {
-
                     if (!RP || !Tools::IsPtrValid(RP))
                         continue;
 
-                    // RolePackConfConfig's first field is at 0x10 (dump 818902),
-                    // and the struct now follows the live (alphabetical) order.
                     auto *rpF = (RolePackFields *)((uintptr_t)RP + 0x10);
 
                     if (!Tools::IsPtrValid(rpF))
@@ -1042,7 +939,6 @@ void LoadCharacterSkins() {
 
                     if (rpF->LoadingFrame &&
                         rpF->LobbySceneType == 0) {
-
                         i = rpF->RolePackID;
                         j = rpF->LoadingFrame;
                         entry = rpF->EntryAnimID;
@@ -1055,7 +951,6 @@ void LoadCharacterSkins() {
                 std::string n0 = GetNameString(GetRoleConfName, Z0);
 
                 if (!n0.empty() && n0.length() > 0) {
-
                     lastKnownName = n0;
                     lastKnownLocId = t;
 
@@ -1067,12 +962,9 @@ void LoadCharacterSkins() {
                     lastKnownGest = gest;
                     lastKnownHand = hand;
                     lastKnownKillS = killS;
-
                 } else {
-
                     if (!lastKnownName.empty() &&
                         lastKnownLocId != nullptr) {
-
                         n0 = lastKnownName + " A+";
 
                         t = lastKnownLocId;
@@ -1085,9 +977,7 @@ void LoadCharacterSkins() {
                         gest = lastKnownGest;
                         hand = lastKnownHand;
                         killS = lastKnownKillS;
-
                     } else {
-
                         continue;
                     }
                 }
@@ -1095,7 +985,6 @@ void LoadCharacterSkins() {
                 std::string Zz = GetRarityPrefix(d) + n0;
 
                 charData.push_back({
-
                     Zz,
 
                     {
@@ -1152,9 +1041,7 @@ void LoadCharacterSkins() {
                 });
 
                 if (!n0.empty()) {
-
                     g_targetCharacters.push_back({
-
                         n0,
                         N,
                         X1->Traitor3P,
@@ -1169,22 +1056,14 @@ void LoadCharacterSkins() {
         }
     }
 
-    // Latch only once the join actually had all three of its inputs. Latching
-    // unconditionally marked the character list "loaded" on the very first poll
-    // (1.5 s after the config tables start filling), after which the early
-    // return at the top of this function kept it empty for the whole session -
-    // the second half of "character skins still isn't loading".
     if (charTiersReady)
-        loadCharacter = true;   // every CharacterModel config was walked once
+        loadCharacter = true;
 
     if (!g_targetCharacters.empty()) {
-
         bool foundCharly = false;
 
         for (size_t idx = 0; idx < g_targetCharacters.size(); ++idx) {
-
             if (g_targetCharacters[idx].name == "Charly") {
-
                 g_selectedTargetCharIndex = (int)idx;
 
                 foundCharly = true;
@@ -1194,9 +1073,7 @@ void LoadCharacterSkins() {
         }
 
         if (!foundCharly) {
-
             for (size_t idx = 0; idx < g_targetCharacters.size(); ++idx) {
-
                 std::string lowName = g_targetCharacters[idx].name;
 
                 std::transform(
@@ -1207,7 +1084,6 @@ void LoadCharacterSkins() {
                 );
 
                 if (lowName.find("charly") != std::string::npos) {
-
                     g_selectedTargetCharIndex = (int)idx;
 
                     break;
@@ -1234,9 +1110,6 @@ void LoadWeaponSkins() {
         itemRes = itemResourceConfigInstance;
     }
 
-    // Build as soon as the weapon's own tables exist. Mythic / kill-effect
-    // tables are optional refinements: waiting for them is what kept the
-    // weapon tab empty while the character tab had already filled.
     if (weaponConfs.empty() || itemInvs.empty() || itemRes.empty() ||
         weaponAssets.empty() || weaponFires.empty() || weaponExtras.empty()) {
         return;
@@ -1306,17 +1179,13 @@ void LoadWeaponSkins() {
         if (equipArray && Tools::IsPtrValid(equipArray) && equipArray->getLength() > 0) {
             int lastIndex = equipArray->getLength() - 1;
             int weaponID = equipArray->m_Items[lastIndex];
-            // RealAssetIDs is the FIRST field of KillEffectItemConfConfig (0x10,
-            // dump 812074); reading it at 0x18 landed on IsAutoDemolition/ColorID
-            // and left the whole kill-effect map empty.
+
             auto* realAssetIDs = *(Array<int>**)((uintptr_t)kill + 0x10);
             if (realAssetIDs && Tools::IsPtrValid(realAssetIDs) && realAssetIDs->getLength() > 0) {
                 int lastAssetIndex = realAssetIDs->getLength() - 1;
                 int lastAssetID = realAssetIDs->m_Items[lastAssetIndex];
                 killEffectByWeapon[weaponID] = lastAssetID;
-                // The client-side per-weapon record (WeaponAttrData.m_KillEffectItem)
-                // is keyed by the config's item ID (ID @0x2C), not by the asset ID,
-                // so remember which item produced this effect asset.
+
                 const int effectItemID = *(int *)((uintptr_t)kill + 0x2C);
                 if (effectItemID > 0 && lastAssetID > 0)
                     killEffectItemByAssetId[lastAssetID] = effectItemID;
@@ -1533,8 +1402,6 @@ void LoadPlaneSkins() {
     }
 }
 
-// ── VehicleSkis / VehicleSkinHelper forward declarations ─────────────────────
-
 inline bool SkinPtr(void* ptr) {
     return ptr != nullptr && Tools::IsPtrValid(ptr);
 }
@@ -1578,12 +1445,10 @@ inline int ActiveVehicleSkinIdForConf(void* skinConf) {
     return ActiveVehicleSkinIdForType((int)fields->VehicleId);
 }
 
-// Function pointers resolved at runtime
 inline void (*VehicleSkinHelper_ChangeVehicleSkinId)(void* vehicleObj, uint vehicleSkinId) = nullptr;
 inline void (*VehicleSkinHelper_ChangeVehicleSkinConf)(void* vehicleObj, void* vehConf) = nullptr;
 inline void (*VehicleSkis_ApplySkin)(void* instance) = nullptr;
 
-// Hook orig pointers
 inline void (*orig_VehicleSkis_SetupSkin)(void* instance, uint skinID, bool findItem) = nullptr;
 inline void (*orig_VehicleSkis_ChangeSkinId)(void* instance, uint skinID) = nullptr;
 inline void (*orig_VehicleSkis_ChangeSkinConf)(void* instance, void* skinConf) = nullptr;
@@ -1688,8 +1553,6 @@ inline void hook_VehicleSkis_LoadModelComplete(void* instance, int assetID, void
     ApplySkisMaterials(instance, selected);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 void LoadSnowboardSkins() {
     std::vector<void*> skinConfs;
     {
@@ -1709,8 +1572,7 @@ void LoadSnowboardSkins() {
         if (skinId <= 0 || loadedIds[skinId]) continue;
         loadedIds[skinId] = true;
         std::string prefix = GetRarityPrefix((int)fields->ColorID);
-        // Real name when the localisation table is ready (dump 823011); the id
-        // form is the fallback so the entry stays clickable and unique.
+
         std::string skinName = GetNameString(GetVehicleSkinName, skin);
         std::string name = skinName.empty()
             ? prefix + "Snowboard Skin " + std::to_string(skinId)
@@ -1719,14 +1581,6 @@ void LoadSnowboardSkins() {
     }
 }
 
-// ── Camo catalogue ────────────────────────────────────────────────────────
-// Fills camoData from every WeaponCamosConfig row the ctor hook captured, so
-// the Camo tab lists the camos this build actually has instead of a
-// hand-written set. The table carries one row per (camo, weapon) pair - the
-// game's own lookup is GetCamosConfig(camoID, weaponID) - so CamoItemID is the
-// key and repeats are folded together by InsertCamo (Skin/Fields.h): the first
-// row supplies the entry and a later one upgrades the fields it could not
-// answer, which also covers rows whose name table was not ready yet.
 void LoadCamos() {
     std::vector<void *> camoConfs;
     {
@@ -1737,17 +1591,12 @@ void LoadCamos() {
 
     for (void *camo : camoConfs) {
         if (!camo || !Tools::IsPtrValid(camo)) continue;
-        // WeaponCamosFields starts at CamoType (dump 823828) - same +0x10 cast
-        // Skin/Camo.h already reads the table with.
+
         auto *fields = (WeaponCamosFields *)((uintptr_t)camo + 0x10);
         if (!Tools::IsPtrValid(fields)) continue;
         uint camoItemID = fields->CamoItemID;
         if (camoItemID == 0) continue;
 
-        // get_Name resolves through the localisation table, which is empty until
-        // the game loads it, hence the placeholder name. (UnlockedCamo is this
-        // same getter - 0xAF7E580, WeaponCamosConfig.get_Name, dump 823888 -
-        // which is what Skin/Camo.h reads camo names with.)
         std::string name = GetNameString(UnlockedCamo, camo);
         if (name.empty())
             name = "Camo " + std::to_string(camoItemID);
@@ -1788,18 +1637,14 @@ void Skins_Thread()
     {
         sleep(1);
     }
-    
+
     sleep(5);
-    
+
     Tools::Hook((void*)(m_unity + 0xA61AC70), (void*)_GetCurrentWeaponKillEffect, (void**)&orig_GetCurrentWeaponKillEffect);
     Tools::Hook((void*)(m_unity + 0xA61AAA8), (void*)_GetCurrentWeaponFireEffect, (void**)&orig_GetCurrentWeaponFireEffect);
     Tools::Hook((void*)(m_unity + 0xA61AB8C), (void*)_GetCurrentBulletTrackEffect, (void**)&orig_GetCurrentBulletTrackEffect);
     Tools::Hook((void*)(m_unity + 0xA61ADFC), (void*)_GetCurrentWeaponBrocast, (void**)&orig_GetCurrentWeaponBrocast);
 
-    // InventoryUtil (GameEngine) statics — the in-match kill decorations.
-    // dump 1089418-1089460: GetWeaponKillEffectGroup 0xC3661B0/0xC37F1D0,
-    // GetWeaponKillIcon 0xC366318/0xC37F220, GetWeaponKillEffectLevel
-    // 0xC3664F8/0xC37F25C.
     Tools::Hook((void*)(m_unity + 0xC3661B0), (void*)my_GetWeaponKillEffectGroupExtra, (void**)&orig_GetWeaponKillEffectGroupExtra);
     Tools::Hook((void*)(m_unity + 0xC37F1D0), (void*)my_GetWeaponKillEffectGroupDecor, (void**)&orig_GetWeaponKillEffectGroupDecor);
     Tools::Hook((void*)(m_unity + 0xC366318), (void*)my_GetWeaponKillIconExtra, (void**)&orig_GetWeaponKillIconExtra);
@@ -1807,7 +1652,6 @@ void Skins_Thread()
     Tools::Hook((void*)(m_unity + 0xC3664F8), (void*)my_GetWeaponKillEffectLevelExtra, (void**)&orig_GetWeaponKillEffectLevelExtra);
     Tools::Hook((void*)(m_unity + 0xC37F25C), (void*)my_GetWeaponKillEffectLevelDecor, (void**)&orig_GetWeaponKillEffectLevelDecor);
 
-    // Local-player kill decoration hooks (WeaponAttrData / Weapon).
     auto hookUnityRva = [&](uintptr_t rva, void* hook, void** orig) -> bool {
         uintptr_t addr = KittyMemory::getAbsoluteAddress("libunity.so", rva);
         if (addr == 0 || !Tools::IsPtrValid((void*)addr))
@@ -1825,7 +1669,6 @@ void Skins_Thread()
                                                   (void*)my_WeaponKillEffectGroupOverride,
                                                   (void**)&orig_WeaponKillEffectGroupOverride);
 
-    // VehicleSkis hooks
     auto hookVehicleRva = [&](uintptr_t rva, void* hook, void** orig) {
         uintptr_t addr = KittyMemory::getAbsoluteAddress("libunity.so", rva);
         if (addr != 0 && Tools::IsPtrValid((void*)addr))
@@ -1848,7 +1691,7 @@ void Skins_Thread()
     uintptr_t skisApplySkinAddr = KittyMemory::getAbsoluteAddress("libunity.so", VehicleSkisApplySkinAddress);
     if (skisApplySkinAddr != 0 && Tools::IsPtrValid((void*)skisApplySkinAddr))
         VehicleSkis_ApplySkin = reinterpret_cast<void (*)(void*)>(skisApplySkinAddr);
-    
+
     while (true)
     {
         LoadCharacterSkins();
@@ -1859,8 +1702,9 @@ void Skins_Thread()
         LoadKillIcons();
         g_killDecorationDiag.killEffectWeapons = (int)killEffectByWeapon.size();
         g_killDecorationDiag.killEffectItemIDs = (int)killEffectItemByAssetId.size();
-        // Poll fast until the tables are ready, then idle.
+
         std::this_thread::sleep_for(std::chrono::milliseconds(
             (loadCharacter && loadskinhack) ? 1500 : 250));
     }
 }
+

@@ -1,11 +1,3 @@
-// Host stub for <GLES3/gl3.h> - desktop syntax checks only (no NDK GL headers
-// on this machine). The scalar typedefs are identical to the real ones, and
-// IMGUI's bundled loader (imgui_impl_opengl3_loader.h) installs the same names
-// as macros when a TU includes it, so including both is not a conflict.
-//
-// Entry points are declared variadic on purpose: this stub must not reject a
-// call whose real GLES3 signature it does not model. Return types are the real
-// ones, so a call site that uses the result still type-checks.
 #pragma once
 
 #include <cstddef>
@@ -154,8 +146,6 @@ typedef struct __GLsync *GLsync;
 
 #define HOST_STUB_GL_NAME template<typename... A>
 
-// NOT extern "C": a variadic template cannot have C language linkage. Real GL
-// has C linkage, but nothing in a syntax check can observe the difference.
 HOST_STUB_GL_NAME void glActiveTexture(A&&...) {}
 HOST_STUB_GL_NAME void glAttachShader(A&&...) {}
 HOST_STUB_GL_NAME void glBindBuffer(A&&...) {}
@@ -219,9 +209,7 @@ HOST_STUB_GL_NAME void glUniformMatrix4fv(A&&...) {}
 HOST_STUB_GL_NAME void glUseProgram(A&&...) {}
 HOST_STUB_GL_NAME void glVertexAttribPointer(A&&...) {}
 HOST_STUB_GL_NAME void glViewport(A&&...) {}
-// The rest of the core profile, so a new call in the UI/render headers does
-// not force an edit here. Only the value-returning entry points need a
-// concrete type; the rest are variadic (arguments are NOT checked by a stub).
+
 HOST_STUB_GL_NAME void glColorMask(A&&...) {}
 HOST_STUB_GL_NAME void glDepthMask(A&&...) {}
 HOST_STUB_GL_NAME void glStencilMask(A&&...) {}
@@ -294,10 +282,9 @@ HOST_STUB_GL_NAME void glFlushMappedBufferRange(A&&...) {}
 HOST_STUB_GL_NAME void glDiscardFramebufferEXT(A&&...) {}
 HOST_STUB_GL_NAME void glInvalidateFramebuffer(A&&...) {}
 
-// The desktop/immediate-mode names imgui_impl_opengl2 and some legs of this
-// repo still reference; harmless on the GL3 path.
 HOST_STUB_GL_NAME void glBegin(A&&...) {}
 HOST_STUB_GL_NAME void glEnd(A&&...) {}
 HOST_STUB_GL_NAME void glVertex2f(A&&...) {}
 HOST_STUB_GL_NAME void glTexCoord2f(A&&...) {}
 HOST_STUB_GL_NAME void* glXGetProcAddressARB(A&&...) { return {}; }
+

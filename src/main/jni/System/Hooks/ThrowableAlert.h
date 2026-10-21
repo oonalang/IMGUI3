@@ -5,17 +5,14 @@
 #include <vector>
 
 namespace ThrowAlertCfg {
-    constexpr uintptr_t PosRva = 0xB1F087C;       // WeaponProjectile.Position
-    // Corrected against dump.cs (GR .57, github.com/eliwoahzja/dump): the old
-    // 0xB200314 is WeaponProjectile_CombatAxe.Tick, so the hook only ever saw
-    // thrown combat axes. 0xB1F4E2C is the base WeaponProjectile.Tick(float).
-    constexpr uintptr_t TickRva = 0xB1F4E2C;      // WeaponProjectile.Tick(float)
-    constexpr uintptr_t Exploded = 0xA1;          // WeaponProjectile.bHasExplode
-    // Same dump: m_DamageRadius is at 0x98. 0xA8 is m_ExplosionEffect (a
-    // BaseEffect*), whose bits were being read as a float radius.
-    constexpr uintptr_t DamageRadius = 0x98;      // WeaponProjectile.m_DamageRadius
-    constexpr uintptr_t ItemId = 0xE4;            // WeaponProjectile.m_WeaponItemID
-    constexpr uintptr_t LethalRadius = 0x200;     // WeaponProjectile.m_LethalRadius
+    constexpr uintptr_t PosRva = 0xB1F087C;
+
+    constexpr uintptr_t TickRva = 0xB1F4E2C;
+    constexpr uintptr_t Exploded = 0xA1;
+
+    constexpr uintptr_t DamageRadius = 0x98;
+    constexpr uintptr_t ItemId = 0xE4;
+    constexpr uintptr_t LethalRadius = 0x200;
     constexpr float MaxDist = 70.0f;
     constexpr float WarnDist = 35.0f;
 }
@@ -30,12 +27,6 @@ struct ThrowInfo {
 
 inline void (*orig_WeaponProjectileTick)(void*, float) = nullptr;
 
-// Second route into the Placed Items ESP tracker (see PlacableEsp.h, which is
-// included right after this header): a WeaponProjectile subclass whose own Tick
-// chains into this base entry point is seen HERE even if its own hook address
-// drifts between game builds. Set by Feats.h at install time; null until then
-// (and null in every host test that does not install hooks), which simply means
-// this route is off.
 inline void (*g_placableProjectileTickSink)(void *) = nullptr;
 inline std::unordered_map<uintptr_t, ThrowInfo> g_Throws;
 inline uint64_t g_ThrowSeen = 0;

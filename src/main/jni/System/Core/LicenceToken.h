@@ -1,40 +1,5 @@
 #pragma once
 
-// ---------------------------------------------------------------------------
-// Licence tokens - the panel signs, the app only checks
-// ---------------------------------------------------------------------------
-// The old scheme could not survive a swapped panel: the client held a shared
-// secret ("CODMDGR-<key>-<hwid>-Vm8Lk7Uj2JmsjCPVPVjrLa7zgfx3uz9E", MD5) and
-// compared the panel's token to it. That secret is in the APK, so anyone can
-// compute a valid "token" for any key without asking a panel at all - and a
-// cracker's own panel only has to hand back that same MD5 to mint working keys.
-// Replacing the URL pointed at their panel was enough; the app could not tell.
-//
-// So the trust anchor moves off the URL and off anything shared:
-//
-//   * key minting happens against an RSA private key that never leaves the
-//     vendor (tools/licence/, or the panel's private/ directory),
-//   * the app embeds only the matching PUBLIC key (LicencePubKey.h),
-//   * the panel returns a payload plus a PKCS#1 v1.5 RSA-SHA256 signature over
-//     its exact bytes; the app re-computes the digest and verifies it.
-//
-// A cracker's panel can still answer - but it cannot sign, so its keys are
-// rejected by the same code path that accepts the real panel's. Swapping the
-// endpoint stops being a way to mint keys. (It can still be patched out of the
-// app; nothing client-side survives a determined patcher - this raises the cost
-// from "swap one string" to "rewrite the verifier".)
-//
-// Token format (the payload the signature covers, exact bytes):
-//
-//   v1|<access key>|<hwid>|<expires unix>|<build>
-//
-// "v1" is this format, the access key and hwid are bound into the signature so
-// a token cannot be moved to another key or device, and <build> stops an old
-// token being replayed against a newer APK.
-//
-// OpenSSL here is the vendored 1.1.0 (jni/curl/openssl-android-*): RSA_verify,
-// BN_hex2bn, SHA256 and BN_set_word all exist there, and Ed25519 (1.1.1+) does
-// not, which is why this is RSA rather than a modern curve.
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -51,16 +16,9 @@
 
 namespace licence
 {
-    // Bumped together with the panel when the payload layout changes; a token
-    // minted for another build is refused.
     constexpr int kBuild = 1;
 
-    // "No expiry" is not a special wire value: a token always carries a concrete
-    // timestamp, so the client's rule stays one comparison and there is no
-    // zero-means-forever branch for an attacker to aim at. A key sold as
-    // permanent is signed with this one (2100-01-01), which is what
-    // tools/licence/mint.sh and panel/lib.php use for days=0.
-    constexpr long long kNeverExpires = 4102444800LL;   // 2100-01-01 00:00:00Z
+    constexpr long long kNeverExpires = 4102444800LL;
 
     struct Result
     {
@@ -69,9 +27,6 @@ namespace licence
         time_t  expires = 0;
     };
 
-    // -----------------------------------------------------------------------
-    // base64 (the signature travels as text in the JSON reply)
-    // -----------------------------------------------------------------------
     inline std::vector<unsigned char> Base64Decode(const std::string &in)
     {
         static const signed char T[256] = {
@@ -101,8 +56,8 @@ namespace licence
         for (unsigned char c : in)
         {
             const signed char v = T[c];
-            if (v == -2) break;          // '=' padding ends the payload
-            if (v < 0) continue;         // whitespace / newlines
+            if (v == -2) break;
+            if (v < 0) continue;
             acc = (acc << 6) | (uint32_t)v;
             bits += 6;
             if (bits >= 8)
@@ -114,9 +69,6 @@ namespace licence
         return out;
     }
 
-    // -----------------------------------------------------------------------
-    // RSA PKCS#1 v1.5 / SHA-256 verification
-    // -----------------------------------------------------------------------
     inline bool RsaSha256Verify(const std::string &payload,
                                 const std::vector<unsigned char> &sig,
                                 const char *modulusHex, unsigned long exponent)
@@ -149,17 +101,10 @@ namespace licence
 
         const bool ok = RSA_verify(NID_sha256, digest, SHA256_DIGEST_LENGTH,
                                    sig.data(), (unsigned int)sig.size(), rsa) == 1;
-        RSA_free(rsa);                   // owns n and e once set0_key took them
+        RSA_free(rsa);
         return ok;
     }
 
-    // -----------------------------------------------------------------------
-    // The check the app makes on every sign-in
-    // -----------------------------------------------------------------------
-    // The payload is verified exactly as it arrived (no re-serialisation, so
-    // there is no canonicalisation to get wrong), and only then are its fields
-    // compared with what this run is: the key the player typed, this device,
-    // this build, and "not expired".
     inline Result CheckSession(const std::string &payload, const std::string &sigB64,
                                const std::string &typedKey, const std::string &hwid,
                                time_t now = 0,
@@ -183,13 +128,10 @@ namespace licence
 
         if (!RsaSha256Verify(payload, sig, modulusHex, exponent))
         {
-            // This is what a swapped panel looks like: whatever it answers, it
-            // cannot sign with the vendor's key.
             r.reason = "Token was not issued by this service";
             return r;
         }
 
-        // v1|key|hwid|expires|build - the key itself may not contain '|'.
         std::string field[5];
         int count = 0;
         for (char c : payload)
@@ -237,9 +179,6 @@ namespace licence
         return r;
     }
 
-    // Builds the payload the way the minting side does - used by the panel-side
-    // tooling and by the host test, not by the app at runtime (the app always
-    // verifies the server's exact bytes).
     inline std::string BuildPayload(const std::string &key, const std::string &hwid,
                                     time_t expires, int build = kBuild)
     {
@@ -248,3 +187,4 @@ namespace licence
         return "v1|" + key + "|" + hwid + "|" + buf + "|" + std::to_string(build);
     }
 }
+
