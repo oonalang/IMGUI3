@@ -62,13 +62,21 @@ if ($lic['expires'] !== 0 && $lic['expires'] < time()) {
     fail('This licence key has expired');
 }
 
-// Bind the key to the first device that uses it. A different phone is a
-// different licence: that is what makes a leaked key worth much less.
-if ($lic['hwid'] === '') {
-    $lic['hwid'] = $serial;
+// Bind this phone the first time it signs in. A key carries a list of allowed
+// devices and a seat count (0 = unlimited, the free-trial key): a phone that is
+// already in the list is let through forever, a new one is added while there is
+// room, and past that the key is simply in use elsewhere.
+$devices = licence_devices($lic);
+if (!in_array($serial, $devices, true)) {
+    if (!licence_has_room($lic)) {
+        $seats = licence_seats($lic);
+        fail($seats === 1
+            ? 'This access key is already in use on another device'
+            : 'This access key is already in use on ' . $seats . ' devices');
+    }
+    $devices[] = $serial;
+    $lic = licence_apply_devices($lic, $devices);
     licence_update($db, $key, $lic);
-} elseif (!hash_equals($lic['hwid'], $serial)) {
-    fail('This access key is bound to another device');
 }
 
 $build   = $config['build'];

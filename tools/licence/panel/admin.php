@@ -182,23 +182,52 @@ function valid_device(string $hwid): bool
     return (bool)preg_match('/^[A-Za-z0-9-]{8,64}$/', $hwid);
 }
 
+/**
+ * "PHONE-AAAA-1111, PHONE-BBBB-2222" -> the ids to allow. Holds at most one
+ * lookup bad entry so the first mistake is the one reported.
+ *
+ * @return array{0:string[],1:?string}
+ */
+function split_devices(string $raw): array
+{
+    $devices = [];
+    $bad     = null;
+    foreach (preg_split('/[\s,;]+/', trim($raw)) ?: [] as $d) {
+        if ($d === '') {
+            continue;
+        }
+        if (!valid_device($d)) {
+            $bad = $d;
+            break;
+        }
+        $devices[] = $d;
+    }
+    return [array_values(array_unique($devices)), $bad];
+}
+
 if ($signedIn && $action === 'create') {
-    $name = trim((string)($_POST['key'] ?? ''));
-    $days = max(0, (int)($_POST['days'] ?? 30));
-    $note = trim((string)($_POST['note'] ?? ''));
-    $hwid = trim((string)($_POST['hwid'] ?? ''));
+    $name  = trim((string)($_POST['key'] ?? ''));
+    $days  = max(0, (int)($_POST['days'] ?? 30));
+    $note  = trim((string)($_POST['note'] ?? ''));
+    $seats = max(0, (int)($_POST['seats'] ?? 1));
+    [$devices, $badDevice] = split_devices((string)($_POST['hwid'] ?? ''));
     if ($name === '') {
         $name = 'ETHNIR-' . strtoupper(bin2hex(random_bytes(4))) . '-' . strtoupper(bin2hex(random_bytes(2)));
     }
     if (strpos($name, '|') !== false) {
         $error = "A key may not contain '|'";
-    } elseif ($hwid !== '' && !valid_device($hwid)) {
-        $error = 'Device ids are 8-64 letters, digits or hyphens';
+    } elseif ($badDevice !== null) {
+        $error = 'Not a device id: ' . $badDevice . ' - ids are 8-64 letters, digits or hyphens';
+    } elseif ($seats !== 0 && count($devices) > $seats) {
+        $error = 'You listed ' . count($devices) . ' devices but allowed only ' . $seats;
     } elseif (licence_find($store, $name) !== null) {
         $error = 'That key already exists';
     } else {
-        licence_create($store, $name, $days, $note, $hwid);
-        $notice = 'Created ' . $name . ($hwid !== '' ? ' bound to that device' : '');
+        licence_create($store, $name, $days, $note, $devices, $seats);
+        $notice = 'Created ' . $name . ($seats === 0
+            ? ' - unlimited devices'
+            : ' - ' . $seats . ' device' . ($seats === 1 ? '' : 's'))
+            . ($devices ? ', starting with ' . implode(', ', $devices) : '');
     }
 }
 
@@ -222,33 +251,80 @@ if ($signedIn && $action === 'revoke') {
     }
 }
 
-// Bind a key to a device by hand - the trial phone in front of you, a customer
-// whose serial you already know, or a replacement for one that died before it
-// ever signed in. Without this the only way to set a device is to sign in on
-// it, which is no help when the key is meant to be handed over pre-bound.
+// Allow a device by hand - the trial phone in front of you, a customer whose
+// serial you already know, or a replacement for one that died before it ever
+// signed in. Adds to the list rather than replacing it; the seat count decides
+// how long that list may get (0 = unlimited, which is the free-trial key).
 if ($signedIn && $action === 'bind') {
     $key  = (string)($_POST['key'] ?? '');
-    $hwid = trim((string)($_POST['hwid'] ?? ''));
     $lic  = licence_find($store, $key);
+    [$devices, $badDevice] = split_devices((string)($_POST['hwid'] ?? ''));
     if ($lic === null) {
         $error = 'That key is gone - reload the panel';
-    } elseif (!valid_device($hwid)) {
-        $error = 'Device ids are 8-64 letters, digits or hyphens';
+    } elseif ($badDevice !== null) {
+        $error = 'Not a device id: ' . $badDevice . ' - ids are 8-64 letters, digits or hyphens';
+    } elseif (!$devices) {
+        $error = 'Type the device id to allow';
     } else {
-        $lic['hwid'] = $hwid;
-        licence_update($store, $key, $lic);
-        $notice = 'Bound ' . $key . ' to ' . $hwid;
+        $current = licence_devices($lic);
+        $seats   = licence_seats($lic);
+        $merged  = array_values(array_unique(array_merge($current, $devices)));
+        if ($seats !== 0 && count($merged) > $seats) {
+            $error = 'This key allows ' . $seats . ' device' . ($seats === 1 ? '' : 's')
+                   . ' - raise the limit first, or use 0 for a trial key';
+        } else {
+            $lic = licence_apply_devices($lic, $merged);
+            licence_update($store, $key, $lic);
+            $added = array_values(array_diff($merged, $current));
+            $notice = $added
+                ? 'Added ' . implode(', ', $added) . ' to ' . $key
+                : $key . ' already allows ' . implode(', ', $devices);
+        }
     }
 }
 
-// Clearing it puts the key back to "binds to the first phone that uses it".
+// Take one phone off the list. That phone is refused on its next sign-in; the
+// others keep working.
+if ($signedIn && $action === 'dropdevice') {
+    $key  = (string)($_POST['key'] ?? '');
+    $hwid = trim((string)($_POST['hwid'] ?? ''));
+    $lic  = licence_find($store, $key);
+    if ($lic !== null && $hwid !== '') {
+        $lic = licence_apply_devices($lic, array_diff(licence_devices($lic), [$hwid]));
+        licence_update($store, $key, $lic);
+        $notice = 'Removed ' . $hwid . ' from ' . $key;
+    }
+}
+
+// The seat count: 0 = unlimited (hand a trial key around), 1 = the old
+// one-phone rule, N = a family/team key. Lowering it below the number of
+// devices already allowed is refused rather than silently dropping phones.
+if ($signedIn && $action === 'seats') {
+    $key   = (string)($_POST['key'] ?? '');
+    $seats = max(0, (int)($_POST['seats'] ?? 1));
+    $lic   = licence_find($store, $key);
+    if ($lic === null) {
+        $error = 'That key is gone - reload the panel';
+    } elseif ($seats !== 0 && $seats < count(licence_devices($lic))) {
+        $error = 'This key already allows ' . count(licence_devices($lic))
+               . ' device(s) - remove one first';
+    } else {
+        $lic = licence_apply_devices($lic, licence_devices($lic), $seats);
+        licence_update($store, $key, $lic);
+        $notice = $key . ($seats === 0
+            ? ' now works on unlimited devices'
+            : ' now allows ' . $seats . ' device' . ($seats === 1 ? '' : 's'));
+    }
+}
+
+// Clearing every device puts the key back to "the first phones that use it".
 if ($signedIn && $action === 'rebind') {
     $key = (string)($_POST['key'] ?? '');
     $lic = licence_find($store, $key);
     if ($lic !== null) {
-        $lic['hwid'] = '';
+        $lic = licence_apply_devices($lic, []);
         licence_update($store, $key, $lic);
-        $notice = 'Cleared the device binding on ' . $key;
+        $notice = 'Cleared the device list on ' . $key;
     }
 }
 
@@ -378,9 +454,21 @@ function diag_table(array $rows): void
     .pill.bad { background: #ffd6dc; color: var(--bad) }
     .dim { color: var(--muted) }
 
-    .device-form { display: flex; gap: 8px; margin-top: 8px; min-width: 260px }
+    .device-form { display: flex; gap: 8px; margin-top: 8px; min-width: 240px }
     .device-form input { padding: 8px 10px; border-width: 2px; font-size: 12px }
+    .device-form input[type=number] { flex: 0 0 74px }
     .device-form button { flex: 0 0 auto }
+
+    .device-chip {
+        display: inline-flex; align-items: center; gap: 6px; margin: 0 6px 6px 0;
+        padding: 3px 4px 3px 8px; border: 2px solid var(--ink); background: #fff;
+    }
+    .device-chip code { font-size: 12px }
+    .device-chip button { padding: 3px 7px; font-size: 10px; box-shadow: none; border-width: 2px }
+    .seatnote {
+        font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+        color: var(--muted); font-weight: 700; margin: 0 0 6px;
+    }
 
     .inline { display: inline }
     .diag td:first-child { font-weight: 700; width: 34% }
@@ -454,8 +542,11 @@ function diag_table(array $rows): void
                 <div class="row">
                     <div style="flex:2 1 300px"><label>Access key (blank = generate)</label>
                         <input name="key" placeholder="ETHNIR-XXXXXXXX" class="mono"></div>
-                    <div><label>Days (0 = never)</label><input name="days" type="number" value="30" min="0"></div>
-                    <div style="flex:2 1 260px"><label>Device (blank = first sign-in binds it)</label>
+                    <div style="flex:0 1 130px"><label>Days (0 = never)</label>
+                        <input name="days" type="number" value="30" min="0"></div>
+                    <div><label>Max devices (0 = unlimited)</label>
+                        <input name="seats" type="number" value="0" min="0"></div>
+                    <div style="flex:2 1 260px"><label>Device ids (comma separated, blank = first sign-in)</label>
                         <input name="hwid" placeholder="device id, optional" class="mono"></div>
                     <div style="flex:2 1 220px"><label>Note</label><input name="note" placeholder="who / what"></div>
                 </div>
@@ -465,9 +556,11 @@ function diag_table(array $rows): void
                     <div style="flex:0 0 auto"><button class="acid" name="days" value="3">3-day trial</button></div>
                     <div style="flex:0 0 auto"><button class="acid" name="days" value="7">7-day trial</button></div>
                 </div>
-                <p class="dim" style="margin:14px 0 0">A trial button creates the key with that
-                    lifetime and whatever device id you typed above - bind it now and the key
-                    only ever works on that phone.</p>
+                <p class="dim" style="margin:14px 0 0"><strong>Max devices</strong> is the number of
+                    phones one key may sign in on: <code>0</code> is unlimited, which is what a
+                    free-trial key wants; leave it at 1 for a key you sell. A trial button creates
+                    the key with that lifetime, that device limit and any device ids you typed -
+                    a trial can be handed over already locked to one phone, or open to any.</p>
             </form>
         </section>
 
@@ -494,13 +587,43 @@ function diag_table(array $rows): void
                             ? 'never'
                             : h(date('Y-m-d H:i', (int)$lic['expires'])) ?></td>
                         <td>
-                            <code class="dim"><?= $lic['hwid'] === '' ? 'unbound' : h((string)$lic['hwid']) ?></code>
+                            <?php
+                            $devs  = licence_devices($lic);
+                            $seats = licence_seats($lic);
+                            ?>
+                            <?php if (!$devs): ?>
+                                <code class="dim">unbound - first sign-in claims it</code>
+                            <?php else: ?>
+                                <?php foreach ($devs as $d): ?>
+                                    <form class="inline" method="post">
+                                        <input type="hidden" name="key" value="<?= h((string)$key) ?>">
+                                        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                                        <input type="hidden" name="action" value="dropdevice">
+                                        <span class="device-chip">
+                                            <code><?= h($d) ?></code>
+                                            <button class="small ghost" name="hwid" value="<?= h($d) ?>"
+                                                    aria-label="Remove device <?= h($d) ?>"
+                                                    title="Remove this device">x</button>
+                                        </span>
+                                    </form>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                            <div class="seatnote"><?= $seats === 0
+                                ? 'unlimited devices'
+                                : $seats . ' device' . ($seats === 1 ? '' : 's') . ' max' ?></div>
                             <form class="device-form" method="post">
                                 <input type="hidden" name="key" value="<?= h((string)$key) ?>">
                                 <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                                <input name="hwid" class="mono" aria-label="Device id for <?= h((string)$key) ?>"
-                                       value="<?= h((string)$lic['hwid']) ?>" placeholder="device id">
-                                <button class="small ghost" name="action" value="bind">Set device</button>
+                                <input name="hwid" class="mono" aria-label="Device id to allow on <?= h((string)$key) ?>"
+                                       placeholder="device id">
+                                <button class="small ghost" name="action" value="bind">Add</button>
+                            </form>
+                            <form class="device-form" method="post">
+                                <input type="hidden" name="key" value="<?= h((string)$key) ?>">
+                                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                                <input name="seats" type="number" min="0" value="<?= $seats ?>"
+                                       aria-label="Max devices for <?= h((string)$key) ?>">
+                                <button class="small ghost" name="action" value="seats">Max</button>
                             </form>
                         </td>
                         <td class="dim"><?= h((string)($lic['note'] ?? '')) ?></td>
@@ -511,11 +634,11 @@ function diag_table(array $rows): void
                                 <button class="small ghost" name="action" value="revoke">
                                     <?= empty($lic['revoked']) ? 'Revoke' : 'Re-enable' ?></button>
                             </form>
-                            <?php if ($lic['hwid'] !== ''): ?>
+                            <?php if (licence_devices($lic)): ?>
                             <form class="inline" method="post">
                                 <input type="hidden" name="key" value="<?= h((string)$key) ?>">
                                 <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                                <button class="small ghost" name="action" value="rebind">Unbind</button>
+                                <button class="small ghost" name="action" value="rebind">Clear</button>
                             </form>
                             <?php endif; ?>
                             <form class="inline" method="post"
@@ -550,7 +673,9 @@ function diag_table(array $rows): void
     <?php endif; ?>
 
     <p class="note">Device ids are the serial the app computes for that phone: 8-64 letters,
-        digits or hyphens. Binding one here means the key works on that device and nowhere else.</p>
+        digits or hyphens. A key starts unbound and the first phone to sign in takes a seat;
+        <em>Add</em> allows another phone by hand, <em>x</em> takes one away, and
+        <em>Max</em> is how many seats the key has (0 = unlimited, for a free trial).</p>
 </main>
 </body>
 </html>

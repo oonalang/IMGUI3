@@ -38,8 +38,12 @@ Commit `LicencePubKey.h`. Keep `tools/licence/private/` (gitignored) backed up
 somewhere that is not this repo: lose it and you cannot sign for this build any
 more, and every key already sold is stranded.
 
-This repository already has a keypair generated for it and the matching modulus
-is in `LicencePubKey.h`. Rotating the key means reissuing every customer's key —
+The key was **rotated on 2026-10-21**: the previous private half was lost, so the
+modulus in `LicencePubKey.h` and `app_modulus` in `panel/config.php` now belong
+to a new keypair, and every token signed by the old one stops verifying. Keep
+`tools/licence/private/licence_private.pem` this time — one copy on the server
+(inside `private/`) and one in `tools/licence/key.enc` via `keybackup.sh`, or you
+replay this rotation again. Rotating means reissuing every customer's key:
 treat it like a release.
 
 ## Mint a key without any server
@@ -76,8 +80,8 @@ composer. Drop it on any shared host:
    included.
 4. Open `admin.php`, sign in, create keys. If you left `admin_hash` empty, do
    this the minute the upload finishes: until you do, anyone who finds that URL
-   can claim the panel. Keys bind to the first device that
-   uses them; *Unbind* frees one for a replacement phone, *Revoke* kills it.
+   can claim the panel. Devices and seat counts are explained
+   below; *Revoke* kills a key without deleting its row.
    The page also prints a **Deployment** table under the key list: PHP version,
    whether `openssl` is loaded, whether the key is readable and the store
    writable, and whether either one is sitting inside the document root. Those
@@ -111,19 +115,35 @@ password.
 
 ### Devices, trials, and the one check that explains a refused sign-in
 
-A key has three lifetimes, and all of them are set from the panel:
+A key is a **list of devices** plus a **seat count**:
 
-* **unbound** - `Device` is empty. The first phone that signs in claims it, and
-  from then on only that phone works. This is what the app has always done.
-* **bound** - type the device id into the key's row and press *Set device* (or
-  fill the device field when minting). The key then works on that phone and
-  nowhere else; signing in elsewhere answers "bound to another device".
-* **cleared** - *Unbind* puts it back to the first-sign-in rule, which is how a
-  replacement phone is handled. *Delete* removes the key entirely.
+* **seats = 0 - unlimited.** Any phone that signs in is added to the list. This
+  is the free-trial key: hand it out and everybody's phone works. Set *Max
+devices* to 0 (the default on the mint form) and every trial is like this.
+* **seats = N - N phones.** The first N devices to sign in take the seats;
+  the N+1th answers "This access key is already in use on N devices". For a
+  key you sell, set it to 1 - that is the old one-phone-per-key rule.
+* **empty list + seats = 1** - the key is `unbound`: the first phone to sign in
+  claims it.
 
-The trial buttons (`1-day`, `3-day`, `7-day`) are the same *Create key* with a
-fixed lifetime - they use whatever device id is in the field, so a trial can be
-handed over already locked to one phone.
+The row gives you the whole list without another page:
+
+| control | what it does |
+| --- | --- |
+| **Add** | allow a device id by hand (8-64 letters, digits or hyphens), e.g. the trial phone in front of you, or a replacement for one that never signed in |
+| **x** on a device chip | remove that phone - it is refused at its next sign-in, the others keep working |
+| **Max** | change the seat count; lowering it below the devices already allowed is refused rather than silently dropping a phone |
+| **Clear** | empty the list so the next phones to sign in claim the seats |
+| **Delete** | remove the key entirely |
+
+The trial buttons (`1-day`, `3-day`, `7-day`) are *Create key* with a fixed
+lifetime, and they reuse the rest of the form: age, seat count, and any device
+ids you typed. So one press can mint a 1-day key that runs on every phone, or a
+1-day key already locked to the phone in your hand.
+
+The app needed no change for any of this: the panel signs the serial of the
+phone that is asking, and the app has always compared that with its own device
+id. The seat count only decides which phones the panel will sign for.
 
 The device id must match what the app computes for that phone: 8-64 letters,
 digits or hyphens. Copy it from the app's own sign-in error (`Token was issued
@@ -214,7 +234,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://<host>/connect                 
 | file | what is in it |
 | --- | --- |
 | `private/licence_private.pem` | the signing key. Deny-all `.htaccess` in `private/`. |
-| `data/keys.json` | every customer key, bound device, expiry. Deny-all `.htaccess` in `data/`. |
+| `data/keys.json` | every customer key, its allowed devices, seat count, expiry. Deny-all `.htaccess` in `data/`. |
 | `data/auth.php` | the panel login, once the first-run form or *Change password* has been used. |
 
 All three are gitignored. `data/auth.php` is a PHP file that only returns an

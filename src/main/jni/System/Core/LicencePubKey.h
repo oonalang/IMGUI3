@@ -25,18 +25,23 @@
 
 // 2048-bit modulus, hex, no "0x", no separators. Empty = not configured.
 //
-// This one was produced by tools/licence/genkey.sh in the working copy; its
-// private half is tools/licence/private/licence_private.pem (gitignored) and is
-// the file the panel must be given. BACK THAT FILE UP: with it gone this build
-// can no longer be signed for, and every key already sold is stranded.
+// ROTATED 2026-10-21: the previous private half was lost, so this is a new
+// keypair and every token signed by the old one stops verifying. The matching
+// private key is tools/licence/private/licence_private.pem (gitignored) and is
+// the file the panel must be given. **BACK THAT FILE UP** with
+// tools/licence/keybackup.sh: lose it again and this build can never be signed
+// for, and every key sold against it is stranded.
+//
+// Rotating again means: genkey.sh, paste the new modulus here AND into
+// tools/licence/panel/config.php ('app_modulus', which is what the panel's key
+// check compares against), ship a new APK, reissue keys.
 constexpr const char *kPubModulusHex =
-    "C8069D102A8B2AF0325DA054B02BA3EEEDCF06A0472FA5659E0BB1B22320AF9303015ABFF11D"
-    "6A4A3BC7C7EC2B0DE0DD1C5A847C56D009F9104C47A42C610C17614DEF6AE6A306A293704135"
-    "77C2DDF44D318917E17413DD2DFEC52837C70085DC2AE050BFB5711E4A5286E549EFFFEC1992"
-    "167FDDE2915E42F762F4A09649A4715D041780595FC7EEE25AE0B6DE2F0B9D5BB259FE417E6C"
-    "C3AAA9C8BEA6760217C2DC949AA9013B085D33B3E93ADF7E132510F9C20C41E57EAAFD5EA8CE"
-    "EBAFB2BDE24D032B26D6E28A76EFE625F0ECBF568A2A098BFAF78F9266421B0BC39ADC2774A3"
-    "FAAA5781C41D79CE9A0C7995C97CAAE3D7F415053CBBE6CAD9034DC5";
+    "C61010F4D55F6586D543EE585BA0884E687FCFC6C397316664E4EB483F602D41304F60BC7BB37DA65046522663D79E81"
+    "012F84492A1721FFEAA23FD32AF9A0C7762182F4708B6467ABACE56D3B9906F6F0BAE315DE04F0D12BE664A646A5D95C"
+    "9CF5B538006179D8C38D03216380834513B0A9F8E85466DD8EFD0BEAD4365D28750B0430749E178304874CE50EC39E75"
+    "5F772BF735683847EF9F4FD81B117FCA08D3C146C8704DE06E541B679907728BB3632B168E751B2308B7362AC2D4EF1C"
+    "1168B89E168DC4C169D81AA28A23B53AC3CF514227A184E3C93C1983D37DFBF26AAE0FFECA875CAE18FA8AB00B12806C"
+    "009D22BA93C6A51B592A0FB2A67FA52B";
 
 // PKCS#1 v1.5 with SHA-256, the usual 65537.
 constexpr unsigned long kPubExponent = 65537;

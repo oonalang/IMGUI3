@@ -112,7 +112,12 @@ function licence_store_open(): string
     return $store;
 }
 
-/** @return array<string,array{ expires:int, hwid:string, revoked:int, note:string, created:int }> */
+/**
+ * The whole store.
+ *
+ * @return array<string,array{ expires:int, revoked:int, note:string, created:int,
+ *                             devices?:string[], hwid?:string, seats?:int }>
+ */
 function licence_all(string $store): array
 {
     $raw = @file_get_contents($store);
@@ -152,15 +157,91 @@ function licence_update(string $store, string $key, array $lic): bool
     return licence_save($store, $all);
 }
 
-function licence_create(string $store, string $key, int $days, string $note = '', string $hwid = ''): array
+/**
+ * The device ids a key may be used on.
+ *
+ * Records written by this version carry a `devices` array. Records written
+ * before seats existed carry one `hwid` string ('' = unbound), so an existing
+ * keys.json keeps working as a one-device key and is rewritten into the new
+ * shape the first time the panel or connect.php saves it.
+ *
+ * @return string[]
+ */
+function licence_devices(array $lic): array
+{
+    $out = [];
+    if (isset($lic['devices']) && is_array($lic['devices'])) {
+        foreach ($lic['devices'] as $d) {
+            if (is_string($d) && $d !== '') {
+                $out[] = $d;
+            }
+        }
+    } elseif (isset($lic['hwid']) && is_string($lic['hwid']) && $lic['hwid'] !== '') {
+        $out[] = $lic['hwid'];
+    }
+    return array_values(array_unique($out));
+}
+
+/**
+ * How many devices a key may be used on. 0 means no limit - that is the free
+ * trial key you hand around, and it is why the token check never needed a
+ * device count of its own: the app only ever compares the device id in the
+ * token with the phone it is running on. A record without `seats` was written
+ * by the previous version and meant one device.
+ */
+function licence_seats(array $lic): int
+{
+    if (array_key_exists('seats', $lic)) {
+        return max(0, (int)$lic['seats']);
+    }
+    return 1;
+}
+
+/** Is there room for one more device? True for seats = 0 (unlimited). */
+function licence_has_room(array $lic): bool
+{
+    $seats = licence_seats($lic);
+    return $seats === 0 || count(licence_devices($lic)) < $seats;
+}
+
+/**
+ * Rewrite a licence with a new device list and, optionally, a new seat count.
+ * `hwid` is kept in step with the first device: it is what an older copy of
+ * the panel (or a hand edit) still reads, and it costs nothing to maintain.
+ *
+ * @param string[] $devices
+ */
+function licence_apply_devices(array $lic, array $devices, ?int $seats = null): array
+{
+    $lic['devices'] = array_values(array_unique(array_filter($devices, static function ($d) {
+        return is_string($d) && $d !== '';
+    })));
+    $lic['hwid'] = $lic['devices'][0] ?? '';
+    if ($seats !== null) {
+        $lic['seats'] = max(0, $seats);
+    } elseif (!array_key_exists('seats', $lic)) {
+        $lic['seats'] = 1;
+    }
+    return $lic;
+}
+
+/**
+ * @param string[] $devices devices to allow from the start; empty = the first
+ *                         phone to sign in claims the key
+ * @param int      $seats   0 = unlimited
+ */
+function licence_create(string $store, string $key, int $days, string $note = '',
+                        array $devices = [], int $seats = 1): array
 {
     $lic = [
         'expires' => $days > 0 ? time() + $days * 86400 : 0,   // 0 = never
-        'hwid'    => $hwid,                                   // '' = bound on first use
+        'devices' => [],
+        'seats'   => max(0, $seats),
         'revoked' => 0,
         'note'    => $note,
         'created' => time(),
     ];
+    $lic = licence_apply_devices($lic, $devices, max(0, $seats));
     $all = licence_all($store);
     $all[$key] = $lic;
     licence_save($store, $all);
