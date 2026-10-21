@@ -2,6 +2,20 @@
 # Reference material for verifying RVA/offsets, not a build input - ~80 MB.
 dumps/
 
+# Build output. `src/main/obj/` is ndk-build's intermediate tree and `build/`
+# is the old Ant/AIDE output (classes.dex, R.java, packaged APKs). Neither is an
+# input to `gradle assembleDebug`, and between them they were ~130 MB of the
+# clone.
+build/
+src/main/obj/
+
+# Editor and patch leftovers.
+*.bak
+
+# The panel upload archive. It is a deploy artifact, and the --with-key build
+# contains the signing key - never commit it.
+licence-panel.zip
+
 # Scratch space for the headless ImGui harnesses (render/input checks) and the
 # PNG dumps they produce. The checks that belong in the repo live in
 # src/main/jni/ImGui/tests/; this is only their scratch directory.

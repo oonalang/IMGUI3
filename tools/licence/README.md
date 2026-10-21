@@ -203,22 +203,13 @@ the app. Before it claims success it: hashes the password with PHP's own
 unpacks its own archive to prove the dotfiles really made it in, and refuses to
 build if a `.pem` or `keys.json` ever lands in the staging area.
 
-`licence-panel.zip` at the repository root is a copy of that build, so the archive
-you can reach from GitHub is the current panel and not an older one. It is a
-build artifact: regenerate it with `make_panel_zip.sh` after changing anything in
-`panel/`, never by editing the zip. (It has no password baked in - `--no-password`
-- so the first visit to `admin.php` sets the login.) An out-of-date copy is how a
-deploy ends up without `index.php` and answers the root with "403 Forbidden".
-
-**The published archive is built with `--with-key`, so it contains the signing
-key.** That is what makes the install a single extract on a phone: upload,
-extract into `public_html`, open `admin.php`. The price is that the archive is
-the signing key, and the repository it sits in is public. Whoever downloads
-`licence-panel.zip` can mint keys this APK accepts. That trade was made
-deliberately (a two-step upload was not usable on the target device); if it ever
-stops being acceptable, delete that file from the repository, publish the
-keyless build instead, and **rotate the key and ship a new APK**, because the
-old private half has been downloadable.
+The archive is **not committed**. It was, briefly, and built with `--with-key` so
+a phone could install with a single extract - which put the signing key at a
+public URL, so it was taken back out of the repo. It is a deploy artifact now:
+build it with `make_panel_zip.sh` whenever `panel/` changes, and hand the file
+over directly. (`git log --all -- licence-panel.zip` still carries those old
+copies, so treat that keypair as public and rotate it, with a new APK, if that
+ever matters.)
 
 * **extracting is the whole install** with `--with-key`: `private/licence_private.pem`
   arrives in place, `chmod 600` it if the host lets you.
@@ -257,8 +248,7 @@ keep checking the 403s below.
 
 Losing `tools/licence/private/licence_private.pem` means you can never sign for
 this build again, and every key already sold is stranded - which is exactly what
-happened once already, and why the published archive now carries a copy. A private repo is a
-reasonable place for a backup — **as long as what goes in the repo is encrypted**:
+happened once already. A private repo is a reasonable place for a backup — **as long as what goes in the repo is encrypted**:
 
 ```bash
 LICENCE_BACKUP_PASSPHRASE='a long passphrase' tools/licence/keybackup.sh enc
