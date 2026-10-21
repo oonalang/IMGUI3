@@ -1,0 +1,205 @@
+# Licence keys that survive a swapped panel
+
+The app used to trust the endpoint: it POSTed `game / user_key / serial` to
+`/connect` and compared the MD5 that came back against `CODMDGR-<key>-<hwid>-<secret>`
+computed **inside the APK**. Two things followed from that:
+
+* the secret was in the APK, so anyone could compute a valid token offline — no
+  panel needed at all;
+* a cracker only had to point the app at *their* `/connect` (DNS, hosts file,
+  patching one string) and their panel could mint keys, because it could
+  reproduce the same MD5.
+
+The fix is that minting now needs an RSA private key that never ships:
+
+```
+tools/licence/private/licence_private.pem   signs      (vendor + panel only)
+src/main/jni/System/Core/LicencePubKey.h    verifies   (inside every APK)
+```
+
+The panel returns `v1|key|hwid|expires|build` plus a PKCS#1 v1.5 RSA-SHA256
+signature over exactly those bytes. The app verifies the signature **first**,
+then checks that the key, device, build and expiry match this run. A swapped
+panel can still answer — it just cannot sign, so its tokens are refused with
+"Token was not issued by this service" instead of letting anyone in.
+
+The honest limit: a determined patcher can still patch the verifier out of the
+APK. That is true of every client-side check. What changed is the cost — from
+"swap one URL" to "rewrite and re-sign the app" — and swapping the endpoint no
+longer mints keys for anyone.
+
+## One-time setup
+
+```bash
+tools/licence/genkey.sh        # prints the modulus to paste into LicencePubKey.h
+```
+
+Commit `LicencePubKey.h`. Keep `tools/licence/private/` (gitignored) backed up
+somewhere that is not this repo: lose it and you cannot sign for this build any
+more, and every key already sold is stranded.
+
+This repository already has a keypair generated for it and the matching modulus
+is in `LicencePubKey.h`. Rotating the key means reissuing every customer's key —
+treat it like a release.
+
+## Mint a key without any server
+
+```bash
+tools/licence/mint.sh ETHNIR-AB12CD34 <device-hwid> 30
+tools/licence/mint.sh ETHNIR-PERM0001 <device-hwid> 0    # permanent
+```
+
+It prints the exact JSON the app reads, so you can sign in on a test device
+before the panel exists. `<device-hwid>` is the UUID the app computes for that
+phone; a token minted for one phone is refused on another.
+
+## The panel
+
+`panel/` is plain PHP 7.4+ (only the `openssl` extension), no database, no
+composer. Drop it on any shared host:
+
+1. `cp tools/licence/private/licence_private.pem panel/private/` (`chmod 600`).
+2. In `panel/config.php` point `private_key` and `store` at absolute paths, keep
+   `build` equal to `licence::kBuild`, and either set `admin_hash`:
+
+   ```bash
+   php -r 'echo password_hash("your-panel-password", PASSWORD_DEFAULT), "\n";'
+   ```
+
+   or leave it empty and let the panel ask: `admin.php` then shows a **first-run
+   form** and writes the login to `data/auth.php` (which overrides `config.php`).
+   That second route exists because a free host gives you no shell to run
+   `password_hash()`. The same page carries a *Change password* form once you are
+   in, and deleting `data/auth.php` puts the first-run form back.
+
+3. Upload the folder. Everything in `panel/` goes together, `.htaccess` files
+   included.
+4. Open `admin.php`, sign in, create keys. If you left `admin_hash` empty, do
+   this the minute the upload finishes: until you do, anyone who finds that URL
+   can claim the panel. Keys bind to the first device that
+   uses them; *Unbind* frees one for a replacement phone, *Revoke* kills it.
+   The page also prints a **Deployment** table under the key list: PHP version,
+   whether `openssl` is loaded, whether the key is readable and the store
+   writable, and whether either one is sitting inside the document root. Those
+   five lines are what usually goes wrong on cheap hosting.
+
+`connect.php` is the endpoint the app posts to. Same request shape as before, so
+the client transport is unchanged; only the answer changed.
+
+### Shared hosting where you only get `public_html` (x10 and friends)
+
+Free tiers give you one document root and no SSH. Two things follow:
+
+* **The key and the store end up inside it.** `panel/private/.htaccess` and
+  `panel/data/.htaccess` deny all access, and `lib.php` creates `data/` with the
+  rules already there — but a host that ignores `.htaccess`, or an FTP client
+  that silently skips dotfiles, turns `https://your-host/panel/private/licence_private.pem`
+  into a downloadable signing key. After uploading, **fetch that URL yourself**;
+  a 403 is the only acceptable answer, and `data/keys.json` must answer 403 too.
+  If you can put those two directories above the document root instead, do —
+  `config.php` takes absolute paths and that removes the question entirely.
+* **The APK's URL has no `.php`.** `panel/.htaccess` rewrites `^connect/?$` to
+  `connect.php`, so uploading the folder as-is keeps `https://ethnir.x10.mx/connect`
+  working. If the host has `mod_rewrite` off, put the panel in a subfolder and
+  change the URL in `System/Core/Jni_Stuff.h` — the signature check does not
+  care where the endpoint lives, which is rather the point.
+
+On x10 specifically: PHP 8.1+ is selectable in cPanel, `.htaccess` is supported,
+Let's Encrypt is free. Session files need a writable `session.save_path` for the
+panel login — if sign-in loops back to the form, that is the reason, not the
+password.
+
+### Shipping it as a zip (no git, no shell)
+
+Free hosts have a file manager and nothing else, so build the archive they can
+actually use:
+
+```bash
+tools/licence/make_panel_zip.sh                  # asks for the panel password
+tools/licence/make_panel_zip.sh --no-password    # or let the first-run form set it
+```
+
+It writes `tools/licence/dist/licence-panel.zip` with `connect.php`, `admin.php`,
+`lib.php`, `config.php` and the three `.htaccess` guards **flat**, so extracting
+it into `public_html` gives you `https://<host>/connect` with no URL change in
+the app. Before it claims success it: hashes the password with PHP's own
+`password_hash` and checks `password_verify` accepts it, lints every packed file,
+unpacks its own archive to prove the dotfiles really made it in, and refuses to
+build if a `.pem` or `keys.json` ever lands in the staging area.
+
+Two rules for the archive itself:
+
+* **the key is not inside it.** Upload `licence_private.pem` into `private/` by
+  hand afterwards. One forgotten zip in `public_html` would otherwise be a
+  downloadable signing key.
+* **delete the zip after extracting.** Same reason, and it keeps the archive
+  including the hashed login off a public URL.
+
+If PHP is not on the machine building the zip, the password hash is generated
+with python3's `$2y$` bcrypt instead; the script says so, because it cannot run
+`password_verify` there to prove the two agree (they were checked together here).
+
+After extracting, three URLs decide whether this deploy is safe:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://<host>/private/licence_private.pem  # 403
+curl -s -o /dev/null -w '%{http_code}\n' https://<host>/data/keys.json               # 403
+curl -s -o /dev/null -w '%{http_code}\n' https://<host>/connect                      # not 404
+```
+
+## What the panel keeps on the server
+
+| file | what is in it |
+| --- | --- |
+| `private/licence_private.pem` | the signing key. Deny-all `.htaccess` in `private/`. |
+| `data/keys.json` | every customer key, bound device, expiry. Deny-all `.htaccess` in `data/`. |
+| `data/auth.php` | the panel login, once the first-run form or *Change password* has been used. |
+
+All three are gitignored. `data/auth.php` is a PHP file that only returns an
+array, so even a host that ignores `.htaccess` and serves it as PHP prints
+nothing; on a host that serves it as plain text it would leak a bcrypt hash, so
+keep checking the 403s below.
+
+## Backing up the private key
+
+Losing `tools/licence/private/licence_private.pem` means you can never sign for
+this build again, and every key already sold is stranded. A private repo is a
+reasonable place for a backup — **as long as what goes in the repo is encrypted**:
+
+```bash
+LICENCE_BACKUP_PASSPHRASE='a long passphrase' tools/licence/keybackup.sh enc
+git add tools/licence/key.enc        # this one is safe to commit
+```
+
+`keybackup.sh dec` restores the PEM (mode 600, round-trip verified by `enc`
+before it claims success). Keep the passphrase somewhere that is not the repo —
+a password manager — and remember that a repo is not durable on its own: one
+encrypted copy in git + one on a USB stick beats one clever scheme.
+
+What not to do, and why: committing the raw PEM (even to a private repo) puts
+it in every clone, every CI workspace, every fork, and in the history after you
+delete it. If a raw key ever lands in a repo, treat it as leaked: generate a new
+pair, ship a build with the new public modulus, reissue keys, delete the old one.
+And never paste a repository token into a chat or a file in the project — use
+`gh auth login`, a credential helper, or an environment variable scoped to that
+one command.
+
+## Checks that run on a host machine
+
+```bash
+g++ -std=c++17 -O1 -w -Wno-deprecated-declarations -I src/main/jni \
+    src/main/jni/System/Core/tests/licence_token_check.cpp -lcrypto \
+    -o /tmp/licence_token_check && /tmp/licence_token_check
+```
+
+`tests/licence_token_check.cpp` generates two keypairs at run time (vendor and
+cracker) and proves — among 20 checks — that the cracker's signature is refused,
+which is the whole point. On a machine without `libssl-dev`, add
+`-I src/main/jni/curl/openssl-android-arm64-v8a/include` and link
+`/usr/lib/x86_64-linux-gnu/libcrypto.so.3`.
+
+## If the private key leaks
+
+Mint a new keypair, ship a build with the new modulus, issue every customer a new
+key, delete the old `private/`. Old tokens die with the old key, which is the
+behaviour you want.

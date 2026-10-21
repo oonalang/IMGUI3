@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../AstralPrtctn/json.hpp"
+#include "../System/Core/LicenceToken.h"   // signed licence tokens (RSA-SHA256)
 #include <jni.h>
 #include <curl/curl.h>
 #include <openssl/rsa.h>
@@ -25,21 +26,16 @@ std::string userType = "ETHNIR PREM";
 int keyUserCount = 0;
 time_t expiryTimestamp = 0;
 
-time_t parseExpiryDate(const std::string& dateStr) {
-    struct tm tm = {};
-    std::istringstream ss(dateStr);
-    ss >> std::get_time(&tm, "%Y-%m-%d");
-
-    tm.tm_hour = 23;  
-    tm.tm_min = 59;  
-    tm.tm_sec = 59;  
-      
-    return mktime(&tm);
-}
-
 std::string getExpiryCountdown() {
     if (expiryTimestamp == 0) {
         return "Unknown";
+    }
+
+    // A permanent key is signed as licence::kNeverExpires (2100-01-01) rather
+    // than as 0, so the verifier keeps one "expired yet?" comparison; the UI
+    // turns that sentinel back into a word instead of a 27000-day countdown.
+    if ((long long)expiryTimestamp >= licence::kNeverExpires) {
+        return "Lifetime";
     }
 
     time_t now = time(nullptr);
@@ -129,20 +125,11 @@ const char *GetDeviceUniqueIdentifier(JNIEnv *env, const char *uuid) {
     return env->GetStringUTFChars(str, 0);
 }
 
-std::string CalcMD5(std::string s) {
-    std::string result;
-    unsigned char hash[MD5_DIGEST_LENGTH];
-    char tmp[4];
-    MD5_CTX md5;
-    MD5_Init(&md5);
-    MD5_Update(&md5, s.c_str(), s.length());
-    MD5_Final(hash, &md5);
-    for (unsigned char i : hash) {
-        sprintf(tmp, "%02x", i);
-        result += tmp;
-    }
-    return result;
-}
+// CalcMD5() lived here and existed for exactly one caller: the shared-secret
+// licence check (MD5 of "CODMDGR-<key>-<hwid>-<secret>"). Both are gone - the
+// app verifies a signature now (System/Core/LicenceToken.h) - and the helper
+// went with them so that the next person cannot quietly rebuild the old scheme.
+// Tools::CalcMD5 in IL2CppSDKGenerator is unrelated and still there.
 
 struct MemoryStruct {
     char *memory;
@@ -363,7 +350,7 @@ std::string Login(const char *user_key) {
     curl = curl_easy_init();
     
     if (curl) {
-        std::string api_url = oxorany("https://xlreyt.x10.mx/connect");
+        std::string api_url = oxorany("https://ethnir.x10.mx/connect");
         curl_easy_setopt(curl, CURLOPT_URL, api_url.c_str());
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_DEFAULT_PROTOCOL, "https");
@@ -403,26 +390,34 @@ std::string Login(const char *user_key) {
             try {
                 json result = json::parse(chunk.memory);
                 if (result["status"] == true) {
-                    std::string token = result["data"]["token"].get<std::string>();
-                    time_t rng = result["data"]["rng"].get<time_t>();
-					
-					EXP = result["data"]["EXP"].get<std::string>();  
-                               
-                    expiryTimestamp = parseExpiryDate(EXP);  
-					
-                    if (rng + 30 > time(0)) {
-                        std::string auth = "CODMDGR";
-                        auth += "-";
-                        auth += user_key;
-                        auth += "-";
-                        auth += UUID;
-                        auth += "-";
-                        auth += "Vm8Lk7Uj2JmsjCPVPVjrLa7zgfx3uz9E";
-                        
-                        std::string outputAuth = CalcMD5(auth);
-                        g_Token = token;
-                        g_Auth = outputAuth;
-                        bValid = g_Token == g_Auth;
+                    // The panel signs a payload; this build verifies it against
+                    // the public key compiled in (System/Core/LicenceToken.h).
+                    // The endpoint is no longer the authority - the signature is.
+                    // A swapped panel can answer, but it cannot sign, so its
+                    // tokens land in the "not issued by this service" branch.
+                    //
+                    // The MD5 shared secret that used to be here is gone on
+                    // purpose: it was in the APK, so any panel (or no panel at
+                    // all) could reproduce a token this build would accept.
+                    const std::string payload = result["data"].value("payload", std::string());
+                    const std::string sig     = result["data"].value("sig",     std::string());
+
+                    const licence::Result verdict =
+                        licence::CheckSession(payload, sig, user_key, UUID);
+
+                    if (verdict.ok) {
+                        bValid = true;
+                        g_Token = payload;      // the signed payload, for diagnostics
+                        g_Auth.clear();
+                        expiryTimestamp = verdict.expires;
+
+                        struct tm when{};
+                        localtime_r(&expiryTimestamp, &when);
+                        char date[32] = {};
+                        strftime(date, sizeof date, "%Y-%m-%d", &when);
+                        EXP = date;
+                    } else {
+                        errMsg = verdict.reason;
                     }
                 } else {
                     errMsg = result["reason"].get<std::string>();

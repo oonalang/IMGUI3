@@ -1,0 +1,16 @@
+# The signing key lives here. Nothing in this directory may ever be served.
+# If a browser or curl can fetch /private/licence_private.pem, treat that key as
+# leaked: mint a new pair, ship a build with the new public modulus, reissue.
+#
+# This file is the last line, not the first: the real fix is putting this
+# directory outside the web root (config.php takes absolute paths).
+
+Options -Indexes
+
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

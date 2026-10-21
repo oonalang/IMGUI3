@@ -33,7 +33,7 @@ import java.net.URL;
 public class MainActivity extends Activity {
 
     public static String libname = "libV2.so";
-    public static String downloadurl = "https://xlreyt.x10.mx/ProtectMe/libV2.so";
+    public static String downloadurl = "https://ethnir.x10.mx/ProtectMe/libV2.so";
     public final String GameActivity = "com.tencent.tmgp.cod.CODMainActivity";
 
     public boolean hasLaunched = false;

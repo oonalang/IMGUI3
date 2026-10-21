@@ -7,3 +7,24 @@ dumps/
 # src/main/jni/ImGui/tests/; this is only their scratch directory.
 .tmp_harness/
 artifacts/
+
+# The licence signing keypair. Whoever holds licence_private.pem can mint keys
+# that the app accepts, so it must never enter the repo or an APK - genkey.sh
+# writes it here and the panel gets a copy over SFTP/scp, not through git.
+# (The public half is committed in System/Core/LicencePubKey.h, which is fine
+# and necessary: it ships inside the app.)
+tools/licence/private/
+
+# The panel's key store: every customer's key, bound device and expiry. The
+# directory's .htaccess has to ship (it is what keeps keys.json off the web), so
+# ignore the contents rather than the folder.
+tools/licence/panel/data/*
+!tools/licence/panel/data/.htaccess
+
+# A copy of the signing key left in the panel folder while testing a deploy.
+tools/licence/panel/private/*.pem
+
+# The upload archive built by tools/licence/make_panel_zip.sh. It carries the
+# hashed panel login (and a copy of this repo's config.php), which is fine for a
+# file you hand to the host, not for a repository.
+tools/licence/dist/
