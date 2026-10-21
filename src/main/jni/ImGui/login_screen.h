@@ -1,7 +1,7 @@
 #pragma once
 
 // ---------------------------------------------------------------------------
-// Login screen - the cloudy-ui "welcome back" panel, full page.
+// Login screen - the cloudy-ui "welcome back" panel, menu-sized.
 // ---------------------------------------------------------------------------
 // The reference (github.com/eliwoahzja/cloudy-ui) is a light page, not a card:
 //
@@ -25,9 +25,12 @@
 // resting on the panel's bottom edge and nudged toward the form - so the artwork
 // sits on the page instead of in a framed box.
 //
-// The panel fills the display (it is the whole page, not a floating card) and
-// every measurement in the reference is a fraction of the panel, so it holds up
-// from a 640x480 surface to a 3120x1440 one.
+// The panel is the menu's window, not the whole surface (menu_layout.h:
+// ComputeMenuWindow) - the same 900x592-capped, centred rectangle the menu opens
+// in. It was drawn full-bleed before, which on a phone meant a login page
+// covering the entire screen; the reference's composition is a panel, so it
+// belongs at the menu's size and position. Every measurement below is a fraction
+// of that panel, so it holds up from a 640x480 surface to a 3120x1440 one.
 //
 // One field, not two: the app is gated on a single licence key, so the
 // reference's username half is gone and the remaining field keeps the reference
@@ -49,6 +52,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "imgui_settings.h"
+#include "menu_layout.h"   // ComputeMenuWindow - the panel is the menu's window
 
 #include "../System/UI/LoadingAnimation.h"
 #include "../Fonts/poppins.h"
@@ -200,11 +204,12 @@ namespace login_screen
     // -----------------------------------------------------------------------
     // Layout
     // -----------------------------------------------------------------------
-    // `o`, `W`, `H` are the window the panel is drawn in. On the device that is
-    // the whole render surface: the panel is the page, inset by a hairline so
-    // its rounded corner reads as a page edge rather than as a floating card.
-    // Every number below is the reference's own measurement, expressed as a
-    // share of the panel so it scales with the surface.
+    // `o`, `W`, `H` are the surface the overlay draws on - on the device, the
+    // whole render surface. The panel inside it is the menu's window: 92% of the
+    // surface capped at 900x592, centred (menu_layout.h: ComputeMenuWindow), so
+    // the login and the menu are the same rectangle instead of the login being
+    // a page the size of the screen. Every number below is the reference's own
+    // measurement, expressed as a share of that panel so it scales with it.
     struct Layout
     {
         float  s = 1.0f;
@@ -243,10 +248,15 @@ namespace login_screen
     {
         Layout L;
 
-        // The page, not a card: the whole surface less a hairline margin.
-        const float pad = ImClamp(ImMin(W, H) * 0.022f, 6.0f, 22.0f);
-        L.cardMin = ImVec2(o.x + pad,         o.y + pad);
-        L.cardMax = ImVec2(o.x + W - pad,     o.y + H - pad);
+        // The menu's window, not the whole surface. `o`/`W`/`H` are the surface
+        // the overlay draws on (on the device, the entire render surface), and
+        // the panel is the same 900x592-capped, centred window the menu opens
+        // in (menu_layout.h: ComputeMenuWindow). Drawing the login full-bleed
+        // covered the game with a page the size of the screen; the reference's
+        // own composition fits the menu's window, and so does this.
+        const MenuWindow win = ComputeMenuWindow(ImVec2(W, H));
+        L.cardMin = ImVec2(o.x + win.pos.x, o.y + win.pos.y);
+        L.cardMax = ImVec2(L.cardMin.x + win.size.x, L.cardMin.y + win.size.y);
 
         const float pw = ImMax(1.0f, L.cardMax.x - L.cardMin.x);
         const float ph = ImMax(1.0f, L.cardMax.y - L.cardMin.y);

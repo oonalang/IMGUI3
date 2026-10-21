@@ -103,10 +103,47 @@ static void Tap(const ImVec2& pos, float W, float H, const ImVec2& at, login_scr
     Frame(pos, W, H);
 }
 
+// The panel is the menu's window, not the whole surface. Regression: the login
+// used to be drawn full-bleed, which on a phone was a page covering the entire
+// screen (and the menu underneath it was nowhere). For each surface the panel
+// has to be exactly the rectangle the menu opens in, centred, and strictly
+// smaller than the surface.
+static void TestPanelIsMenuSized()
+{
+    const ImVec2 surfaces[] = { ImVec2(1280, 720), ImVec2(2400, 1080),
+                                ImVec2(640, 480),  ImVec2(1920, 1080) };
+
+    for (const ImVec2& d : surfaces)
+    {
+        const login_screen::Layout l = login_screen::ComputeLayout(ImVec2(0, 0), d.x, d.y, false);
+        const MenuWindow w = ComputeMenuWindow(d);
+
+        char what[160];
+        const float pw = l.cardMax.x - l.cardMin.x, ph = l.cardMax.y - l.cardMin.y;
+
+        std::snprintf(what, sizeof what, "%.0fx%.0f: panel is the menu's width", d.x, d.y);
+        Check(what, std::fabs(pw - w.size.x) < 0.5f);
+        std::snprintf(what, sizeof what, "%.0fx%.0f: panel is the menu's height", d.x, d.y);
+        Check(what, std::fabs(ph - w.size.y) < 0.5f);
+        std::snprintf(what, sizeof what, "%.0fx%.0f: panel is the menu's position", d.x, d.y);
+        Check(what, std::fabs(l.cardMin.x - w.pos.x) < 0.5f &&
+                    std::fabs(l.cardMin.y - w.pos.y) < 0.5f);
+        std::snprintf(what, sizeof what, "%.0fx%.0f: panel leaves the surface around it visible", d.x, d.y);
+        Check(what, pw < d.x - 1.0f && ph < d.y - 1.0f);
+
+        // The design's own ceiling: no phone surface may blow the panel up past
+        // 900x592, which is what made it read as full-screen.
+        std::snprintf(what, sizeof what, "%.0fx%.0f: panel stays within 900x592", d.x, d.y);
+        Check(what, pw <= 900.5f && ph <= 592.5f);
+    }
+}
+
 int main()
 {
-    const float W = 900.0f, H = 592.0f;
-    const ImVec2 pos(190.0f, 64.0f);
+    // The whole render surface, the way Main.cpp hands it over; the panel drawn
+    // inside it is the menu's 900x592 window, centred at (190, 64) here.
+    const float W = 1280.0f, H = 720.0f;
+    const ImVec2 pos(0.0f, 0.0f);
 
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -118,6 +155,8 @@ int main()
 
     login_screen::LoadFonts(io);
     io.Fonts->Build();
+
+    TestPanelIsMenuSized();
 
     // Every tap below aims at a rectangle from the card's own layout pass.
     const login_screen::Layout L = login_screen::ComputeLayout(pos, W, H, false);

@@ -1239,13 +1239,24 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
             // Artwork: IMAGE/miku.h, the girl off the reference login page.
             // Decoded on the first login frame - the GL context is current here
-            // - and kept for the life of the process. The pixel size comes back
+            // - and kept while that context lives. The pixel size comes back
             // from the decode because GLES3's gl3.h has no GL_TEXTURE_WIDTH.
+            //
+            // The context is part of the key, not just "is there a texture yet":
+            // a texture name belongs to the context that made it, and the swap
+            // hook rebuilds the ImGui backend when the game hands it a different
+            // one (rotation, resume, the hidden overlay surface). A cached name
+            // from the old context still looks valid to this code and to ImGui,
+            // but samples nothing - which is a login panel with no picture on it.
             static GLuint loginArtTex = 0;
             static int loginArtW = 0, loginArtH = 0;
-            if (loginArtTex == 0)
+            static EGLContext loginArtCtx = EGL_NO_CONTEXT;
+            if (loginArtTex == 0 || loginArtCtx != currentContext)
+            {
                 loginArtTex = LoadTextureFromMemory(miku_data, (int)sizeof(miku_data),
                                                     &loginArtW, &loginArtH);
+                loginArtCtx = currentContext;
+            }
 
             ImGui::SetNextWindowPos(origin, ImGuiCond_Always);
             ImGui::SetNextWindowSize({WW, WH}, ImGuiCond_Always);
@@ -1318,19 +1329,14 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, openAlpha);
 
             // Position and size both come from the display, so the window fits
-            // whatever the render surface is (ImGui/menu_layout.h). Raspody's
-            // Render() recomputes and overrides these, so cap here too so the
-            // pre-pass never sizes the window larger than the 900x592 design.
-            const MenuLayout menuLayout = ComputeMenuLayout(ioDisplaySize);
-            float menuW = ImMin(menuLayout.menuW, 900.0f);
-            float menuH = ImMin(menuLayout.menuH, 592.0f);
-            ImVec2 menuPos = ImVec2(
-                ImClamp((ioDisplaySize.x - menuW) * 0.5f, 0.0f, ImMax(0.0f, ioDisplaySize.x - menuW)),
-                ImClamp((ioDisplaySize.y - menuH) * 0.5f, 0.0f, ImMax(0.0f, ioDisplaySize.y - menuH))
-            );
+            // whatever the render surface is (ImGui/menu_layout.h). The login
+            // panel draws itself in this same rectangle - ComputeMenuWindow is
+            // what keeps the two identical, rather than two copies of the
+            // 900x592 cap.
+            const MenuWindow menuWin = ComputeMenuWindow(ioDisplaySize);
 
-            ImGui::SetNextWindowPos(menuPos, ImGuiCond_Always, ImVec2(0.0f, 0.0f));
-            ImGui::SetNextWindowSize(ImVec2(menuW, menuH), ImGuiCond_Always);
+            ImGui::SetNextWindowPos(menuWin.pos, ImGuiCond_Always, ImVec2(0.0f, 0.0f));
+            ImGui::SetNextWindowSize(menuWin.size, ImGuiCond_Always);
             ImGui::SetNextWindowBgAlpha(0.0f);
 
             raspody::SetEspPreview(&esp_preview::Draw);

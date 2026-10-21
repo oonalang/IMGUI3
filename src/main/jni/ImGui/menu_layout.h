@@ -45,6 +45,34 @@ inline MenuLayout ComputeMenuLayout(const ImVec2 &display)
 }
 
 // ---------------------------------------------------------------------------
+// The window itself - where it is and how big
+// ---------------------------------------------------------------------------
+// ComputeMenuLayout() gives 92% of the display; the menu draws inside a further
+// 900x592 ceiling so the design's own proportions survive on a big surface.
+// Those two rules together are "the menu window", and the login panel is the
+// same window (it used to be drawn full-bleed over the whole display, which on a
+// phone read as a login page covering the game). One function, so the two can
+// never drift apart.
+struct MenuWindow
+{
+    ImVec2 pos;     // top-left, centred on the display
+    ImVec2 size;    // never larger than 900x592
+};
+
+inline MenuWindow ComputeMenuWindow(const ImVec2 &display)
+{
+    MenuWindow W{};
+    const MenuLayout L = ComputeMenuLayout(display);
+
+    W.size.x = ImMin(L.menuW, 900.0f);
+    W.size.y = ImMin(L.menuH, 592.0f);
+
+    W.pos.x = ImClamp((display.x - W.size.x) * 0.5f, 0.0f, ImMax(0.0f, display.x - W.size.x));
+    W.pos.y = ImClamp((display.y - W.size.y) * 0.5f, 0.0f, ImMax(0.0f, display.y - W.size.y));
+    return W;
+}
+
+// ---------------------------------------------------------------------------
 // Sidebar layout - the tab switcher column
 // ---------------------------------------------------------------------------
 // Two columns: the rail (the hamburger that folds the panel) and the panel with

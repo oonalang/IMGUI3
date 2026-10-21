@@ -1153,15 +1153,11 @@ namespace raspody
         }
 
         const ImVec2 display = ImGui::GetIO().DisplaySize;
-        const MenuLayout layout = ComputeMenuLayout(display);
-
-        float menuW = ImMin(layout.menuW, 900.0f);
-        float menuH = ImMin(layout.menuH, 592.0f);
-        const ImVec2 pos = ImVec2(
-            ImClamp((display.x - menuW) * 0.5f, 0.0f, ImMax(0.0f, display.x - menuW)),
-            ImClamp((display.y - menuH) * 0.5f, 0.0f, ImMax(0.0f, display.y - menuH))
-        );
-        const ImVec2 size(menuW, menuH);
+        // The window the login panel also draws itself in (menu_layout.h):
+        // 92% of the display, capped at the 900x592 design, centred.
+        const MenuWindow win = ComputeMenuWindow(display);
+        const ImVec2 pos = win.pos;
+        const ImVec2 size = win.size;
 
         const float scale = ImClamp(ImMin(size.x / 900.0f, size.y / 592.0f), 0.70f, 1.45f);
         SetScale(scale);

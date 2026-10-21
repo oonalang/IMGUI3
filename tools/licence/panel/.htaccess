@@ -10,6 +10,13 @@
 
 Options -Indexes
 
+# `Options -Indexes` above is what turns "/" into a 403 when the directory has
+# no index document - and on a shared host the default DirectoryIndex list is
+# often just `index.html index.htm`, so index.php was never even looked at.
+# Name it explicitly: the panel root then always answers with index.php (which
+# redirects to admin.php) instead of "403 Forbidden".
+DirectoryIndex index.php index.html
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
     # /connect and /connect/ both land on the endpoint.

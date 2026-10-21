@@ -109,6 +109,34 @@ Let's Encrypt is free. Session files need a writable `session.save_path` for the
 panel login — if sign-in loops back to the form, that is the reason, not the
 password.
 
+### "403 Forbidden" when you open the panel
+
+A 403 on the panel URL is almost never a permission problem with the files -
+on a shared host it is Apache refusing to list a directory that has no index
+document, because `Options -Indexes` is doing its job. Four deployments produce
+it, and the curl request below tells them apart:
+
+```bash
+curl -s -o /dev/null -w 'root    %{http_code}\n' https://<host>/
+curl -s -o /dev/null -w 'index   %{http_code}\n' https://<host>/index.php
+curl -s -o /dev/null -w 'admin   %{http_code}\n' https://<host>/admin.php
+curl -s -o /dev/null -w 'connect %{http_code}\n' https://<host>/connect
+```
+
+| root | index.php | what it means |
+| --- | --- | --- |
+| 403 | 200/302 | the host is not using `index.php` as a directory index. `panel/.htaccess` now sets `DirectoryIndex index.php index.html`; if the host has `AllowOverride Indexes` off, add `index.html` that redirects, or open `admin.php` directly. |
+| 403 | 403 | `index.php` never got uploaded (the archive was built before it existed, or an FTP client skipped it). Re-extract the current `licence-panel.zip`. |
+| 403 | 403 on `admin.php` too | the panel is in a subfolder but you are opening the domain root: `https://<host>/` is not `https://<host>/panel/`. Either extract the archive flat into `public_html` (its contents, not the folder) or use the subfolder URL. |
+| 200 | 200 | the panel is fine and the 403 came from somewhere else - check `connect` next. |
+
+A `connect` that answers **403** is the host's WAF or `mod_security` rejecting the
+POST to a rewritten URL, not the panel: every failure `connect.php` itself knows
+about is a 200 carrying `{"status":false,"reason":"..."}`. Try
+`https://<host>/connect.php` directly and, if that answers, point the app at it
+(`System/Core/Jni_Stuff.h`) - the signature check does not care where the endpoint
+lives.
+
 ### Shipping it as a zip (no git, no shell)
 
 Free hosts have a file manager and nothing else, so build the archive they can
@@ -126,6 +154,13 @@ the app. Before it claims success it: hashes the password with PHP's own
 `password_hash` and checks `password_verify` accepts it, lints every packed file,
 unpacks its own archive to prove the dotfiles really made it in, and refuses to
 build if a `.pem` or `keys.json` ever lands in the staging area.
+
+`licence-panel.zip` at the repository root is a copy of that build, so the archive
+you can reach from GitHub is the current panel and not an older one. It is a
+build artifact: regenerate it with `make_panel_zip.sh` after changing anything in
+`panel/`, never by editing the zip. (It has no password baked in - `--no-password`
+- so the first visit to `admin.php` sets the login.) An out-of-date copy is how a
+deploy ends up without `index.php` and answers the root with "403 Forbidden".
 
 Two rules for the archive itself:
 
