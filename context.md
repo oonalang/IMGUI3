@@ -13,8 +13,24 @@ the game. The licence panel in `tools/licence` mints the access keys the APK acc
 Two things ship together:
 
 * **the app** (`src/main/jni`, built with ndk-build, `build.gradle` at the root)
-* **the panel** (`tools/licence/panel`), plain PHP with no framework, deployed to
-  `https://ethnir.x10.mx/` (x10 free hosting, cPanel only, no shell)
+* **the panel** (plain PHP with no framework), deployed to `https://ethnir.x10.mx/`
+  (x10 free hosting, cPanel only, no shell)
+
+### Repository state
+
+This repository now carries the mod only: `src/` and `build.gradle`. The panel, the
+licence tooling, the dumps, the preview artefacts and the upload archive were removed from
+the tree once the panel was live and verified on the host. The paths in the next table
+describe the deployed panel, not files in this checkout. Everything is still in history:
+
+```
+git show c3364a2:tools/licence/panel/admin.php
+git show 2e0881c:tools/licence/private/licence_private.pem
+git show 2e0881c:licence-panel.zip > licence-panel.zip
+```
+
+`context.md` itself is kept because it is the record of how the panel was built, what it
+checks and what is still wrong in the mod.
 
 ## The licence scheme, in one paragraph
 
