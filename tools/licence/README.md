@@ -109,6 +109,33 @@ Let's Encrypt is free. Session files need a writable `session.save_path` for the
 panel login — if sign-in loops back to the form, that is the reason, not the
 password.
 
+### Devices, trials, and the one check that explains a refused sign-in
+
+A key has three lifetimes, and all of them are set from the panel:
+
+* **unbound** - `Device` is empty. The first phone that signs in claims it, and
+  from then on only that phone works. This is what the app has always done.
+* **bound** - type the device id into the key's row and press *Set device* (or
+  fill the device field when minting). The key then works on that phone and
+  nowhere else; signing in elsewhere answers "bound to another device".
+* **cleared** - *Unbind* puts it back to the first-sign-in rule, which is how a
+  replacement phone is handled. *Delete* removes the key entirely.
+
+The trial buttons (`1-day`, `3-day`, `7-day`) are the same *Create key* with a
+fixed lifetime - they use whatever device id is in the field, so a trial can be
+handed over already locked to one phone.
+
+The device id must match what the app computes for that phone: 8-64 letters,
+digits or hyphens. Copy it from the app's own sign-in error (`Token was issued
+for a different device`), or from `connect.php`'s access log if the host keeps one.
+
+**The one check that matters.** The Deployment table has a `key matches the app`
+row. It reads the modulus out of the panel's private key and compares it with
+`app_modulus` in `config.php` (a copy of `System/Core/LicencePubKey.h`). If that
+row is red, every key this panel mints will be refused with "Token was not issued
+by this service" - the PEM and the APK do not belong together. Fix the PEM before
+selling anything; no amount of panel work fixes a key mismatch.
+
 ### "403 Forbidden" when you open the panel
 
 A 403 on the panel URL is almost never a permission problem with the files -

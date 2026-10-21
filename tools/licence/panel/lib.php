@@ -152,11 +152,11 @@ function licence_update(string $store, string $key, array $lic): bool
     return licence_save($store, $all);
 }
 
-function licence_create(string $store, string $key, int $days, string $note = ''): array
+function licence_create(string $store, string $key, int $days, string $note = '', string $hwid = ''): array
 {
     $lic = [
         'expires' => $days > 0 ? time() + $days * 86400 : 0,   // 0 = never
-        'hwid'    => '',                                      // bound on first use
+        'hwid'    => $hwid,                                   // '' = bound on first use
         'revoked' => 0,
         'note'    => $note,
         'created' => time(),

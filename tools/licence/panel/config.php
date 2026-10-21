@@ -45,4 +45,10 @@ return [
     // these two values. Delete data/auth.php to be offered the form again.
     'admin_user' => 'admin',
     'admin_hash' => '',
+    // The app's public modulus, copied from System/Core/LicencePubKey.h. The
+    // panel reads its own private key and compares the two: a mismatch mints
+    // keys that the app refuses with "Token was not issued by this service",
+    // and this line is what turns that hour of confusion into a red row on
+    // the Deployment table. Keep it in step when you rotate the key.
+    'app_modulus' => 'C8069D102A8B2AF0325DA054B02BA3EEEDCF06A0472FA5659E0BB1B22320AF9303015ABFF11D6A4A3BC7C7EC2B0DE0DD1C5A847C56D009F9104C47A42C610C17614DEF6AE6A306A29370413577C2DDF44D318917E17413DD2DFEC52837C70085DC2AE050BFB5711E4A5286E549EFFFEC1992167FDDE2915E42F762F4A09649A4715D041780595FC7EEE25AE0B6DE2F0B9D5BB259FE417E6CC3AAA9C8BEA6760217C2DC949AA9013B085D33B3E93ADF7E132510F9C20C41E57EAAFD5EA8CEEBAFB2BDE24D032B26D6E28A76EFE625F0ECBF568A2A098BFAF78F9266421B0BC39ADC2774A3FAAA5781C41D79CE9A0C7995C97CAAE3D7F415053CBBE6CAD9034DC5',
 ];
