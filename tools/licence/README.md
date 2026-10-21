@@ -119,27 +119,28 @@ A key is a **list of devices** plus a **seat count**:
 
 * **seats = 0 - unlimited.** Any phone that signs in is added to the list. This
   is the free-trial key: hand it out and everybody's phone works. Set *Max
-devices* to 0 (the default on the mint form) and every trial is like this.
+devices* to 0 (the default in the New key dialog) and every trial is like this.
 * **seats = N - N phones.** The first N devices to sign in take the seats;
   the N+1th answers "This access key is already in use on N devices". For a
   key you sell, set it to 1 - that is the old one-phone-per-key rule.
 * **empty list + seats = 1** - the key is `unbound`: the first phone to sign in
   claims it.
 
-The row gives you the whole list without another page:
+Each row has a *Details* button that opens the controls for that key:
 
 | control | what it does |
 | --- | --- |
 | **Add** | allow a device id by hand (8-64 letters, digits or hyphens), e.g. the trial phone in front of you, or a replacement for one that never signed in |
 | **x** on a device chip | remove that phone - it is refused at its next sign-in, the others keep working |
-| **Max** | change the seat count; lowering it below the devices already allowed is refused rather than silently dropping a phone |
-| **Clear** | empty the list so the next phones to sign in claim the seats |
-| **Delete** | remove the key entirely |
+| **Save** | change the seat count; lowering it below the devices already allowed is refused rather than silently dropping a phone |
+| **Clear devices** | empty the list so the next phones to sign in claim the seats |
+| **Revoke** | refuse the key at its next sign-in without deleting it; the same button reads *Enable* once it is revoked |
+| **Delete key** | remove the key entirely |
 
-The trial buttons (`1-day`, `3-day`, `7-day`) are *Create key* with a fixed
-lifetime, and they reuse the rest of the form: age, seat count, and any device
-ids you typed. So one press can mint a 1-day key that runs on every phone, or a
-1-day key already locked to the phone in your hand.
+*New key* opens a dialog instead of sitting on the page. The expiry chips
+(`1 day`, `3 days`, `7 days`, `No expiry`) set the days field, and *Create key*
+signs whatever the dialog holds: seat count, device ids, note. Leave the key
+field blank and the panel generates one.
 
 The app needed no change for any of this: the panel signs the serial of the
 phone that is asking, and the app has always compared that with its own device
