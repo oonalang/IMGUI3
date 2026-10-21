@@ -17,13 +17,12 @@ namespace c
 {
     inline float scale = 1.5f;
     inline float widget_scale = 1.0f;
-    // Accent: warm amber
+
     inline ImVec4 accent = ImColor(210, 134, 10);
     inline ImVec4 separator = ImColor(38, 42, 46);
 
     namespace bg
     {
-        // Deep warm slate
         inline ImVec4 background = ImColor(15, 20, 24);
         inline ImVec2 size = ImVec2(450, 370);
         inline float rounding = 6.f;
@@ -152,7 +151,6 @@ namespace c
 
     inline void ApplyTheme()
     {
-        // Warm amber accent
         accent = ImColor(210, 134, 10);
         separator = ImColor(50, 60, 68);
 
@@ -205,7 +203,7 @@ namespace c
         shadowSettings.rings = 5;
         shadowSettings.spacingBetweenRings = 2;
         shadowSettings.samplesPerCornerSide = 2;
-        // Warm dark shadow
+
         shadowSettings.shadowColor = ImGui::ColorConvertU32ToFloat4(IM_COL32(8, 12, 16, 200));
         shadowSettings.shadowSize = ImVec2(0.0f, 0.0f);
         drawRectangleShadowVerticesAdaptive(shadowSettings);
@@ -228,70 +226,64 @@ namespace c
                 rounding
             );
         } else {
-            // Warm slate background
             drawList->AddRectFilled(min, max, IM_COL32(15, 20, 24, 255), rounding);
         }
 
-        // Subtle warm tint overlay
         drawList->AddRectFilled(min, max, IM_COL32(20, 14, 8, 40), rounding);
-        // Warm amber border
+
         drawList->AddRect(min, max, IM_COL32(210, 134, 10, 90), rounding, 0, 1.0f);
     }
 }
 
 namespace main_runtime_theme
 {
-    inline float g_menuHue = 0.76f;  // violet default for the runtime UI
+    inline float g_menuHue = 0.76f;
 
-    // ============================================================
-    // THEME SYSTEM
-    // ============================================================
     enum ThemeID {
-        THEME_DARK_SLATE  = 0,  // default — deep slate + amber
-        THEME_MIDNIGHT    = 1,  // near-black + cool blue
-        THEME_FOREST      = 2,  // dark green tones
-        THEME_BLOOD       = 3,  // crimson dark
-        THEME_LIGHT       = 4,  // light warm grey
+        THEME_DARK_SLATE  = 0,
+        THEME_MIDNIGHT    = 1,
+        THEME_FOREST      = 2,
+        THEME_BLOOD       = 3,
+        THEME_LIGHT       = 4,
         THEME_COUNT       = 5
     };
     inline int g_activeTheme = THEME_DARK_SLATE;
 
     struct ThemePalette {
         const char* name;
-        // Backgrounds
-        ImU32 bgWindow;       // main menu bg
-        ImU32 bgChild;        // child panel
-        ImU32 bgCap;          // header/cap
-        ImU32 bgContent;      // content host
-        ImU32 bgTabBar;       // tab bar
-        ImU32 bgStatusBar;    // bottom bar
-        // Text
+
+        ImU32 bgWindow;
+        ImU32 bgChild;
+        ImU32 bgCap;
+        ImU32 bgContent;
+        ImU32 bgTabBar;
+        ImU32 bgStatusBar;
+
         ImU32 textActive;
         ImU32 textMuted;
-        // Borders
+
         ImU32 border;
-        // Accent hue (HSV hue 0-1)
+
         float accentHue;
         float accentSat;
         float accentVal;
     };
 
     inline ThemePalette g_themes[THEME_COUNT] = {
-        // DARK SLATE (default)
         {
             "SLATE",
-            IM_COL32(15, 20, 24, 230),   // bgWindow
-            IM_COL32(22, 29, 34, 220),   // bgChild
-            IM_COL32(22, 29, 34, 230),   // bgCap
-            IM_COL32(18, 24, 29, 190),   // bgContent
-            IM_COL32(18, 24, 29, 215),   // bgTabBar
-            IM_COL32(18, 24, 29, 210),   // bgStatusBar
-            IM_COL32(228, 213, 185, 255),// textActive
-            IM_COL32(112, 102, 82, 190), // textMuted
-            IM_COL32(50, 62, 72, 180),   // border
-            0.10f, 0.90f, 0.92f,         // amber accent
+            IM_COL32(15, 20, 24, 230),
+            IM_COL32(22, 29, 34, 220),
+            IM_COL32(22, 29, 34, 230),
+            IM_COL32(18, 24, 29, 190),
+            IM_COL32(18, 24, 29, 215),
+            IM_COL32(18, 24, 29, 210),
+            IM_COL32(228, 213, 185, 255),
+            IM_COL32(112, 102, 82, 190),
+            IM_COL32(50, 62, 72, 180),
+            0.10f, 0.90f, 0.92f,
         },
-        // MIDNIGHT
+
         {
             "NIGHT",
             IM_COL32(6, 8, 18, 235),
@@ -303,9 +295,9 @@ namespace main_runtime_theme
             IM_COL32(200, 215, 245, 255),
             IM_COL32(80, 95, 130, 190),
             IM_COL32(30, 42, 80, 180),
-            0.60f, 0.80f, 1.0f,          // electric blue accent
+            0.60f, 0.80f, 1.0f,
         },
-        // FOREST
+
         {
             "FOREST",
             IM_COL32(8, 18, 12, 235),
@@ -317,9 +309,9 @@ namespace main_runtime_theme
             IM_COL32(190, 235, 200, 255),
             IM_COL32(70, 110, 80, 190),
             IM_COL32(25, 60, 35, 180),
-            0.38f, 0.85f, 0.82f,         // green accent
+            0.38f, 0.85f, 0.82f,
         },
-        // BLOOD
+
         {
             "BLOOD",
             IM_COL32(18, 6, 6, 235),
@@ -331,9 +323,9 @@ namespace main_runtime_theme
             IM_COL32(245, 210, 205, 255),
             IM_COL32(130, 70, 70, 190),
             IM_COL32(80, 22, 22, 180),
-            0.01f, 0.90f, 0.90f,         // crimson accent
+            0.01f, 0.90f, 0.90f,
         },
-        // LIGHT
+
         {
             "LIGHT",
             IM_COL32(225, 220, 212, 230),
@@ -345,7 +337,7 @@ namespace main_runtime_theme
             IM_COL32(40, 32, 22, 255),
             IM_COL32(120, 108, 88, 190),
             IM_COL32(160, 148, 128, 180),
-            0.10f, 0.85f, 0.75f,         // warm amber (darker for light bg)
+            0.10f, 0.85f, 0.75f,
         },
     };
 
@@ -355,7 +347,6 @@ namespace main_runtime_theme
         g_activeTheme = themeId;
         const ThemePalette& t = g_themes[themeId];
 
-        // Apply accent hue
         g_menuHue = t.accentHue;
         ImGui::ColorConvertHSVtoRGB(t.accentHue, t.accentSat, t.accentVal,
             menu[0], menu[1], menu[2]);
@@ -363,19 +354,15 @@ namespace main_runtime_theme
         c::accent = ImGui::ColorConvertU32ToFloat4(
             IM_COL32((int)(menu[0]*255),(int)(menu[1]*255),(int)(menu[2]*255),255));
 
-        // Apply backgrounds
         c::bg::background   = ImGui::ColorConvertU32ToFloat4(t.bgWindow);
         c::child::background= ImGui::ColorConvertU32ToFloat4(t.bgChild);
         c::child::cap       = ImGui::ColorConvertU32ToFloat4(t.bgCap);
 
-        // Apply text
         c::text::text_active= ImGui::ColorConvertU32ToFloat4(t.textActive);
         c::text::text       = ImGui::ColorConvertU32ToFloat4(t.textMuted);
 
-        // Separator
         c::separator        = ImGui::ColorConvertU32ToFloat4(t.border);
     }
-    // ============================================================
 
     inline ImVec4 GetAccentVec4(float alpha = 1.0f)
     {
@@ -399,7 +386,6 @@ namespace main_runtime_theme
 
     inline void ApplyAccentFromHue()
     {
-        // Default to warm amber hue (~0.10 in HSV)
         ImGui::ColorConvertHSVtoRGB(g_menuHue, 0.90f, 0.92f, menu[0], menu[1], menu[2]);
         menu[3] = 1.0f;
     }
@@ -437,7 +423,6 @@ namespace main_runtime_theme
         c::accent = ImColor(GetAccentVec4());
         c::separator = ImColor(0.0f, 0.0f, 0.0f, 0.0f);
 
-        // Read from active theme palette for base background colors
         const ThemePalette& tp = g_themes[g_activeTheme];
         const ImVec4 bgW  = ImGui::ColorConvertU32ToFloat4(tp.bgWindow);
         const ImVec4 bgCh = ImGui::ColorConvertU32ToFloat4(tp.bgChild);
@@ -456,7 +441,6 @@ namespace main_runtime_theme
         c::page::text_hov = ImColor(tAct.x, tAct.y, tAct.z, 1.0f);
         c::page::text = ImColor(tMut.x, tMut.y, tMut.z, 0.96f);
 
-        // Elements tinted from theme bg
         c::elements::background_hovered = ImColor(
             ImClamp(bgCh.x + 0.04f, 0.f, 1.f),
             ImClamp(bgCh.y + 0.04f, 0.f, 1.f),
@@ -495,7 +479,6 @@ namespace main_runtime_theme
             ImClamp(bgCh.z + 0.10f, 0.f, 1.f), 0.92f);
         c::button::outline = ImColor(GetAccentTint(0.55f, 0.48f));
 
-        // Scrollbar tinted from accent
         ImGuiStyle& style = ImGui::GetStyle();
         style.ScrollbarSize = 5.0f;
         const ImVec4& ac = c::accent;
@@ -506,4 +489,5 @@ namespace main_runtime_theme
     }
 }
 
-#endif // IMGUI_SETTINGS_H
+#endif
+

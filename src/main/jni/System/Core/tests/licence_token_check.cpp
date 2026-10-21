@@ -83,16 +83,14 @@ int main()
     const std::string hwid  = "7f3c1a54-9c8b-4c1e-b2a1-0d5e6f708192";
     const std::string other = "9a9a9a9a-1111-2222-3333-444455556666";
 
-    const time_t now = 1'800'000'000;                 // fixed clock for the test
+    const time_t now = 1'800'000'000;
     const time_t in30d = now + 30 * 86400;
     const std::string payload = licence::BuildPayload(key, hwid, in30d, licence::kBuild);
 
-    // ---- L1: the payload layout -------------------------------------------
     CHECK(payload == "v1|" + key + "|" + hwid + "|1802592000|" +
                       std::to_string(licence::kBuild),
           "L1 the payload is v1|key|hwid|expires|build");
 
-    // ---- L2: the vendor's own token is accepted ---------------------------
     {
         const licence::Result r = licence::CheckSession(
             payload, vendor.sign(payload), key, hwid, now, vendor.modulusHex.c_str());
