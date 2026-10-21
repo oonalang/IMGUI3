@@ -192,6 +192,7 @@ actually use:
 ```bash
 tools/licence/make_panel_zip.sh                  # asks for the panel password
 tools/licence/make_panel_zip.sh --no-password    # or let the first-run form set it
+tools/licence/make_panel_zip.sh --no-password --with-key   # key inside: one extract
 ```
 
 It writes `tools/licence/dist/licence-panel.zip` with `connect.php`, `admin.php`,
@@ -209,13 +210,23 @@ build artifact: regenerate it with `make_panel_zip.sh` after changing anything i
 - so the first visit to `admin.php` sets the login.) An out-of-date copy is how a
 deploy ends up without `index.php` and answers the root with "403 Forbidden".
 
-Two rules for the archive itself:
+**The published archive is built with `--with-key`, so it contains the signing
+key.** That is what makes the install a single extract on a phone: upload,
+extract into `public_html`, open `admin.php`. The price is that the archive is
+the signing key, and the repository it sits in is public. Whoever downloads
+`licence-panel.zip` can mint keys this APK accepts. That trade was made
+deliberately (a two-step upload was not usable on the target device); if it ever
+stops being acceptable, delete that file from the repository, publish the
+keyless build instead, and **rotate the key and ship a new APK**, because the
+old private half has been downloadable.
 
-* **the key is not inside it.** Upload `licence_private.pem` into `private/` by
-  hand afterwards. One forgotten zip in `public_html` would otherwise be a
-  downloadable signing key.
-* **delete the zip after extracting.** Same reason, and it keeps the archive
-  including the hashed login off a public URL.
+* **extracting is the whole install** with `--with-key`: `private/licence_private.pem`
+  arrives in place, `chmod 600` it if the host lets you.
+* **delete the zip from the server after extracting** - on a host that ignores
+  `.htaccess` a zip sitting in `public_html` is a downloadable signing key, and
+  on any host it keeps the hashed login off a public URL.
+* a build without `--with-key` still refuses to pack a `.pem`, so the key cannot
+  leak in by accident when you only meant to refresh the panel.
 
 If PHP is not on the machine building the zip, the password hash is generated
 with python3's `$2y$` bcrypt instead; the script says so, because it cannot run
@@ -245,7 +256,8 @@ keep checking the 403s below.
 ## Backing up the private key
 
 Losing `tools/licence/private/licence_private.pem` means you can never sign for
-this build again, and every key already sold is stranded. A private repo is a
+this build again, and every key already sold is stranded - which is exactly what
+happened once already, and why the published archive now carries a copy. A private repo is a
 reasonable place for a backup — **as long as what goes in the repo is encrypted**:
 
 ```bash

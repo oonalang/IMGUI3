@@ -9,11 +9,16 @@
 # posts to https://<your-host>/connect, and panel/.htaccess rewrites that to
 # connect.php, so nothing in the app or the config has to change.
 #
-# What the archive deliberately does NOT contain: the signing key, and the key
-# store. Upload licence_private.pem yourself into private/ afterwards. An
-# archive is one file, and one forgotten archive sitting in public_html is a
-# downloadable signing key - which is why this prints the delete-the-zip line
-# and never packs a .pem.
+# By default the archive does NOT contain the signing key or the key store:
+# upload licence_private.pem into private/ afterwards. An archive is one file,
+# and one forgotten archive in public_html is a downloadable signing key, so the
+# default build refuses to pack a .pem.
+#
+# --with-key packs tools/licence/private/licence_private.pem into private/, which
+# makes the upload a single extract - no second step, no FTP client that might
+# skip a dotfile. It also means the archive IS the signing key: anyone who gets
+# the file can mint licences. Only publish such an archive where that is
+# acceptable (which is to say: not in a public repository).
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -22,6 +27,7 @@ OUT="$ROOT/tools/licence/dist/licence-panel.zip"
 ADMIN_USER="admin"
 PASS=""
 SET_HASH=1
+WITH_KEY=0
 
 usage() {
     sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -34,6 +40,11 @@ Options:
                       a setup form and stores the login in data/auth.php. Use
                       this when you would rather pick the password after
                       uploading (or when nobody can run password_hash())
+      --with-key      also pack tools/licence/private/licence_private.pem into
+                      private/, so extracting the archive into public_html is
+                      the whole install. The archive then contains the signing
+                      key: do not publish it, and delete it from the server
+                      after extracting
   -u, --user NAME     panel user name (default: admin)
   -o, --out PATH      where to write the archive
   -h, --help          this text
@@ -48,6 +59,7 @@ while [ $# -gt 0 ]; do
         -u|--user)     ADMIN_USER="${2-}"; shift 2 ;;
         -o|--out)      OUT="${2-}"; shift 2 ;;
         --no-password) SET_HASH=0; shift ;;
+        --with-key)    WITH_KEY=1; shift ;;
         -h|--help)     usage; exit 0 ;;
         *)             die "unknown option: $1 (try --help)" ;;
     esac
@@ -122,6 +134,13 @@ mkdir -p "$STAGE/private" "$STAGE/data"
 cp "$PANEL/private/.htaccess" "$STAGE/private/.htaccess"
 cp "$PANEL/data/.htaccess"    "$STAGE/data/.htaccess"
 
+KEY="$ROOT/tools/licence/private/licence_private.pem"
+if [ "$WITH_KEY" = 1 ]; then
+    [ -f "$KEY" ] || die "--with-key: $KEY does not exist (run tools/licence/genkey.sh first)"
+    cp "$KEY" "$STAGE/private/licence_private.pem"
+    chmod 600 "$STAGE/private/licence_private.pem"
+fi
+
 python3 - "$STAGE/config.php" "$ADMIN_USER" "$HASH" <<'PY'
 import re, sys
 
@@ -162,8 +181,11 @@ if command -v php >/dev/null 2>&1; then
     done
 fi
 
-if find "$STAGE" -name '*.pem' -o -name 'keys.json' | grep -q .; then
-    die "staging area picked up a key or the store - refusing to build"
+if [ "$WITH_KEY" = 0 ] && find "$STAGE" -name '*.pem' | grep -q .; then
+    die "staging area picked up a key - refusing to build (use --with-key if that is what you want)"
+fi
+if find "$STAGE" -name 'keys.json' | grep -q .; then
+    die "staging area picked up the key store - refusing to build"
 fi
 
 mkdir -p "$(dirname "$OUT")"
@@ -171,11 +193,19 @@ rm -f "$OUT"
 # -X drops the uid/gid/extra fields: cleaner on a host you do not own.
 ( cd "$STAGE" && zip -q -X -r "$OUT" . )
 
-printf '%s\n' \
-    "Licence panel (signed-token edition). Extract into public_html, then upload" \
-    "licence_private.pem into private/. Contains no signing key and no key store." \
-    "Delete this archive from the server once it has been extracted." \
-    | zip -z "$OUT" >/dev/null 2>&1 || true
+if [ "$WITH_KEY" = 1 ]; then
+    printf '%s\n' \
+        "Licence panel with its signing key. Extract into public_html and the panel" \
+        "is complete. This file IS the signing key: keep it private and delete it" \
+        "from the server once it has been extracted." \
+        | zip -z "$OUT" >/dev/null 2>&1 || true
+else
+    printf '%s\n' \
+        "Licence panel (signed-token edition). Extract into public_html, then upload" \
+        "licence_private.pem into private/. Contains no signing key and no key store." \
+        "Delete this archive from the server once it has been extracted." \
+        | zip -z "$OUT" >/dev/null 2>&1 || true
+fi
 
 # The archive is only worth anything if the dotfiles are really inside it: a
 # panel without private/.htaccess serves the signing key as text/plain.
@@ -183,8 +213,15 @@ entries=$(unzip -Z1 "$OUT")
 for want in connect.php lib.php admin.php config.php index.php .htaccess private/.htaccess data/.htaccess private/ data/; do
     printf '%s\n' "$entries" | grep -qx -- "$want" || die "$want is missing from the archive"
 done
-if printf '%s\n' "$entries" | grep -qi '\.pem$\|keys\.json'; then
-    die "archive contains a key or the store - refusing to ship it"
+if printf '%s\n' "$entries" | grep -qi 'keys\.json'; then
+    die "archive contains the key store - refusing to ship it"
+fi
+if [ "$WITH_KEY" = 0 ] && printf '%s\n' "$entries" | grep -qi '\.pem$'; then
+    die "archive contains a signing key - refusing to ship it"
+fi
+if [ "$WITH_KEY" = 1 ]; then
+    printf '%s\n' "$entries" | grep -qx 'private/licence_private.pem' \
+        || die "--with-key was given but private/licence_private.pem is not in the archive"
 fi
 
 # Unpack the archive and prove the result is a working panel, not just a zip
@@ -215,8 +252,10 @@ Upload and extract:
   2. Upload the zip, Extract it here. You should end up with connect.php,
      admin.php, lib.php, config.php, .htaccess, private/ and data/ directly
      in public_html - not inside a second folder.
-  3. Upload tools/licence/private/licence_private.pem into private/.
-  4. Delete the zip.
+$([ "$WITH_KEY" = 1 ] \
+    && echo '  3. The signing key is already in private/ - nothing else to upload.' \
+    || echo '  3. Upload tools/licence/private/licence_private.pem into private/.')
+  4. Delete the zip.$([ "$WITH_KEY" = 1 ] && echo ' (it contains the signing key)' || echo '')
 $([ "$SET_HASH" = 1 ] && echo '  5. Open /admin.php and sign in.' || echo '  5. Open /admin.php and set the panel login straight away: until you do,\n     whoever finds that URL first can claim it.')
 
 Then check, before you sell anything:
