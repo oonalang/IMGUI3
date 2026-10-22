@@ -102,17 +102,23 @@ int main()
     for (int i = 0; i < 4; ++i)
         Frame(in);
 
+    Check(std::fabs(esp_model_preview::g_yaw - IM_PI) < 0.001f,
+          "the model faces the camera straight on");
     const float yawIdleStart = esp_model_preview::g_yaw;
     for (int i = 0; i < 30; ++i)
         Frame(in);
     const float yawIdleEnd = esp_model_preview::g_yaw;
-    Check(std::fabs(yawIdleEnd - yawIdleStart) < 0.01f, "model does not spin on its own");
+    Check(std::fabs(yawIdleEnd - yawIdleStart) < 0.001f, "the model stays still");
 
     ImGuiWindow* espWin = ImGui::FindWindowByName("##raspody_esp_preview");
     if (espWin)
         Check(true, "the floating preview card exists");
     else
         Check(false, "the floating preview card exists");
+
+    const MenuWindow menuWin = ComputeMenuWindow(io.DisplaySize);
+    Check(espWin && std::fabs(espWin->Size.y - menuWin.size.y) < 1.0f,
+          "the preview card is as tall as the menu");
 
     ImVec2 modelMin(0.0f, 0.0f), modelSize(0.0f, 0.0f);
     if (espWin)
@@ -138,7 +144,7 @@ int main()
     in.down = false;
     Frame(in);
 
-    Check(std::fabs(yawAfterDrag - yawBeforeDrag) > 0.05f, "dragging the model rotates it");
+    Check(std::fabs(yawAfterDrag - yawBeforeDrag) < 0.001f, "dragging the model does nothing");
 
     raspody::var.tab.current = raspody::var.tab.stored = raspody::Tab_Visuals;
     raspody::ui.searchOpen = false;

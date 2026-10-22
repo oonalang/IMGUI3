@@ -1259,13 +1259,14 @@ namespace raspody
             static ImVec2 cardPos(-1.0f, -1.0f);
             static bool cardMoved = false;
 
-            float cardW = ImClamp(size.x * 0.21f, S(150), S(226));
+            // preview card: menu height, width sized to the character
+            const float cardH = size.y;
+
+            float cardW = ImClamp(cardH * 0.38f, S(200), S(320));
 
             const float roomW = display.x - (pos.x + size.x) - S(16) - S(6);
             if (roomW >= S(150))
                 cardW = ImMin(cardW, roomW);
-
-            const float cardH = ImClamp(cardW * 1.34f, S(196), S(310));
 
             if (!cardMoved)
             {
@@ -1273,7 +1274,7 @@ namespace raspody
                 if (cardX + cardW > display.x - S(6))
                     cardX = display.x - cardW - S(6);
 
-                cardPos = ImVec2(cardX, pos.y + (size.y - cardH) * 0.5f);
+                cardPos = ImVec2(cardX, pos.y);
             }
             cardPos.x = ImClamp(cardPos.x, 0.0f, ImMax(0.0f, display.x - cardW));
             cardPos.y = ImClamp(cardPos.y, 0.0f, ImMax(0.0f, display.y - cardH));
