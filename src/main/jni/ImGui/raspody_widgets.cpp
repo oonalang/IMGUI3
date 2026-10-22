@@ -401,7 +401,7 @@ namespace raspody
 
         const float titleSize = 30.0f;
         const float descSize = 16.0f;
-        const float logoSize = 40.0f;
+        const float logoSize = 24.0f;
         const float titleW = TextSize(titleFont, titleSize, name).x;
         const float descW = TextSize(descFont, descSize, tagline).x;
         const float textW = ImMax(titleW, descW);
