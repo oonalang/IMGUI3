@@ -96,6 +96,10 @@ struct sConfig {
 struct sWeaponAim {
         bool Aimbot360;
         float AimAssistSize;
+        // Aim Lock: 0 = off, 1..100 = tracking speed. Keeps the aim on the
+        // target while firing or scoping, unlike the assist which only acts on
+        // a bullet.
+        float AimLock;
         bool AimSilent;
         EAimTarget Target;
         EAimTrigger Trigger;

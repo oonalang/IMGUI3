@@ -15,6 +15,7 @@
 #include "../../Includes/Utils.h"
 #include "../../Includes/Macros.h"
 #include "../StructGame/StructGame.h"
+#include "AimLock.h"
 
 namespace NewFeatures
 {
@@ -2180,6 +2181,7 @@ namespace NewFeatures
 
             UpdateNoSprintFireDelayWeapon(pawnInstance);
             A_FireTick(nullptr);
+            aim_lock::Tick((Pawn *)pawnInstance);
         }
     }
 

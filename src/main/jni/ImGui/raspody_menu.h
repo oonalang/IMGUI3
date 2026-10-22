@@ -350,6 +350,10 @@ namespace raspody
                                  &Config.ESPMenu.ShowFov, "Show FOV circle");
                 SliderFloat("Assist size", "Reach of the assist around the target.",
                             &Config.Aim.AimAssistSize, 0.0f, 100.0f, "%.0f");
+                // The assist only moves the aim on a bullet, so it does nothing
+                // while you scope in. Aim Lock turns the aim every tick instead.
+                SliderFloat("Aim lock", "Keeps the aim on the target while firing or scoping. 0 = off, 100 = instant.",
+                            &Config.Aim.AimLock, 0.0f, 100.0f, "%.0f");
             });
 
             AddPageCard(p, 1, "Targeting", [&] {
