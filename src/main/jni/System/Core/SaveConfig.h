@@ -80,6 +80,13 @@ void SaveConfiguration(const std::string& filename) {
 
     config["ExtraMenu"]["MythicAttachments"] = Config.ExtraMenu.MythicAttachments;
     config["ExtraMenu"]["Attachment"] = Config.ExtraMenu.Attachment;
+    config["ExtraMenu"]["HideOutfit"] = Config.ExtraMenu.HideOutfit;
+    config["ExtraMenu"]["OutfitScale"] = Config.ExtraMenu.OutfitScale;
+    config["ExtraMenu"]["OutfitTintBypass"] = Config.ExtraMenu.OutfitTintBypass;
+    config["ExtraMenu"]["OutfitTintR"] = Config.ExtraMenu.OutfitTint[0];
+    config["ExtraMenu"]["OutfitTintG"] = Config.ExtraMenu.OutfitTint[1];
+    config["ExtraMenu"]["OutfitTintB"] = Config.ExtraMenu.OutfitTint[2];
+    config["ExtraMenu"]["OutfitTintA"] = Config.ExtraMenu.OutfitTint[3];
     config["ExtraMenu"]["BlockReportEvidence"] = Config.ExtraMenu.BlockReportEvidence;
     config["ExtraMenu"]["BlockAceReport"] = Config.ExtraMenu.BlockAceReport;
     config["ExtraMenu"]["AntiLogin"] = Config.ExtraMenu.AntiLogin;
@@ -184,6 +191,16 @@ bool LoadConfiguration(const std::string& filename) {
                 Config.ExtraMenu.Attachment = config["ExtraMenu"]["Attachment"].get<bool>();
             if (config["ExtraMenu"].contains("MythicAttachments"))
                 Config.ExtraMenu.MythicAttachments = config["ExtraMenu"]["MythicAttachments"].get<bool>();
+            if (config["ExtraMenu"].contains("HideOutfit"))
+                Config.ExtraMenu.HideOutfit = config["ExtraMenu"]["HideOutfit"].get<bool>();
+            if (config["ExtraMenu"].contains("OutfitScale"))
+                Config.ExtraMenu.OutfitScale = config["ExtraMenu"]["OutfitScale"].get<float>();
+            if (config["ExtraMenu"].contains("OutfitTintBypass"))
+                Config.ExtraMenu.OutfitTintBypass = config["ExtraMenu"]["OutfitTintBypass"].get<bool>();
+            if (config["ExtraMenu"].contains("OutfitTintR")) Config.ExtraMenu.OutfitTint[0] = config["ExtraMenu"]["OutfitTintR"].get<float>();
+            if (config["ExtraMenu"].contains("OutfitTintG")) Config.ExtraMenu.OutfitTint[1] = config["ExtraMenu"]["OutfitTintG"].get<float>();
+            if (config["ExtraMenu"].contains("OutfitTintB")) Config.ExtraMenu.OutfitTint[2] = config["ExtraMenu"]["OutfitTintB"].get<float>();
+            if (config["ExtraMenu"].contains("OutfitTintA")) Config.ExtraMenu.OutfitTint[3] = config["ExtraMenu"]["OutfitTintA"].get<float>();
             if (config["ExtraMenu"].contains("BlockReportEvidence"))
                 Config.ExtraMenu.BlockReportEvidence = config["ExtraMenu"]["BlockReportEvidence"].get<bool>();
             if (config["ExtraMenu"].contains("BlockAceReport"))

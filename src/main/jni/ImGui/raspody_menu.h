@@ -12,6 +12,8 @@
 #include "System/UI/Keyboard.h"
 #include "raspody_font.h"
 
+#include "System/UI/SkinTab.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -835,6 +837,45 @@ namespace raspody
         }
     }
 
+    inline void SkinsPage(PageLayout& p, int subtab)
+    {
+        if (subtab == 0)
+        {
+            ImGui::SetCursorPos(ImVec2(p.origin.x + 200.0f, p.origin.y + 85.0f));
+            ImGui::BeginChild("SkinsBrowser##L9", ImVec2(0, 0), true);
+            RenderSkinCategoryContent(0, true);
+            ImGui::EndChild();
+            p.singleY = ImGui::GetCursorScreenPos().y - p.origin.y + S(8);
+        }
+        else
+        {
+            AddPageCard(p, 0, "Applied cosmetics", [&] {
+                Checkbox("Hide outfit", "Show your character without the applied skin.",
+                         &Config.ExtraMenu.HideOutfit);
+                SliderFloat("Outfit scale", "Scale of the applied skin model.",
+                            &Config.ExtraMenu.OutfitScale, 0.5f, 2.0f, "%.2f");
+            });
+
+            AddPageCard(p, 1, "Outfit tint", [&] {
+                ColorRow("Tint colour", "Applied on top of the skin where supported.",
+                         Config.ExtraMenu.OutfitTint);
+                Checkbox("Tint bypass", "Keep the skin's own tint instead.",
+                         &Config.ExtraMenu.OutfitTintBypass);
+            });
+
+            AddPageCard(p, 0, "Weapon blueprints", [&] {
+                Checkbox("Blueprints", "Show blueprint / skin visuals on weapons (BlueprintWeaponInfo).",
+                         &Config.ExtraMenu.MythicAttachments);
+            });
+
+            AddPageCard(p, 1, "Attach unlock", [&] {
+                Checkbox("Attachment unlock", "Treat every attachment as owned so blueprints preview freely.",
+                         &Config.ExtraMenu.Attachment);
+                ParagraphRow("This only unlocks the preview grid. It does not grant anything in the game store.");
+            });
+        }
+    }
+
     inline void RenderPage(int tab, int subtab, ImVec2 origin, float width)
     {
         PageLayout layout = MakePageLayout(origin, width);
@@ -844,6 +885,7 @@ namespace raspody
         case Tab_Aimbot:   AimbotPage(layout, subtab); break;
         case Tab_Visuals:  VisualsPage(layout, subtab); break;
         case Tab_Weapons:  WeaponsPage(layout, subtab); break;
+        case Tab_Skins:    SkinsPage(layout, subtab); break;
         case Tab_Scripts:  ScriptsPage(layout, subtab); break;
         case Tab_Configs:  ConfigsPage(layout, subtab); break;
         case Tab_Settings: SettingsPage(layout, subtab); break;

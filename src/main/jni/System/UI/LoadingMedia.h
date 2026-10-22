@@ -452,7 +452,14 @@ namespace ui_media
                 return nullptr;
             }
 
-            static const char* names[2] = { "loading.mp4", "velina-aegard.3840x2160.mp4" };
+            // The arknights encounter background is the primary loading card
+            // video: it replaces the empty ethnir video, so the card reads as a
+            // real frame instead of a window onto a black field.
+            static const char* names[3] = {
+                "loading.mp4",
+                "velina-aegard.3840x2160.mp4",
+                "arknights-eyjafjallas-gentle-glow.1920x1080.mp4"
+            };
             const std::string path = ResolveMedia(names, 2, ethnir_loading_video,
                                                   ethnir_loading_video_len);
             if (path.empty() || !SetSource(env, player, path))

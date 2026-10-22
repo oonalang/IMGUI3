@@ -17,7 +17,7 @@ namespace ui_loading {
 
 static bool  g_Active   = false;
 static float g_Timer    = 0.0f;
-static float g_Duration = 12.0f;
+static float g_Duration = 9.0f;
 static float g_Time     = 0.0f;
 
 // Same card as the menu and the login screen.
@@ -94,16 +94,20 @@ static void CoverImage(ImDrawList* dl, ImTextureID tex, ImVec2 mn, ImVec2 mx, fl
     const ImVec2 texMin(mn.x + (boxW - w) * 0.5f, mn.y + (boxH - h) * 0.5f);
     const ImVec2 texMax(texMin.x + w, texMin.y + h);
     dl->AddImage(tex, texMin, texMax, ImVec2(0, 0), ImVec2(1, 1));
-}
+}    // The field behind the card. This has to stay fullscreen: the menu is hooked at
+    // login time, before the game has drawn a frame of its own, so every pixel the
+    // card does not cover is the game's black screen. Cover-scaled like before, and
+    // dimmed so the card on top of it reads as the focal point.
+    //
+    // The video is only drawn once a frame has really been written into it
+    // (VideoReady()). Until then the loader shows the still background, so the
+    // 2-second black flash right after login never appears: a partially-loaded
+    // MediaPlayer cannot paint an empty texture over the field.
+    static void ScreenBackdrop(ImDrawList* dl, ImVec2 display, ImTextureID still)
+    {
+        const ImTextureID video = ui_media::VideoTexture();
+        const ImTextureID source = (video != nullptr && ui_media::VideoReady()) ? video : still;
 
-// The field behind the card. This has to stay fullscreen: the menu is hooked at
-// login time, before the game has drawn a frame of its own, so every pixel the
-// card does not cover is the game's black screen. Cover-scaled like before, and
-// dimmed so the card on top of it reads as the focal point.
-static void ScreenBackdrop(ImDrawList* dl, ImVec2 display, ImTextureID still)
-{
-    const ImTextureID video = ui_media::VideoTexture();
-    const ImTextureID source = video != nullptr ? video : still;
     const float aspect = video != nullptr ? ui_media::VideoAspect()
                                           : (display.x > 0.0f ? display.x / display.y : 16.0f / 9.0f);
 
@@ -142,13 +146,18 @@ static void ScreenBackdrop(ImDrawList* dl, ImVec2 display, ImTextureID still)
         IM_COL32(3, 1, 9, 176),         IM_COL32(3, 1, 9, 176));
 }
 
-// The card's own background: a cover-scaled crop of the same video, so the card
-// keeps a well-framed image instead of being a window onto the field behind it.
-static void CardBackdrop(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImTextureID still)
-{
-    const ImVec2 size(mx.x - mn.x, mx.y - mn.y);
-    const ImTextureID video = ui_media::VideoTexture();
-    const ImTextureID source = video != nullptr ? video : still;
+// The card's own background: a cover-scaled crop of the same video, so the card    // The card's own background: a cover-scaled crop of the same video, so the card
+    // keeps a well-framed image instead of being a window onto the field behind it.
+    //
+    // The same rule as the field behind it: if the video is still warming up
+    // (VideoReady() false), the still is used instead so the card never flashes
+    // black while the MediaPlayer loads its file.
+    static void CardBackdrop(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImTextureID still)
+    {
+        const ImVec2 size(mx.x - mn.x, mx.y - mn.y);
+        const ImTextureID video = ui_media::VideoTexture();
+        const ImTextureID source = (video != nullptr && ui_media::VideoReady()) ? video : still;
+
     const float aspect = video != nullptr ? ui_media::VideoAspect()
                                           : (size.x > 0.0f ? size.x / size.y : 16.0f / 9.0f);
     if (!(size.x > 0.0f) || !(size.y > 0.0f) || aspect <= 0.0f) return;
@@ -329,7 +338,7 @@ static void StatusRow(ImDrawList* dl, ImFont* font, ImVec2 mn, ImVec2 mx, float 
     dl->AddText(font, 11.0f, ImVec2(mx.x - w, mn.y), C::UA(C::PurpleBrt, 0.98f), pct);
 }
 
-inline void Start(float durationSeconds = 12.0f) {
+inline void Start(float durationSeconds = 9.0f) {
     g_Active   = true;
     g_Timer    = 0.0f;
     g_Time     = 0.0f;

@@ -54,6 +54,13 @@ void LoadConfig() {
         else if (key == "Aim.By") Config.Aim.By = static_cast<EAim>(std::stoi(valueStr));
         else if (key == "ExtraMenu.Kinetic") Config.ExtraMenu.Kinetic = (valueStr == "1");
         else if (key == "ExtraMenu.MythicAttachments") Config.ExtraMenu.MythicAttachments = (valueStr == "1");
+        else if (key == "ExtraMenu.HideOutfit") Config.ExtraMenu.HideOutfit = (valueStr == "1");
+        else if (key == "ExtraMenu.OutfitScale") Config.ExtraMenu.OutfitScale = std::stof(valueStr);
+        else if (key == "ExtraMenu.OutfitTintBypass") Config.ExtraMenu.OutfitTintBypass = (valueStr == "1");
+        else if (key == "ExtraMenu.OutfitTintR") Config.ExtraMenu.OutfitTint[0] = std::stof(valueStr);
+        else if (key == "ExtraMenu.OutfitTintG") Config.ExtraMenu.OutfitTint[1] = std::stof(valueStr);
+        else if (key == "ExtraMenu.OutfitTintB") Config.ExtraMenu.OutfitTint[2] = std::stof(valueStr);
+        else if (key == "ExtraMenu.OutfitTintA") Config.ExtraMenu.OutfitTint[3] = std::stof(valueStr);
         else if (key == "ExtraMenu.BlockReportEvidence") Config.ExtraMenu.BlockReportEvidence = (valueStr == "1");
         else if (key == "ExtraMenu.Recoil") Config.ExtraMenu.Recoil = (valueStr == "1");
         else if (key == "ExtraMenu.Spread") Config.ExtraMenu.Spread = (valueStr == "1");
@@ -123,6 +130,13 @@ void SaveConfig() {
     file << "Aim.By " << Config.Aim.By << "\n";
     file << "ExtraMenu.Kinetic " << Config.ExtraMenu.Kinetic << "\n";
     file << "ExtraMenu.MythicAttachments " << Config.ExtraMenu.MythicAttachments << "\n";
+    file << "ExtraMenu.HideOutfit " << Config.ExtraMenu.HideOutfit << "\n";
+    file << "ExtraMenu.OutfitScale " << Config.ExtraMenu.OutfitScale << "\n";
+    file << "ExtraMenu.OutfitTintBypass " << Config.ExtraMenu.OutfitTintBypass << "\n";
+    file << "ExtraMenu.OutfitTintR " << Config.ExtraMenu.OutfitTint[0] << "\n";
+    file << "ExtraMenu.OutfitTintG " << Config.ExtraMenu.OutfitTint[1] << "\n";
+    file << "ExtraMenu.OutfitTintB " << Config.ExtraMenu.OutfitTint[2] << "\n";
+    file << "ExtraMenu.OutfitTintA " << Config.ExtraMenu.OutfitTint[3] << "\n";
     file << "ExtraMenu.BlockReportEvidence " << Config.ExtraMenu.BlockReportEvidence << "\n";
     file << "ExtraMenu.Recoil " << Config.ExtraMenu.Recoil << "\n";
     file << "ExtraMenu.Spread " << Config.ExtraMenu.Spread << "\n";

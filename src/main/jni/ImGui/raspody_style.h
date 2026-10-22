@@ -172,6 +172,7 @@ namespace raspody
         Tab_Aimbot = 0,
         Tab_Visuals,
         Tab_Weapons,
+        Tab_Skins,
         Tab_Scripts,
         Tab_Configs,
         Tab_Settings,
@@ -183,19 +184,21 @@ namespace raspody
         Icon_Aimbot = 0,
         Icon_Visuals,
         Icon_Weapons,
+        Icon_Skins,
         Icon_Scripts,
         Icon_Configs,
         Icon_Settings
     };
 
     inline const char* kTabNames[Tab_Count] = {
-        "Aimbot", "Visuals", "Weapons", "Scripts", "Configs", "Settings"
+        "Aimbot", "Visuals", "Weapons", "Skins", "Scripts", "Configs", "Settings"
     };
 
     inline const char* kTabDescriptions[Tab_Count] = {
         "Aim assist, silent aim and target selection.",
         "Player ESP, world visuals and colour control.",
-        "Weapon handling, ammo and movement exploits.",
+        "Weapon handling, ammo and attachments.",
+        "Blueprints, cosmetics and applied skins.",
         "Timing patches, triggerbot and crosshair.",
         "Save, load and switch menu profiles.",
         "Game, camera and account-side switches."
@@ -205,6 +208,7 @@ namespace raspody
         { "Aim Assist", "Triggerbot", nullptr },
         { "Players", "World", nullptr },
         { "Weapon", "Movement", nullptr },
+        { "Skins", "Blueprints", nullptr },
         { "Patches", "Crosshair", nullptr },
         { "Profiles", "Account", nullptr },
         { "Menu", "System", nullptr }
@@ -214,6 +218,7 @@ namespace raspody
         { "Smoothing, FOV and target priority.", "Automatic fire and dot crosshair.", nullptr },
         { "Everything drawn on players and bots.", "World, camera and awareness toggles.", nullptr },
         { "Handling, recoil and attachments.", "Speed, flight and slide tuning.", nullptr },
+        { "Character, watch, weapon, camo and snowboard skins.", "Blueprint / skin unlock for weapons.", nullptr },
         { "Firing-timing patches and movement fixes.", "The dot that the trigger aims through.", nullptr },
         { "Write, load and manage your profiles.", "License and build of the session.", nullptr },
         { "Menu appearance and build info.", "Reports, account and performance switches.", nullptr }

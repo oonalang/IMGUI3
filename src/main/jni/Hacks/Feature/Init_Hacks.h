@@ -225,6 +225,11 @@ sColorsESPBOT sColorsESPBOT{0};
 
         bool StretchScreen;
         float StretchAspect = 1.7778f;
+
+        bool HideOutfit = false;
+        float OutfitScale = 1.0f;
+        float OutfitTint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+        bool OutfitTintBypass = false;
     };
     sExtraMenu ExtraMenu{0};
 

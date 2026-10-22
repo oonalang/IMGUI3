@@ -317,6 +317,20 @@ namespace raspody
                         ImVec2(c.x - h * 0.16f, c.y + h * 0.85f), color, th);
             break;
         }
+        case Icon_Skins:
+        {
+            const ImVec2 a(c.x - h * 0.95f, c.y - h * 0.18f);
+            const ImVec2 b(c.x + h * 0.55f, c.y + h * 0.16f);
+            dl->AddRectFilled(a, b, color, ImMax(1.0f, size * 0.08f));
+            dl->AddLine(ImVec2(c.x + h * 0.5f, c.y + h * 0.02f),
+                        ImVec2(c.x + h * 1.1f, c.y + h * 0.02f), color, th);
+            dl->AddLine(ImVec2(c.x - h * 0.50f, c.y + h * 0.12f),
+                        ImVec2(c.x - h * 0.22f, c.y + h * 0.78f), color, th * 1.4f);
+            dl->AddLine(ImVec2(c.x - h * 0.95f, c.y - h * 0.18f),
+                        ImVec2(c.x - h * 1.15f, c.y + h * 0.30f), color, th);
+            dl->AddCircleFilled(c, h * 0.07f, IM_COL32(255, 215, 0, 255), 8);
+            break;
+        }
         case Icon_Configs:
         {
             const ImVec2 min(c.x - h * 0.95f, c.y - h * 0.62f);

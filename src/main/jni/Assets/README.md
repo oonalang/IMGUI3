@@ -7,7 +7,7 @@ It looks for them in this order.
 
 | media | accepted file names |
 | --- | --- |
-| video background | `loading.mp4`, `velina-aegard.3840x2160.mp4` |
+| video background | `loading.mp4`, `velina-aegard.3840x2160.mp4`, `arknights-eyjafjallas-gentle-glow.1920x1080.mp4` |
 | loading audio | `loading.mp3`, `lofi.mp3` |
 
 Search order:
@@ -30,11 +30,16 @@ Push them with adb:
 ```
 adb shell mkdir -p /storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir
 adb push velina-aegard.3840x2160.mp4 /storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir/loading.mp4
+adb push arknights-eyjafjallas-gentle-glow.1920x1080.mp4 /storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir/loading.mp4
 adb push lofi.mp3                      /storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir/loading.mp3
 ```
 
 The 3840x2160 file decodes at 4K on the device GPU. If the loader costs too much,
 re-encode it to 1280x720 with the same name and nothing else changes.
+
+The arknights encounter background (`arknights-eyjafjallas-gentle-glow.1920x1080.mp4`)
+is the recommended loading card video: it replaces the empty ethnir video so the
+card shows a real frame of Arknights instead of a window onto a black field.
 
 Nothing has to be embedded for this to work: the media layer always tries the
 disk paths above first and only falls back to compiled-in bytes. Files copied to
