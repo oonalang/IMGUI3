@@ -375,12 +375,14 @@ namespace raspody
                          &Config.NewFeaturesMenu.TriggerbotMode, triggerModes, IM_ARRAYSIZE(triggerModes));
                 SliderInt("Reaction delay", "Humanised delay before a shot.",
                           &Config.NewFeaturesMenu.TriggerbotDelay, 0, 500, "%.0f ms");
+                Checkbox("Dot-ray gate", "Only fire when the shot ray through the crosshair dot itself lands on the enemy.",
+                         &Config.NewFeaturesMenu.TriggerbotDotRay);
             });
 
             AddPageCard(p, 1, "Trigger zone", [&] {
                 InfoRow("Trigger point", "Crosshair dot");
                 InfoRow("Dot state", Config.Crosshair.Enabled ? "Enabled" : "Disabled");
-                ParagraphRow("The dot's radius is the triggerbot's zone. Size, opacity and offset are on the Crosshair page.");
+                ParagraphRow("The dot's radius is the triggerbot's zone. Size, opacity and offset are on the Crosshair page. With Dot-ray gate off, the zone alone decides and a shot can land beside the dot.");
                 if (Selectable("Open crosshair settings", false))
                 {
                     if (var.tab.stored != Tab_Scripts)
@@ -1078,7 +1080,7 @@ namespace raspody
         const ImVec2 pos = win.pos;
         const ImVec2 size = win.size;
 
-        const float scale = ImClamp(ImMin(size.x / 900.0f, size.y / 592.0f), 0.70f, 1.45f);
+        const float scale = ImClamp(ImMin(size.x / kUiCardW, size.y / kUiCardH), 0.70f, 1.45f);
         SetScale(scale);
 
         const float pad = ImClamp(size.x * 0.017f, S(10), S(18));
@@ -1217,8 +1219,13 @@ namespace raspody
         const float scrollMax = ImGui::GetScrollMaxY();
         const float availW = ImMax(S(140), ImGui::GetWindowSize().x - S(6) - ImGui::GetStyle().ScrollbarSize);
 
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, var.tab.alpha * var.subtab.alpha);
-        RenderPage(var.tab.current, var.subtab.current, origin, availW);
+        // Page switch: slides in from the right while it fades, so a tab change reads as motion.
+        const float pageAlpha = var.tab.alpha * var.subtab.alpha;
+        const float slide = (1.0f - pageAlpha) * S(12);
+        const ImVec2 pageOrigin(origin.x + slide, origin.y + slide * 0.4f);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, pageAlpha);
+        RenderPage(var.tab.current, var.subtab.current, pageOrigin, availW);
         ImGui::PopStyleVar();
 
         if (scrollMax > 0.0f)
@@ -1259,7 +1266,6 @@ namespace raspody
             static ImVec2 cardPos(-1.0f, -1.0f);
             static bool cardMoved = false;
 
-            // preview card: menu height, width sized to the character
             const float cardH = size.y;
 
             float cardW = ImClamp(cardH * 0.38f, S(200), S(320));

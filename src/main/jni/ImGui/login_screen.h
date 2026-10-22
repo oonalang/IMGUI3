@@ -5,6 +5,8 @@
 #include "imgui_settings.h"
 #include "menu_layout.h"
 
+#include <cmath>
+
 #include "../System/UI/LoadingAnimation.h"
 #include "../Fonts/poppins.h"
 
@@ -176,7 +178,7 @@ namespace login_screen
         const float pw = ImMax(1.0f, L.cardMax.x - L.cardMin.x);
         const float ph = ImMax(1.0f, L.cardMax.y - L.cardMin.y);
 
-        const float s = ImClamp(ImMin(ph / 578.0f, pw / 904.0f), 0.60f, 2.20f);
+        const float s = ImClamp(ImMin(ph / kUiCardH, pw / (kUiCardW + 4.0f)), 0.60f, 2.20f);
         L.s = s;
         L.cardRound = ImClamp(12.0f * s, 8.0f, 20.0f);
         L.headerH   = ImClamp(ph * 0.107f, 34.0f, 78.0f);
@@ -359,9 +361,17 @@ namespace login_screen
             const float x = L.wellMin.x + (colW - dw) * 0.62f;
             const float y = L.wellMax.y - dh;
 
+            // Slow Ken Burns drift: the art breathes instead of sitting still.
+            const float t = (float)ImGui::GetTime();
+            const float zoom = 1.0f + 0.055f * (0.5f + 0.5f * sinf(t * 0.16f));
+            const float half = 0.5f / zoom;
+            const float panX = 0.010f * sinf(t * 0.11f);
+            const float panY = 0.008f * cosf(t * 0.09f);
+
             const bool atCorner = (x <= L.wellMin.x + 0.5f && y + dh >= L.wellMax.y - 0.5f);
             dl->AddImageRounded(p.art, ImVec2(x, y), ImVec2(x + dw, y + dh),
-                                ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), IM_COL32_WHITE,
+                                ImVec2(0.5f - half + panX, 0.5f - half + panY),
+                                ImVec2(0.5f + half + panX, 0.5f + half + panY), IM_COL32_WHITE,
                                 atCorner ? L.cardRound : 0.0f,
                                 atCorner ? ImDrawFlags_RoundCornersBottomLeft : 0);
         }
@@ -487,6 +497,21 @@ namespace login_screen
             dl->AddRectFilledMultiColor(L.pillMin, L.pillMax,
                 IM_COL32(255, 255, 255, 34), IM_COL32(255, 255, 255, 8),
                 IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0), round);
+
+            // Light travelling across the glass while idle; faster under the finger.
+            {
+                const float t = (float)ImGui::GetTime();
+                const float band = ImMax(34.0f * s, 22.0f);
+                const float phase = fmodf(t * (hover ? 0.55f : 0.30f), 1.0f);
+                const float cx = L.pillMin.x - band + (L.fieldW + band * 2.0f) * phase;
+                const float peak = hover ? 62.0f : 34.0f;
+                dl->PushClipRect(L.pillMin, L.pillMax, true);
+                dl->AddRectFilledMultiColor(ImVec2(cx - band, L.pillMin.y),
+                                            ImVec2(cx + band * 0.7f, L.pillMax.y),
+                                            IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, (int)peak),
+                                            IM_COL32(255, 255, 255, (int)peak), IM_COL32(255, 255, 255, 0));
+                dl->PopClipRect();
+            }
 
             const float buttonSize = ImClamp(17.0f * s, 13.0f, 24.0f);
             const ImVec2 ts = TextSize(fButton, buttonSize, "sign in");

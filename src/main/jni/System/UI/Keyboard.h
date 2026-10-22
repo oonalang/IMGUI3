@@ -185,7 +185,7 @@ inline void RenderVirtualKeyboard(const char* id, char* searchQuery, size_t quer
     ImGuiIO& io = ImGui::GetIO();
     const float screen_w = io.DisplaySize.x;
     const float screen_h = io.DisplaySize.y;
-    const float keyboard_h = screen_h * 0.56f;
+    const float keyboard_h = screen_h * 0.46f;
 
     ImGui::SetNextWindowPos(ImVec2(0.0f, screen_h - keyboard_h), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(screen_w, keyboard_h), ImGuiCond_Always);
@@ -218,7 +218,7 @@ inline void RenderVirtualKeyboard(const char* id, char* searchQuery, size_t quer
     const float key_spacing_x = 8.0f;
     const float key_spacing_y = 10.0f;
 
-    const int row_count = 7;
+    const int row_count = 5;
     const float key_w = (content_w - key_spacing_x * 9.0f) / 10.0f;
     const float max_key_h = 60.0f;
     float min_key_h = 34.0f;
@@ -256,20 +256,18 @@ inline void RenderVirtualKeyboard(const char* id, char* searchQuery, size_t quer
 
     y = draw_char_row("1234567890", y);
 
-    y = draw_char_row("-_.@#!?&+/", y);
-    y = draw_char_row(":$%'\"(),=*", y);
     y = draw_char_row("QWERTYUIOP", y);
     y = draw_char_row("ASDFGHJKL", y);
 
     {
         const float start_x = row_start_x(9, key_w);
-        const char* special_left = "[M]";
+        const char* special_left = "-";
         const char* letters = "ZXCVBNM";
         const char* special_right = "del";
 
         const ImVec2 m_rect_min(start_x, y + slide_offset_y);
         const ImVec2 m_rect_max(start_x + key_w, y + key_h + slide_offset_y);
-        if (keyboard_ui::DrawKeyButton(draw, keyboard_id + "_[M]", special_left, m_rect_min, m_rect_max, kb_state.allow_clicks, now, dt, ui_alpha, true, key_animations)) {
+        if (keyboard_ui::DrawKeyButton(draw, keyboard_id + "_dash", special_left, m_rect_min, m_rect_max, kb_state.allow_clicks, now, dt, ui_alpha, true, key_animations)) {
             keyboard_ui::AppendText(searchQuery, querySize, special_left);
         }
 

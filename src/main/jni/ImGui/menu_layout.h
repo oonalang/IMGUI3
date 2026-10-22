@@ -3,6 +3,10 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 
+// One card size for the menu, the login and the loading screen.
+constexpr float kUiCardW = 900.0f;
+constexpr float kUiCardH = 532.0f;
+
 struct MenuLayout
 {
     float  menuW, menuH;
@@ -35,8 +39,8 @@ inline MenuWindow ComputeMenuWindow(const ImVec2 &display)
     MenuWindow W{};
     const MenuLayout L = ComputeMenuLayout(display);
 
-    W.size.x = ImMin(L.menuW, 900.0f);
-    W.size.y = ImMin(L.menuH, 592.0f);
+    W.size.x = ImMin(L.menuW, kUiCardW);
+    W.size.y = ImMin(L.menuH, kUiCardH);
 
     W.pos.x = ImClamp((display.x - W.size.x) * 0.5f, 0.0f, ImMax(0.0f, display.x - W.size.x));
     W.pos.y = ImClamp((display.y - W.size.y) * 0.5f, 0.0f, ImMax(0.0f, display.y - W.size.y));

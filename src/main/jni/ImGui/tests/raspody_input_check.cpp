@@ -152,8 +152,24 @@ int main()
     for (int i = 0; i < 3; ++i)
         Frame(in);
 
+    // Hit points come from the same layout maths the menu uses, so the check does
+    // not break when the card is resized.
+    const float sc = ImClamp(ImMin(menuWin.size.x / kUiCardW, menuWin.size.y / kUiCardH), 0.70f, 1.45f);
+    auto Sc = [&](float v) { return v * sc; };
+    const float pad     = ImClamp(menuWin.size.x * 0.017f, Sc(10), Sc(18));
+    const float headerH = ImClamp(menuWin.size.y * 0.088f, Sc(40), Sc(56));
+    const float gap     = Sc(13);
+    const float tabW    = ImClamp(menuWin.size.x * 0.095f, Sc(58), Sc(120));
+    const float contentX = menuWin.pos.x + pad + tabW + gap;
+    const float contentY = menuWin.pos.y + pad + headerH + gap;
+    const float contentW = ImMax(Sc(120), menuWin.size.x - (contentX - menuWin.pos.x) - pad);
+    const float centerY  = contentY + Sc(46) * 0.5f;
+    const float searchX  = contentX + contentW - Sc(36);
+    const ImVec2 searchCenter(searchX + Sc(18), centerY);
+    const ImVec2 breadcrumbCenter(contentX + Sc(20), centerY);
+
     Input click;
-    Tap(click, ImVec2(1050.0f, 167.0f));
+    Tap(click, searchCenter);
     const bool searchOpened = raspody::ui.searchOpen;
     Check(searchOpened, "tapping the search button opens search");
 
@@ -174,7 +190,7 @@ int main()
         Frame(click);
 
     Input back;
-    Tap(back, ImVec2(330.0f, 167.0f));
+    Tap(back, breadcrumbCenter);
 
     Check(raspody::var.subtab.stored == 0, "breadcrumb returns to the first subtab");
 
@@ -183,7 +199,7 @@ int main()
         Frame(back);
     Check(raspody::var.tab.stored == raspody::Tab_Configs, "RequestTab switches to Configs");
 
-    Tap(back, ImVec2(330.0f, 167.0f));
+    Tap(back, breadcrumbCenter);
     for (int i = 0; i < 30; ++i)
         Frame(back);
     Check(raspody::var.tab.stored == raspody::Tab_Visuals,

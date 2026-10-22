@@ -53,6 +53,8 @@ int main()
 
     CHECK(Config.NewFeaturesMenu.TriggerbotRadius == 40,
           "the triggerbot radius default still comes from its initialiser");
+    CHECK(Config.NewFeaturesMenu.TriggerbotDotRay == true,
+          "the dot-ray gate is ON by default (the strict dot decides)");
     CHECK(Config.NewFeaturesMenu.TriggerbotMode == 0 &&
           Config.NewFeaturesMenu.NoSlideFatigue == false,
           "the NewFeatures switches still default off");

@@ -1459,6 +1459,7 @@ namespace NewFeatures
             d.dotRayHonest = honestDotRay = rayViaGame || rayFellBack || rayPlain;
             dotRayDir = camForward;
         }
+        const bool dotRayGate = Config.NewFeaturesMenu.TriggerbotDotRay;
         if (fn_TransformGetForward != nullptr && honestDotRay) {
             bool symbolMissing = false;
             float centreHitDist = -1.0f;
@@ -1505,30 +1506,31 @@ namespace NewFeatures
                 }
                 if (testSq < 0.0f || testSq > limitPx * limitPx) {
                     d.dotRayDeclined++;
-                    return FireBlock::NoEnemyInZone;
+                    if (dotRayGate) return FireBlock::NoEnemyInZone;
+                } else {
+                    d.projKeepFrac = sqrtf(testSq) / limitPx;
+                    out.pawn      = centred;
+                    out.aim       = ap;
+                    out.aimPoint  = ap.valid ? ap.pos : camPos;
+                    out.screenPos = Vector3::zero();
+                    if (ap.valid) w2s(ap.pos, out.screenPos);
+                    out.pxOffset  = bestSq >= 0.0f ? sqrtf(bestSq) : -1.0f;
+                    out.worldDist = ap.valid ? Vector3::Distance(camPos, ap.pos) : centreHitDist;
+                    out.path      = 0;
+                    out.visible   = true;
+                    out.visibilityIdentified = true;
+                    d.lastAimPx       = out.pxOffset;
+                    d.lastWorldDist   = out.worldDist;
+                    d.aimPath         = 0;
+                    d.raysIdentified++;
+                    g_afireLosOk      = true;
+                    d.targets++;
+                    return FireBlock::Fired;
                 }
-                d.projKeepFrac = sqrtf(testSq) / limitPx;
-                out.pawn      = centred;
-                out.aim       = ap;
-                out.aimPoint  = ap.valid ? ap.pos : camPos;
-                out.screenPos = Vector3::zero();
-                if (ap.valid) w2s(ap.pos, out.screenPos);
-                out.pxOffset  = bestSq >= 0.0f ? sqrtf(bestSq) : -1.0f;
-                out.worldDist = ap.valid ? Vector3::Distance(camPos, ap.pos) : centreHitDist;
-                out.path      = 0;
-                out.visible   = true;
-                out.visibilityIdentified = true;
-                d.lastAimPx       = out.pxOffset;
-                d.lastWorldDist   = out.worldDist;
-                d.aimPath         = 0;
-                d.raysIdentified++;
-                g_afireLosOk      = true;
-                d.targets++;
-                return FireBlock::Fired;
             }
         }
 
-        if (fn_TransformGetForward != nullptr && honestDotRay) {
+        if (fn_TransformGetForward != nullptr && honestDotRay && dotRayGate) {
             d.dotRayDecided = true;
             return FireBlock::NoEnemyInZone;
         }

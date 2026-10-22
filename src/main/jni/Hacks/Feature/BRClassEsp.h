@@ -9,8 +9,8 @@ namespace BRClassEspCfg
 {
     constexpr uintptr_t ConfigCtorRva = 0xAB55EC8;
     constexpr uintptr_t GetNameRva = 0xAB56A60;
-    constexpr uintptr_t PrevProfessionChipID = 0x1EC;
-    constexpr uintptr_t ChipSkinID = 0x3F0;
+    constexpr uintptr_t PrevProfessionChipID = 0x1FC;
+    constexpr uintptr_t ChipSkinID = 0x400;
     constexpr uintptr_t ConfigItemID = 0x24;
     constexpr float MaxDist = 120.0f;
 }

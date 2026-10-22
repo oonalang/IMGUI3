@@ -820,6 +820,30 @@ static void testCrosshairAim()
     }
 
     resetWorld();
+    setCrosshair(40.0f, -25.0f, 100.0f);
+    {
+        Config.NewFeaturesMenu.TriggerbotDotRay = false;
+        TriggerTarget out{};
+        FireBlock b = runScanOnCrosshairSetup(out);
+        CHECK(b == FireBlock::Fired && out.path == 1,
+              "X3b with the dot-ray gate OFF the same near miss falls back to the zone scan and fires");
+        CHECK(!g_triggerDiag.dotRayDecided,
+              "X3b ... and the dot's ray no longer decides the shot");
+        Config.NewFeaturesMenu.TriggerbotDotRay = true;
+    }
+
+    resetWorld();
+    setCrosshair(0.0f, 0.0f, 10.0f);
+    {
+        Config.NewFeaturesMenu.TriggerbotDotRay = false;
+        TriggerTarget out{};
+        FireBlock b = runScanOnCrosshairSetup(out);
+        CHECK(b == FireBlock::NoEnemyInZone && !g_triggerDiag.dotRayDecided,
+              "X2b gate OFF still refuses an enemy 20 px outside a 5 px dot (the zone still bounds it)");
+        Config.NewFeaturesMenu.TriggerbotDotRay = true;
+    }
+
+    resetWorld();
     setCrosshair(200.0f, 0.0f, 80.0f);
     {
         TriggerTarget out{};

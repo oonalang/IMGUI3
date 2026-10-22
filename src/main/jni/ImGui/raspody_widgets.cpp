@@ -512,19 +512,18 @@ namespace raspody
         float& hot = Anim(id, 20);
         Ease(hot, (hovered || selected) ? 1.0f : 0.0f, 18.0f);
 
-        const ImVec2 center(pos.x + size.x * 0.5f, pos.y + size.y * 0.5f);
-        const float tile = ImMin(size.x, size.y) * 0.82f;
+        // Hover lifts and grows the tile instead of snapping on.
+        const ImVec2 center(pos.x + size.x * 0.5f, pos.y + size.y * 0.5f - S(1.6f) * hot);
+        const float tile = ImMin(size.x, size.y) * (0.80f + 0.05f * hot);
         const ImVec2 tmin(center.x - tile * 0.5f, center.y - tile * 0.5f);
         const ImVec2 tmax(center.x + tile * 0.5f, center.y + tile * 0.5f);
 
-        if (selected)
-            dl->AddRectFilled(tmin, tmax, Col(clr.widget, 0.34f), S(16));
-        else if (hovered)
-            dl->AddRectFilled(tmin, tmax, Col(clr.widget, 0.18f), S(16));
+        if (hot > 0.01f)
+            dl->AddRectFilled(tmin, tmax, Col(clr.widget, 0.34f * hot), S(16));
 
         const ImU32 iconColor = selected ? Col(clr.white)
                              : hovered ? Col(clr.text3) : Col(clr.text);
-        DrawTabIcon(dl, icon, center, ImMin(size.x, size.y) * 0.50f, iconColor);
+        DrawTabIcon(dl, icon, center, ImMin(size.x, size.y) * (0.50f + 0.02f * hot), iconColor);
 
         if (selected)
         {

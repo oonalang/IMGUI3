@@ -240,6 +240,7 @@ sColorsESPBOT sColorsESPBOT{0};
         int TriggerbotMode = 0;
         int TriggerbotDelay = 0;
         int TriggerbotRadius = 40;
+        bool TriggerbotDotRay = true;
 
         bool NoHitFlinch = false;
         bool NoDrift = false;

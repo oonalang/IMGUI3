@@ -165,7 +165,7 @@ void UpdateAllOffset(){
 
 #define Class_Weapon_m_FireComponents (0x00)
 #define Class_FireComponentArray_m_CurrentComponent (0x00)
-#define Class_WeaponFireComponent_m_ClipAmmoCount (0xB8)
+#define Class_WeaponFireComponent_m_ClipAmmoCount (0xA8)
 #define Class_WeaponFireComponent_m_CarriedAmmoCount (0xAC)
 #define Class_WeaponFireComponent_m_BaseClipAmmoCount (0x00)
 
@@ -174,13 +174,13 @@ void UpdateAllOffset(){
 #define Class_BaseGame_m_World (0x150)
 #define Class_BaseWorld_m_ActorList (0x40)
 
-#define Class_PlayerInfo_m_ProfessionChipID 0x1E8
-#define Class_PlayerInfo_m_PreProfessionChipID 0xC4
-#define Class_PlayerInfo_ChipSkinID 0x3F0
+#define Class_PlayerInfo_m_ProfessionChipID 0x1F8
+#define Class_PlayerInfo_m_PreProfessionChipID 0x1FC
+#define Class_PlayerInfo_ChipSkinID 0x400
 #define Class_BRProfessionChipConfig_ItemID 0x24
 
 #define Class_PlayerInfo_m_VestValue (0x5F8)
-#define Class_PlayerInfo_m_VestMaxValue (0x628)
+#define Class_PlayerInfo_m_VestMaxValue (0x5FC)
 
 #define Class_Physics_Raycast (m_unity + 0x506BEA8)
 

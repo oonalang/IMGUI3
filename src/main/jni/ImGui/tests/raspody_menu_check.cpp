@@ -162,6 +162,7 @@ int main()
         Config.Aim.AimAssistSize = 42.0f;
         Config.ESPMenu.Box = true;
         Config.NewFeaturesMenu.NoHitFlinch = true;
+        Config.NewFeaturesMenu.TriggerbotDotRay = false;
         Config.ExtraMenu.Kinetic = true;
         Config.Crosshair.Size = 7.5f;
 
@@ -170,12 +171,14 @@ int main()
         Config.Aim.AimAssistSize = 0.0f;
         Config.ESPMenu.Box = false;
         Config.NewFeaturesMenu.NoHitFlinch = false;
+        Config.NewFeaturesMenu.TriggerbotDotRay = true;
         Config.ExtraMenu.Kinetic = false;
         Config.Crosshair.Size = 0.0f;
 
         bool ok = LoadConfiguration("host_test");
         if (!ok || Config.Aim.AimAssistSize != 42.0f || !Config.ESPMenu.Box ||
-            !Config.NewFeaturesMenu.NoHitFlinch || !Config.ExtraMenu.Kinetic ||
+            !Config.NewFeaturesMenu.NoHitFlinch || Config.NewFeaturesMenu.TriggerbotDotRay ||
+            !Config.ExtraMenu.Kinetic ||
             Config.Crosshair.Size != 7.5f)
         {
             std::printf("FAIL: config round-trip (ok=%d)\n", (int)ok);

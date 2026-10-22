@@ -94,6 +94,7 @@ void SaveConfiguration(const std::string& filename) {
     config["NewFeatures"]["Triggerbot"] = Config.NewFeaturesMenu.Triggerbot;
     config["NewFeatures"]["TriggerbotMode"] = Config.NewFeaturesMenu.TriggerbotMode;
     config["NewFeatures"]["TriggerbotRadius"] = Config.NewFeaturesMenu.TriggerbotRadius;
+    config["NewFeatures"]["TriggerbotDotRay"] = Config.NewFeaturesMenu.TriggerbotDotRay;
 
     config["NewFeatures"]["TriggerbotDelay"] = Config.NewFeaturesMenu.TriggerbotDelay;
     config["NewFeatures"]["NoCrouch"] = Config.NewFeaturesMenu.NoCrouch;
@@ -195,6 +196,7 @@ bool LoadConfiguration(const std::string& filename) {
         if (config["NewFeatures"].contains("TriggerbotMode")) Config.NewFeaturesMenu.TriggerbotMode = config["NewFeatures"]["TriggerbotMode"].get<int>();
         if (config["NewFeatures"].contains("TriggerbotDelay")) Config.NewFeaturesMenu.TriggerbotDelay = config["NewFeatures"]["TriggerbotDelay"].get<int>();
         if (config["NewFeatures"].contains("TriggerbotRadius")) Config.NewFeaturesMenu.TriggerbotRadius = config["NewFeatures"]["TriggerbotRadius"].get<int>();
+        if (config["NewFeatures"].contains("TriggerbotDotRay")) Config.NewFeaturesMenu.TriggerbotDotRay = config["NewFeatures"]["TriggerbotDotRay"].get<bool>();
         if (config["NewFeatures"].contains("NoHitFlinch")) Config.NewFeaturesMenu.NoHitFlinch = config["NewFeatures"]["NoHitFlinch"].get<bool>();
         if (config["NewFeatures"].contains("NoDrift")) Config.NewFeaturesMenu.NoDrift = config["NewFeatures"]["NoDrift"].get<bool>();
         if (config["NewFeatures"].contains("NoSlideFatigue")) Config.NewFeaturesMenu.NoSlideFatigue = config["NewFeatures"]["NoSlideFatigue"].get<bool>();

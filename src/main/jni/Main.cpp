@@ -1050,6 +1050,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         Config.Crosshair.Color[3] = 0.95f;
         Config.Crosshair.Size = 6.0f;
         Config.NewFeaturesMenu.TriggerbotRadius = 40;
+        Config.NewFeaturesMenu.TriggerbotDotRay = true;
         Config.Aim.FpsLevelUltra1 = 240.0f;
         Config.Aim.AimAssistSize = 0.0f;
         Config.Aim.Cross = 45.0f;
