@@ -125,6 +125,17 @@ namespace NewFeatures
         constexpr uintptr_t Weapon_get_UseGetReadyTime      = 0x50E9F60;
         constexpr uintptr_t Weapon_get_SpringFireGetReady   = 0x50E9F28;
         constexpr uintptr_t Weapon_get_GetReadyTime         = 0x514D2C8;
+
+        // Weapon categories live on Inventory, the base class of Weapon, so the
+        // held weapon can be asked directly. There is no getter for SMG or LMG
+        // in this build; both are full auto and share the "auto" behaviour.
+        constexpr uintptr_t Inventory_IsGun                 = 0xC364D3C;
+        constexpr uintptr_t Inventory_IsAssaultRifle         = 0xC364C74;
+        constexpr uintptr_t Inventory_IsSniper               = 0xC364C94;
+        constexpr uintptr_t Inventory_IsMarksmanRifle        = 0xC364CD4;
+        constexpr uintptr_t Inventory_IsShotGun              = 0xC364CB4;
+        constexpr uintptr_t Inventory_IsPistol               = 0xC364C10;
+        constexpr uintptr_t Inventory_IsLauncher             = 0xC364C54;
     }
 
     inline std::mt19937 rng(std::random_device{}());
@@ -303,6 +314,13 @@ namespace NewFeatures
     inline void *(*fn_WeaponGetAimingTarget)(void *) = nullptr;
     inline float (*fn_WeaponGetAimingTargetDis)(void *) = nullptr;
     inline float (*fn_CameraGetFov)(void *) = nullptr;
+    inline bool  (*fn_InventoryIsGun)(void *) = nullptr;
+    inline bool  (*fn_InventoryIsAssaultRifle)(void *) = nullptr;
+    inline bool  (*fn_InventoryIsSniper)(void *) = nullptr;
+    inline bool  (*fn_InventoryIsMarksmanRifle)(void *) = nullptr;
+    inline bool  (*fn_InventoryIsShotGun)(void *) = nullptr;
+    inline bool  (*fn_InventoryIsPistol)(void *) = nullptr;
+    inline bool  (*fn_InventoryIsLauncher)(void *) = nullptr;
     inline void *(*fn_BaseGameGetTeamPawns)(void *) = nullptr;
     inline bool  (*fn_BaseGameIsPaused)(void *) = nullptr;
     inline bool  (*fn_PawnIsAlive)(void *) = nullptr;
@@ -387,8 +405,10 @@ namespace NewFeatures
         static constexpr float kFriendlyRadius  = 0.35f;
         static constexpr float kSelfExclusion    = 0.15f;
 
-        static constexpr float kCrosshairRayMax = 400.0f;
-        static constexpr float kMaxTravelTime   = 1.20f;
+        // No practical range cap: 1.5 km is past every sightline in the map, so
+        // a distant target is never refused for being distant.
+        static constexpr float kCrosshairRayMax = 1500.0f;
+        static constexpr float kMaxTravelTime   = 3.00f;
         static constexpr float kAssumedSpeed    = 800.0f;
         static constexpr float kMinFireInterval = 0.030f;
 
@@ -460,6 +480,84 @@ namespace NewFeatures
         if (fn_WeaponIsSingleShot != nullptr && fn_WeaponIsSingleShot(weapon)) return FireMode::Single;
 
         return FireMode::Single;
+    }
+
+    // The weapon family, as the game itself reports it. Tap vs hold and the log
+    // panel key off this instead of guessing from the fire interval.
+    enum class WeaponClass : int
+    {
+        Unknown = 0,
+        AssaultRifle,
+        Sniper,
+        Marksman,
+        Shotgun,
+        AutoRifle,      // SMG / LMG: no getter in this build, both are full auto
+        Pistol,
+        Launcher,
+        Melee,
+        Other
+    };
+
+    inline const char *WeaponClassName(WeaponClass c)
+    {
+        switch (c)
+        {
+            case WeaponClass::AssaultRifle: return "AR";
+            case WeaponClass::Sniper:       return "sniper";
+            case WeaponClass::Marksman:     return "marksman";
+            case WeaponClass::Shotgun:      return "shotgun";
+            case WeaponClass::AutoRifle:    return "SMG/LMG";
+            case WeaponClass::Pistol:       return "pistol";
+            case WeaponClass::Launcher:     return "launcher";
+            case WeaponClass::Melee:        return "melee";
+            case WeaponClass::Other:        return "other";
+            default:                        return "unknown";
+        }
+    }
+
+    inline bool A_FireInventoryIs(bool (*fn)(void *), void *weapon)
+    {
+        return fn != nullptr && weapon != nullptr && fn(weapon);
+    }
+
+    inline WeaponClass GetWeaponClass(void *weapon)
+    {
+        if (!Tools::IsPtrValid(weapon)) return WeaponClass::Unknown;
+        if (A_FireInventoryIs(fn_InventoryIsSniper, weapon))        return WeaponClass::Sniper;
+        if (A_FireInventoryIs(fn_InventoryIsMarksmanRifle, weapon)) return WeaponClass::Marksman;
+        if (A_FireInventoryIs(fn_InventoryIsShotGun, weapon))       return WeaponClass::Shotgun;
+        if (A_FireInventoryIs(fn_InventoryIsPistol, weapon))        return WeaponClass::Pistol;
+        if (A_FireInventoryIs(fn_InventoryIsLauncher, weapon))      return WeaponClass::Launcher;
+        if (A_FireInventoryIs(fn_InventoryIsAssaultRifle, weapon))  return WeaponClass::AssaultRifle;
+        if (fn_InventoryIsGun == nullptr) return WeaponClass::Unknown;
+        return A_FireInventoryIs(fn_InventoryIsGun, weapon) ? WeaponClass::AutoRifle
+                                                           : WeaponClass::Other;
+    }
+
+    // A sniper, marksman, shotgun or pistol is one press per shot even when the
+    // game reports auto fire: holding those triggers is what turns a semi
+    // weapon into a fire-rate glitch the server can see.
+    inline bool A_FireClassHolds(WeaponClass cls)
+    {
+        switch (cls)
+        {
+            case WeaponClass::Sniper:
+            case WeaponClass::Marksman:
+            case WeaponClass::Shotgun:
+            case WeaponClass::Pistol:
+            case WeaponClass::Launcher:
+            case WeaponClass::Melee:
+            case WeaponClass::Other:
+                return false;
+            default:
+                return true;      // AR / SMG-LMG: follow the weapon's fire mode
+        }
+    }
+
+    inline bool A_FireShouldHoldTrigger(void *weapon, FireMode mode)
+    {
+        if (!A_FireClassHolds(GetWeaponClass(weapon))) return false;
+        return mode == FireMode::Auto || mode == FireMode::Burst;
     }
 
     inline Vector3 GetPawnVelocity(void *pawn)
@@ -553,7 +651,12 @@ namespace NewFeatures
     {
         if (!Tools::IsPtrValid(weapon)) return false;
         if (fn_WeaponAmmoCanFire != nullptr && !fn_WeaponAmmoCanFire(weapon)) return false;
-        if (fn_WeaponGetClipAmmoCount != nullptr && fn_WeaponGetClipAmmoCount(weapon) <= 0) return false;
+
+        // A weapon that is not a gun (throwable, launcher, melee) has no clip,
+        // and its clip count reads 0 - that must not read as "empty".
+        const bool gun = (fn_InventoryIsGun == nullptr) || fn_InventoryIsGun(weapon);
+        if (gun && fn_WeaponGetClipAmmoCount != nullptr && fn_WeaponGetClipAmmoCount(weapon) <= 0)
+            return false;
         return true;
     }
 
@@ -951,8 +1054,71 @@ namespace NewFeatures
         bool   paceWaiting;
 
         int    reasserts;
+
+        float  zonePx;
+        int    weaponClass;
+        bool   holdTrigger;
+        bool   reactionWaiting;
+        float  reactionSeconds;
     };
     inline TriggerbotDiag g_triggerDiag{};
+
+    // Reaction delay. A press on the very tick the target entered the zone is
+    // the one timing a human cannot produce, and the simplest thing a server
+    // can flag. Each engagement rolls its own delay; 0 ms on the slider keeps
+    // the old instant trigger.
+    inline void   *g_afireSeenTarget   = nullptr;
+    inline double  g_afireSeenStamp    = -1000.0;
+    inline double  g_afireReactionRoll = 0.0;
+    constexpr double kFireSeenGraceSeconds = 0.25;
+
+    inline double A_FireRollReaction()
+    {
+        int ms = Config.NewFeaturesMenu.TriggerbotDelay;
+        if (ms <= 0) return 0.0;
+        if (ms > 500) ms = 500;
+
+        // +-12% around the slider, plus 8..28 ms of scatter, so two engagements
+        // never press on the same millisecond.
+        const double base    = (double)ms * 0.001;
+        const double scale   = 0.88 + (double)(rng() % 250) / 1000.0;
+        const double scatter = 0.008 + (double)(rng() % 2000) / 100000.0;
+        return base * scale + scatter;
+    }
+
+    struct WeaponTraits
+    {
+        WeaponClass cls;
+        FireMode    mode;
+        bool        holds;
+    };
+
+    // Classifying costs up to seven managed calls, and a weapon does not turn
+    // into a different weapon, so the answer is remembered per held weapon.
+    inline WeaponClass g_afireClassCache  = WeaponClass::Unknown;
+    inline void       *g_afireTraitWeapon = nullptr;
+    inline double      g_afireTraitStamp  = -1000.0;
+    constexpr double   kWeaponTraitSeconds = 0.50;
+
+    inline WeaponTraits A_FireWeaponTraits(void *weapon)
+    {
+        WeaponTraits t{ WeaponClass::Unknown, FireMode::Unknown, false };
+        if (!Tools::IsPtrValid(weapon)) return t;
+
+        const double now = A_FireNow();
+        if (g_afireTraitWeapon != weapon || (now - g_afireTraitStamp) > kWeaponTraitSeconds) {
+            g_afireClassCache  = GetWeaponClass(weapon);
+            g_afireTraitWeapon = weapon;
+            g_afireTraitStamp  = now;
+        }
+
+        // The fire mode can change under the same weapon (fire selector,
+        // attachment), so it is asked every scan - one managed call.
+        t.cls   = g_afireClassCache;
+        t.mode  = GetWeaponFireMode(weapon);
+        t.holds = A_FireShouldHoldTrigger(weapon, t.mode);
+        return t;
+    }
 
     inline void *(*fn_GameGetAttackableColliderMap)() = nullptr;
     inline void *(*fn_AtkMapGetTargetForCollider)(void *, void *) = nullptr;
@@ -1036,6 +1202,27 @@ namespace NewFeatures
         if (!(radius > 0.0f)) radius = 3.0f;
         const float w = (float)get_width();
         if (w > 0.0f && radius > w * 0.5f) radius = w * 0.5f;
+        return radius;
+    }
+
+    // How far off the aim point, in screen pixels, the crosshair may be and the
+    // triggerbot still fires. The crosshair dot used to be the whole zone, so a
+    // small dot refused shots that were a few pixels off the body. The trigger
+    // size setting (px at 1080p, scaled to the frame) is a floor now, and each
+    // candidate is additionally allowed its own projected body width.
+    inline float A_FireZoneRadiusPx()
+    {
+        float radius = A_FireCrosshairRadiusPx();
+
+        const int h = get_height();
+        if (h > 0) {
+            float configured = (float)Config.NewFeaturesMenu.TriggerbotRadius * (float)h / 1080.0f;
+            if (configured > radius) radius = configured;
+        }
+
+        const float w = (float)get_width();
+        if (w > 0.0f && radius > w * 0.5f) radius = w * 0.5f;
+        if (!(radius > 1.0f)) radius = 1.0f;
         return radius;
     }
 
@@ -1524,9 +1711,9 @@ namespace NewFeatures
         CrosshairCentrePx(cx, cy);
         d.crosshairCx = cx;
         d.crosshairCy = cy;
-        const float radius = A_FireCrosshairRadiusPx();
-        const float radiusSq = radius * radius;
+        const float radius = A_FireZoneRadiusPx();
         d.radiusPx = radius;
+        d.zonePx   = radius;
 
         const float focalPx = A_FireFocalPx();
         d.focalPx = focalPx;
@@ -1584,9 +1771,7 @@ namespace NewFeatures
                     }
                 }
                 if (limitPx < 0.0f) {
-                    float r = A_FireCrosshairRadiusPx();
-                    if (!(r > 4.0f)) r = 4.0f;
-                    limitPx = r + 2.0f;
+                    limitPx = radius + 2.0f;
                     // His body could not be projected (point blank, feet behind
                     // the near plane, head bone only). The dot's own ray landed
                     // on him, so bound the dot by his real half width at the hit
@@ -1664,7 +1849,9 @@ namespace NewFeatures
                 d2 = dx * dx + dy * dy;
             }
 
-            if (d2 >= 0.0f && d2 > radiusSq && ap.headOk && ap.feetOk) {
+            const float allowSq = radius * radius;
+
+            if (d2 >= 0.0f && d2 > allowSq && ap.headOk && ap.feetOk) {
                 Vector3 scHead = Vector3::zero();
                 Vector3 scFeet = Vector3::zero();
                 if (w2s(ap.head, scHead) && w2s(ap.feet, scFeet) &&
@@ -1677,7 +1864,7 @@ namespace NewFeatures
             }
             if (d2 < 0.0f) continue;
             if (d.closestPx < 0.0f || d2 < d.closestPx) d.closestPx = d2;
-            if (d2 > radiusSq) continue;
+            if (d2 > allowSq) continue;
             const float pxOffset = sqrtf(d2);
             if (n >= MAX_CANDIDATES) continue;
 
@@ -1898,6 +2085,16 @@ namespace NewFeatures
         d.ammoOk    = A_FireWeaponHasAmmo(held);
         d.canFire   = A_FireWeaponCanFire(held);
 
+        const WeaponTraits traits = A_FireWeaponTraits((void *)held);
+        d.weaponClass = (int)traits.cls;
+        d.holdTrigger = traits.holds;
+
+        // No ammo, no press. StartFire on an empty clip only plays the dry fire
+        // on the client - the server sees nothing - and the trigger then kept
+        // pressing at the pace floor. Never ask the game to fire a shot it
+        // cannot make.
+        if (!d.ammoOk) return FireBlock::NoAmmo;
+
         const ScopeSettle settle = A_FireScopingTransition((void *)held, localPawn);
         if (settle.settling) return FireBlock::AdsTransition;
 
@@ -2036,6 +2233,13 @@ namespace NewFeatures
 
         if (block != FireBlock::Fired || !Tools::IsPtrValid((void *)target.pawn)) {
             A_FireReleaseTriggerDeferred(nullptr);
+            // The engagement is over; a fresh one rolls a fresh reaction. The
+            // grace keeps a target that flickers in and out of the zone from
+            // restarting the timer on every tick.
+            if ((now - g_afireSeenStamp) > kFireSeenGraceSeconds) {
+                g_afireSeenTarget   = nullptr;
+                g_afireReactionRoll = 0.0;
+            }
             s_dbgTriggerState = 0;
             g_afireInTick = false;
             return;
@@ -2053,11 +2257,32 @@ namespace NewFeatures
         if (g_afireHoldingFire && g_afireFiringOn != (void *)held)
             A_FireReleaseTriggerDeferred(nullptr);
 
-        const FireMode mode     = GetWeaponFireMode(held);
-        const float    interval = A_FireWeaponInterval(held);
+        const WeaponTraits traits   = A_FireWeaponTraits((void *)held);
+        const float        interval = A_FireWeaponInterval(held);
         d.lastFireInterval = interval;
+        d.weaponClass      = (int)traits.cls;
+        d.holdTrigger      = traits.holds;
 
-        const bool edgePress = (mode != FireMode::Auto && mode != FireMode::Burst);
+        // Human reaction: a fresh target is never pressed on the tick it
+        // entered the zone. The roll is per engagement, and 0 ms on the slider
+        // keeps the old instant trigger.
+        if (g_afireSeenTarget != (void *)target.pawn) {
+            g_afireSeenTarget   = (void *)target.pawn;
+            g_afireSeenStamp    = now;
+            g_afireReactionRoll = A_FireRollReaction();
+        }
+        d.reactionSeconds = (float)g_afireReactionRoll;
+        d.reactionWaiting = false;
+        if (g_afireReactionRoll > 0.0 &&
+            (now - g_afireSeenStamp) < g_afireReactionRoll) {
+            if (g_afireHoldingFire) A_FireReleaseTriggerDeferred(nullptr);
+            d.reactionWaiting = true;
+            s_dbgTriggerState = 1;
+            g_afireInTick = false;
+            return;
+        }
+
+        const bool edgePress = !traits.holds;
 
         if (g_afireHoldingFire && g_afireFiringOn == (void *)held &&
             g_afireTargetPawn == (void *)target.pawn) {
@@ -2084,7 +2309,14 @@ namespace NewFeatures
             if (g_afireTargetPawn != (void *)target.pawn ||
                 g_afireLastPressWeapon != (void *)held)
                 g_afireLastPressTime = -1000.0;
-            const float  pace    = A_FireRepressPaceSeconds(interval);
+            float pace = A_FireRepressPaceSeconds(interval);
+            // Human trigger pulls are not a metronome. With a reaction delay set
+            // the repress pace is spread a few percent so the press intervals
+            // are never a constant.
+            if (Config.NewFeaturesMenu.TriggerbotDelay > 0) {
+                const float jitter = 0.94f + (float)(rng() % 130) * 0.001f;   // 0.94..1.07
+                pace *= jitter;
+            }
             const double since   = now - g_afireLastPressTime;
             const bool   tooSoon = since < (double)pace;
 
@@ -2125,9 +2357,10 @@ namespace NewFeatures
         d.fires++;
         s_dbgTriggerState = 2;
 
-        LOGI("[NewFeatures] triggerbot: StartFire(held=%p) target=%p path=%s aim=%.1fpx "
-             "hit=%.3fm ident=%d dist=%.3f travel=%.4f",
+        LOGI("[NewFeatures] triggerbot: StartFire(held=%p) target=%p class=%s %s "
+             "path=%s aim=%.1fpx hit=%.3fm ident=%d dist=%.3f travel=%.4f",
              (void *)held, (void *)target.pawn,
+             WeaponClassName(traits.cls), traits.holds ? "hold" : "tap",
              target.path == 0 ? "centre-ray" : "zone",
              target.pxOffset,
              d.lastLosHitDist, (int)target.visibilityIdentified,
@@ -2166,6 +2399,13 @@ namespace NewFeatures
         g_afireAdsNegWeapon = nullptr;
         g_afireAdsNegComp   = nullptr;
         g_afireAdsNegValid  = false;
+
+        g_afireSeenTarget   = nullptr;
+        g_afireSeenStamp    = -1000.0;
+        g_afireReactionRoll = 0.0;
+        g_afireTraitWeapon  = nullptr;
+        g_afireTraitStamp   = -1000.0;
+        g_afireClassCache   = WeaponClass::Unknown;
     }
 
     inline void UpdateNoSprintFireDelayWeapon(void *localPawnInstance);
@@ -2384,6 +2624,26 @@ namespace NewFeatures
         auto clipAddr = UnityRva(RVA::Weapon_get_ClipAmmoCount);
         if (Tools::IsPtrValid(clipAddr))
             fn_WeaponGetClipAmmoCount = (int (*)(void *))clipAddr;
+
+        struct InventoryFn { uintptr_t rva; bool (**slot)(void *); const char *name; };
+        const InventoryFn inventoryFns[] = {
+            { RVA::Inventory_IsGun,           &fn_InventoryIsGun,           "Inventory::IsGun"           },
+            { RVA::Inventory_IsAssaultRifle,  &fn_InventoryIsAssaultRifle,  "Inventory::IsAssaultRifle"  },
+            { RVA::Inventory_IsSniper,        &fn_InventoryIsSniper,        "Inventory::IsSniper"        },
+            { RVA::Inventory_IsMarksmanRifle, &fn_InventoryIsMarksmanRifle, "Inventory::IsMarksmanRifle" },
+            { RVA::Inventory_IsShotGun,       &fn_InventoryIsShotGun,       "Inventory::IsShotGun"       },
+            { RVA::Inventory_IsPistol,        &fn_InventoryIsPistol,        "Inventory::IsPistol"        },
+            { RVA::Inventory_IsLauncher,      &fn_InventoryIsLauncher,      "Inventory::IsLauncher"      },
+        };
+        for (const InventoryFn &f : inventoryFns) {
+            void *addr = UnityRva(f.rva);
+            if (Tools::IsPtrValid(addr))
+                *f.slot = (bool (*)(void *))addr;
+            else
+                LOGE("[NewFeatures] triggerbot: %s 0x%llX did not resolve - weapon"
+                     " classification falls back to the fire mode",
+                     f.name, (unsigned long long)f.rva);
+        }
 
         auto canFireAddr = UnityRva(RVA::Weapon_CanFire);
         if (Tools::IsPtrValid(canFireAddr))

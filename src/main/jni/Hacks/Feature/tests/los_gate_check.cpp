@@ -281,6 +281,20 @@ static void resetWorld()
     g_hitOutSequence.clear();
     g_hitOutSeqIndex = 0;
     g_triggerDiag = TriggerbotDiag{};
+
+    // The harness is the "instant trigger" contract: reaction delay 0, and the
+    // size setting at its shipped default. Tests that want the human delay set
+    // it themselves.
+    Config.NewFeaturesMenu.TriggerbotDelay  = 0;
+    Config.NewFeaturesMenu.TriggerbotRadius = 40;
+    Config.NewFeaturesMenu.TriggerbotDotRay = true;
+
+    NewFeatures::g_afireSeenTarget   = nullptr;
+    NewFeatures::g_afireSeenStamp    = -1000.0;
+    NewFeatures::g_afireReactionRoll = 0.0;
+    NewFeatures::g_afireTraitWeapon  = nullptr;
+    NewFeatures::g_afireTraitStamp   = -1000.0;
+    NewFeatures::g_afireClassCache   = NewFeatures::WeaponClass::Unknown;
 }
 
 static void installFns()
@@ -814,11 +828,12 @@ static void testCrosshairAim()
     }
 
     resetWorld();
+    Config.NewFeaturesMenu.TriggerbotRadius = 0;      // dot only, no size floor
     setCrosshair(0.0f, 0.0f, 10.0f);
     {
         TriggerTarget out{};
         FireBlock b = runScanOnCrosshairSetup(out);
-        CHECK(g_triggerDiag.radiusPx == 5.0f, "X2 a 10 px dot is a 5 px zone");
+        CHECK(g_triggerDiag.radiusPx == 5.0f, "X2 a 10 px dot is a 5 px zone when the trigger size is 0");
         CHECK(b == FireBlock::NoEnemyInZone,
               "X2 the same enemy 20 px off the dot is now OUTSIDE it");
         CHECK(b != FireBlock::Fired,
@@ -863,6 +878,7 @@ static void testCrosshairAim()
     }
 
     resetWorld();
+    Config.NewFeaturesMenu.TriggerbotRadius = 0;
     setCrosshair(0.0f, 0.0f, 10.0f);
     {
         Config.NewFeaturesMenu.TriggerbotDotRay = false;
@@ -870,6 +886,22 @@ static void testCrosshairAim()
         FireBlock b = runScanOnCrosshairSetup(out);
         CHECK(b == FireBlock::NoEnemyInZone && !g_triggerDiag.dotRayDecided,
               "X2b gate OFF still refuses an enemy 20 px outside a 5 px dot (the zone still bounds it)");
+        Config.NewFeaturesMenu.TriggerbotDotRay = true;
+    }
+
+    // X2c: the trigger size setting is a floor, so a small dot is no longer a
+    // small trigger - the "sometimes it does not shoot" case.
+    resetWorld();
+    Config.NewFeaturesMenu.TriggerbotRadius = 40;
+    setCrosshair(0.0f, 0.0f, 10.0f);
+    {
+        Config.NewFeaturesMenu.TriggerbotDotRay = false;
+        TriggerTarget out{};
+        FireBlock b = runScanOnCrosshairSetup(out);
+        CHECK(g_triggerDiag.radiusPx > 30.0f,
+              "X2c the trigger size raises the zone above a 5 px dot");
+        CHECK(b == FireBlock::Fired,
+              "X2c an enemy 20 px off a 5 px dot now fires (was refused)");
         Config.NewFeaturesMenu.TriggerbotDotRay = true;
     }
 
@@ -1916,6 +1948,217 @@ static void testAdsGateCost()
     resetWorld();
 }
 
+// --- ammo, weapon class, trigger size, human reaction -----------------------
+static int  g_clipAmmo     = 12;
+static bool g_ammoCanFire  = true;
+static bool g_isGun        = true;
+static bool g_isSniper     = false;
+static bool g_isMarksman   = false;
+static bool g_isShotgun    = false;
+static bool g_isPistol     = false;
+static bool g_isAR         = false;
+static bool g_isLauncher   = false;
+
+static bool fake_ammoCanFire(void *) { return g_ammoCanFire; }
+static int  fake_clipAmmo(void *)    { return g_clipAmmo; }
+static bool fake_invIsGun(void *)        { return g_isGun; }
+static bool fake_invIsSniper(void *)     { return g_isSniper; }
+static bool fake_invIsMarksman(void *)   { return g_isMarksman; }
+static bool fake_invIsShotgun(void *)    { return g_isShotgun; }
+static bool fake_invIsPistol(void *)     { return g_isPistol; }
+static bool fake_invIsAR(void *)         { return g_isAR; }
+static bool fake_invIsLauncher(void *)   { return g_isLauncher; }
+
+static void resetWeaponKind()
+{
+    g_isGun = true; g_isSniper = g_isMarksman = g_isShotgun = false;
+    g_isPistol = g_isAR = g_isLauncher = false;
+    g_clipAmmo = 12; g_ammoCanFire = true;
+}
+
+static void testAmmoClassAndHumanisation()
+{
+    api12 = (uintptr_t)&fake_localPawnCounted;
+    api22 = (uintptr_t)&fake_currentWeapon;
+    fn_PawnIsAiming                  = nullptr;
+    fn_PawnGetIsFiring               = nullptr;
+    fn_WeaponGetCurrentFireComponent = nullptr;
+    fn_FireComponentGetIsAiming      = nullptr;
+    fn_WeaponRealFireInterval        = fake_realInterval;
+    fn_WeaponCanFire                 = fake_canFire;
+    fn_Weapon_StartFire              = fake_startFire;
+    fn_Weapon_StopFire               = fake_stopFire;
+    fn_WeaponIsAutoFire              = fake_autoFire;
+    fn_WeaponAmmoCanFire             = fake_ammoCanFire;
+    fn_WeaponGetClipAmmoCount        = fake_clipAmmo;
+    fn_InventoryIsGun                = fake_invIsGun;
+    fn_InventoryIsSniper             = fake_invIsSniper;
+    fn_InventoryIsMarksmanRifle      = fake_invIsMarksman;
+    fn_InventoryIsShotGun            = fake_invIsShotgun;
+    fn_InventoryIsPistol             = fake_invIsPistol;
+    fn_InventoryIsAssaultRifle       = fake_invIsAR;
+    fn_InventoryIsLauncher           = fake_invIsLauncher;
+
+    Config.NewFeaturesMenu.Triggerbot     = true;
+    Config.NewFeaturesMenu.TriggerbotMode = 0;
+
+    // A: an empty clip is never fired.
+    resetWeaponKind();
+    resetWorld();
+    armFiringWorld();
+    resetLocalPawnCache();
+    g_triggerDiag = TriggerbotDiag{};
+    g_startFireCalls = g_stopFireCalls = 0;
+    g_afireLastPressTime   = -1000.0;
+    g_afireLastPressWeapon = nullptr;
+    g_canFireValue = true;
+
+    g_clipAmmo = 0;
+    {
+        TriggerTarget out{};
+        CHECK(A_FireShouldFire(out) == FireBlock::NoAmmo,
+              "A1 an empty clip is refused as NoAmmo");
+        openTickWindow();
+        A_FireTick(nullptr);
+        CHECK(g_startFireCalls == 0, "A1 ... and StartFire is never called");
+        CHECK(g_triggerDiag.blockCount[(int)FireBlock::NoAmmo] >= 1,
+              "A1 ... and the panel shows 'no ammo'");
+    }
+
+    g_clipAmmo = 12;
+    {
+        TriggerTarget out{};
+        CHECK(A_FireShouldFire(out) == FireBlock::Fired, "A1b ammo in the clip -> fires");
+    }
+
+    g_ammoCanFire = false;
+    {
+        TriggerTarget out{};
+        CHECK(A_FireShouldFire(out) == FireBlock::NoAmmo,
+              "A2 Weapon.AmmoCanFire() false is also no shot");
+    }
+    g_ammoCanFire = true;
+
+    // A throwable has no clip; a zero clip count must not read as "empty".
+    g_isGun = false; g_clipAmmo = 0;
+    CHECK(A_FireWeaponHasAmmo((void *)g_weaponObj.b),
+          "A3 a weapon that is not a gun is not treated as out of ammo");
+    resetWeaponKind();
+
+    // B: the weapon family decides tap vs hold.
+    void *w = (void *)g_weaponObj.b;
+    g_isAR = true;
+    CHECK(GetWeaponClass(w) == WeaponClass::AssaultRifle, "B1 an AR is classified as AR");
+    CHECK(A_FireShouldHoldTrigger(w, FireMode::Auto), "B1 ... and full auto is held");
+    CHECK(!A_FireShouldHoldTrigger(w, FireMode::Single), "B1 ... while a semi AR taps");
+
+    g_isAR = false; g_isSniper = true;
+    CHECK(GetWeaponClass(w) == WeaponClass::Sniper, "B2 a sniper is classified as sniper");
+    CHECK(!A_FireShouldHoldTrigger(w, FireMode::Auto),
+          "B2 ... and taps even when the game reports auto fire");
+
+    g_isSniper = false; g_isMarksman = true;
+    CHECK(GetWeaponClass(w) == WeaponClass::Marksman, "B3 marksman is classified as marksman");
+    CHECK(!A_FireShouldHoldTrigger(w, FireMode::Auto), "B3 ... and taps");
+
+    g_isMarksman = false; g_isShotgun = true;
+    CHECK(GetWeaponClass(w) == WeaponClass::Shotgun, "B4 shotgun is classified as shotgun");
+    CHECK(!A_FireShouldHoldTrigger(w, FireMode::Auto), "B4 ... and taps");
+
+    g_isShotgun = false; g_isPistol = true;
+    CHECK(GetWeaponClass(w) == WeaponClass::Pistol, "B5 pistol is classified as pistol");
+    CHECK(!A_FireShouldHoldTrigger(w, FireMode::Auto), "B5 ... and taps");
+
+    g_isPistol = false; g_isLauncher = true;
+    CHECK(GetWeaponClass(w) == WeaponClass::Launcher, "B6 launcher is classified as launcher");
+    CHECK(!A_FireShouldHoldTrigger(w, FireMode::Auto), "B6 ... and never holds");
+
+    // No getter matched: SMG/LMG and anything else that is a gun.
+    g_isLauncher = false;
+    CHECK(GetWeaponClass(w) == WeaponClass::AutoRifle, "B7 a plain gun is the SMG/LMG bucket");
+    CHECK(A_FireShouldHoldTrigger(w, FireMode::Auto), "B7 ... which holds at full auto");
+    CHECK(!A_FireShouldHoldTrigger(w, FireMode::Burst) == false, "B7b a burst is held too");
+
+    // Classification missing entirely: fall back to the fire mode.
+    fn_InventoryIsGun = fn_InventoryIsSniper = fn_InventoryIsMarksmanRifle = nullptr;
+    fn_InventoryIsShotGun = fn_InventoryIsPistol = fn_InventoryIsAssaultRifle = nullptr;
+    fn_InventoryIsLauncher = nullptr;
+    CHECK(GetWeaponClass(w) == WeaponClass::Unknown, "B8 no getters -> Unknown class");
+    CHECK(A_FireShouldHoldTrigger(w, FireMode::Auto), "B8 ... full auto still holds");
+    CHECK(!A_FireShouldHoldTrigger(w, FireMode::Single), "B8 ... single still taps");
+    fn_InventoryIsGun                = fake_invIsGun;
+    fn_InventoryIsSniper             = fake_invIsSniper;
+    fn_InventoryIsMarksmanRifle      = fake_invIsMarksman;
+    fn_InventoryIsShotGun            = fake_invIsShotgun;
+    fn_InventoryIsPistol             = fake_invIsPistol;
+    fn_InventoryIsAssaultRifle       = fake_invIsAR;
+    fn_InventoryIsLauncher           = fake_invIsLauncher;
+
+    // C: the reaction roll.
+    Config.NewFeaturesMenu.TriggerbotDelay = 0;
+    CHECK(A_FireRollReaction() == 0.0, "C1 a 0 ms slider keeps the instant trigger");
+
+    Config.NewFeaturesMenu.TriggerbotDelay = 120;
+    const double first = A_FireRollReaction();
+    bool varied = false;
+    for (int i = 0; i < 40; i++) {
+        const double r = A_FireRollReaction();
+        if (std::fabs(r - first) > 1e-6) varied = true;
+    }
+    CHECK(first > 0.09 && first < 0.17, "C2 a 120 ms slider rolls about 90..170 ms");
+    CHECK(varied, "C2 ... and every engagement rolls its own number");
+    Config.NewFeaturesMenu.TriggerbotDelay = 500;
+    CHECK(A_FireRollReaction() < 0.60, "C3 the 500 ms top of the slider stays under 600 ms");
+
+    // D: the tick honours it - no press on the tick the target appears.
+    resetWeaponKind();
+    resetWorld();
+    armFiringWorld();
+    resetLocalPawnCache();
+    Config.NewFeaturesMenu.Triggerbot     = true;
+    Config.NewFeaturesMenu.TriggerbotMode = 0;
+    Config.NewFeaturesMenu.TriggerbotDelay = 150;
+    g_canFireValue = true;
+    g_startFireCalls = g_stopFireCalls = 0;
+    g_afireHoldingFire = false;
+    g_afireFiringOn = nullptr;
+    g_afireLastPressTime = -1000.0;
+    g_afireLastPressWeapon = nullptr;
+
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(g_startFireCalls == 0, "D1 the tick the target appears does not press");
+    CHECK(g_triggerDiag.reactionWaiting, "D1 ... and the panel says it is still reacting");
+
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(g_startFireCalls == 0, "D2 a second scan inside the reaction still does not press");
+
+    g_afireSeenStamp -= 1.0;      // the reaction has elapsed
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(g_startFireCalls == 1, "D3 once it elapses the press goes out");
+
+    // E: the trigger size floor and the range cap.
+    resetWorld();
+    Config.NewFeaturesMenu.TriggerbotRadius = 40;
+    Config.Crosshair.Size = 10.0f;
+    CHECK(A_FireZoneRadiusPx() > 30.0f,
+          "E1 the trigger size raises a 5 px dot to the configured size");
+    Config.NewFeaturesMenu.TriggerbotRadius = 0;
+    CHECK(A_FireZoneRadiusPx() == 5.0f, "E2 trigger size 0 leaves the dot as the zone");
+
+    resetWorld();
+    Config.NewFeaturesMenu.TriggerbotRadius = 40;
+    setCrosshair(0.0f, 0.0f, 80.0f);
+    {
+        TriggerTarget out{};
+        runScanOnCrosshairSetup(out, true);
+        CHECK(g_lastRayAllMax > 1000.0f,
+              "E3 the crosshair ray reaches past the old 400 m cap");
+    }
+}
+
 int main()
 {
     installFns();
@@ -1937,6 +2180,7 @@ int main()
     testDotRayStepPastSelf();
     testAdsGateCost();
     testPressChurn();
+    testAmmoClassAndHumanisation();
 
     if (g_failures == 0) {
         printf("\nOK: all LOS gate checks passed\n");

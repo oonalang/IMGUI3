@@ -247,7 +247,10 @@ sColorsESPBOT sColorsESPBOT{0};
         bool NoCrouch = false;
         bool Triggerbot = false;
         int TriggerbotMode = 0;
-        int TriggerbotDelay = 0;
+        // Human reaction time before the trigger is pressed, in ms. 0 keeps
+        // the instant trigger; the default is a plausible human reaction so a
+        // press never lands on the tick the target appeared.
+        int TriggerbotDelay = 120;
         int TriggerbotRadius = 40;
         bool TriggerbotDotRay = true;
 

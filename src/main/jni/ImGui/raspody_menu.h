@@ -380,16 +380,18 @@ namespace raspody
                          &Config.NewFeaturesMenu.Triggerbot);
                 Dropdown("Mode", "Always, only while aiming, or only while firing.",
                          &Config.NewFeaturesMenu.TriggerbotMode, triggerModes, IM_ARRAYSIZE(triggerModes));
-                SliderInt("Reaction delay", "Humanised delay before a shot.",
+                SliderInt("Reaction delay", "Humanised delay before a shot, jittered per engagement. 0 = instant.",
                           &Config.NewFeaturesMenu.TriggerbotDelay, 0, 500, "%.0f ms");
+                SliderInt("Trigger size", "How far off the target the crosshair may be, in pixels at 1080p.",
+                          &Config.NewFeaturesMenu.TriggerbotRadius, 0, 200, "%.0f px");
                 Checkbox("Dot-ray gate", "Only fire when the shot ray through the crosshair dot itself lands on the enemy.",
                          &Config.NewFeaturesMenu.TriggerbotDotRay);
             });
 
             AddPageCard(p, 1, "Trigger zone", [&] {
-                InfoRow("Trigger point", "Crosshair dot");
+                InfoRow("Trigger point", "Crosshair dot + body width");
                 InfoRow("Dot state", Config.Crosshair.Enabled ? "Enabled" : "Disabled");
-                ParagraphRow("The dot's radius is the triggerbot's zone. Size, opacity and offset are on the Crosshair page. With Dot-ray gate off, the zone alone decides and a shot can land beside the dot.");
+                ParagraphRow("The trigger zone is the crosshair dot or the trigger size, whichever is bigger, plus the target's own body width at range. With Dot-ray gate off, the zone alone decides and a shot can land beside the dot.");
                 if (Selectable("Open crosshair settings", false))
                 {
                     if (var.tab.stored != Tab_Scripts)
