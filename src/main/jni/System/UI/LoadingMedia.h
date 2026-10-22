@@ -11,6 +11,8 @@
 
 #if defined(__ANDROID__)
 #include <jni.h>
+#include <pthread.h>
+#include <unistd.h>
 #include <GLES3/gl3.h>
 #include <GLES2/gl2ext.h>
 extern JavaVM* jvm;
@@ -48,6 +50,15 @@ namespace ui_media
     inline int         g_videoH    = 0;
     inline bool        g_videoLive = false;
     inline bool        g_audioLive = false;
+
+#if !defined(__ANDROID__)
+    // Host builds only. A test can pretend a video is playing so the loader can
+    // be checked with one - the loader has to keep painting its field
+    // underneath the video either way.
+    inline ImTextureID g_hostVideoTex = nullptr;
+    inline int         g_hostVideoW   = 0;
+    inline int         g_hostVideoH   = 0;
+#endif
 
     namespace detail
     {
@@ -140,10 +151,38 @@ namespace ui_media
     inline int    g_targetH      = 0;
     inline float  g_matrix[16]   = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 
-    inline jobject g_videoPlayer    = nullptr;
-    inline jobject g_surface       = nullptr;
+    // The video is only ever shown scaled down to the screen, so there is no
+    // reason to hold a 4K copy of it. A 3840x2160 RGBA8 target is 33 MB on its
+    // own; on a mid-range phone that allocation fails, and the failed texture
+    // was then drawn fullscreen - that was the black screen.
+    static constexpr int kMaxVideoTexW = 1920;
+    static constexpr int kMaxVideoTexH = 1080;
+
     inline jobject g_surfaceTexture = nullptr;
     inline jobject g_audioPlayer   = nullptr;
+
+    // Set once the video has actually been drawn into the target texture. Until
+    // then the texture holds nothing and must not be shown: drawing it is what
+    // turned the screen black.
+    inline bool g_targetReady = false;
+
+    // The audio player is prepared on its own thread too: prepare() blocks,
+    // and the loader starts the sound from the render thread.
+    inline pthread_t    g_audioWorker  = 0;
+    inline volatile int g_audioState   = 0;      // 0 idle, 1 busy, 2 playing
+    inline volatile int g_audioStop    = 0;
+
+    // The MediaPlayer lives on its own thread. prepare() blocks for as long as
+    // it takes to read the file, and it used to run on the game's render thread:
+    // the game stopped presenting frames for seconds at the exact moment the
+    // loading screen appeared, which is both the freeze and the crash.
+    inline jobject      g_videoPlayer   = nullptr;   // owned by the worker thread
+    inline pthread_t    g_worker        = 0;
+    inline volatile int g_workerState   = 0;         // 0 idle, 1 preparing, 2 playing, 3 dead
+    inline volatile int g_workerGen     = 0;         // guards against a stale worker
+    inline volatile int g_stopRequested = 0;
+    inline volatile int g_workerW       = 0;
+    inline volatile int g_workerH       = 0;
 
     namespace detail
     {
@@ -309,15 +348,44 @@ namespace ui_media
             return g_vao != 0;
         }
 
+        // Caps the video target to what the screen can actually show. A 4K
+        // source is 33 MB of RGBA8 that many devices refuse to allocate, and a
+        // failed allocation used to leave an empty texture behind that the
+        // loader drew fullscreen - that was the black screen.
+        inline void ClampTargetSize(int* width, int* height)
+        {
+            if (width == nullptr || height == nullptr) return;
+            int w = *width, h = *height;
+            if (w <= 0 || h <= 0) { *width = 0; *height = 0; return; }
+            if (w > kMaxVideoTexW) { h = (int)((long)h * kMaxVideoTexW / w); w = kMaxVideoTexW; }
+            if (h > kMaxVideoTexH) { w = (int)((long)w * kMaxVideoTexH / h); h = kMaxVideoTexH; }
+            if (w <= 0 || h <= 0) { *width = 0; *height = 0; return; }
+            *width = w; *height = h;
+        }
+
+        // Creates the texture the video is sampled into. On any failure every
+        // object is released again and the target stays invalid, so the loader
+        // never ends up drawing a texture that was never written into.
         inline bool EnsureTarget(int width, int height)
         {
             if (width <= 0 || height <= 0) return false;
+
+            // Cap the size: the frame is scaled down to the screen anyway, and a
+            // 4K target is 33 MB that many devices refuse to allocate.
+            ClampTargetSize(&width, &height);
+            if (width <= 0 || height <= 0) return false;
+
             if (g_targetTex != 0 && g_targetW == width && g_targetH == height) return true;
 
             if (g_targetTex != 0) { glDeleteTextures(1, &g_targetTex); g_targetTex = 0; }
             if (g_fbo != 0) { glDeleteFramebuffers(1, &g_fbo); g_fbo = 0; }
+            g_targetW = 0;
+            g_targetH = 0;
+            g_videoTex = nullptr;
+            g_targetReady = false;
 
             glGenTextures(1, &g_targetTex);
+            if (g_targetTex == 0) return false;
             glBindTexture(GL_TEXTURE_2D, g_targetTex);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -326,6 +394,12 @@ namespace ui_media
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
             glGenFramebuffers(1, &g_fbo);
+            if (g_fbo == 0)
+            {
+                glDeleteTextures(1, &g_targetTex);
+                g_targetTex = 0;
+                return false;
+            }
             glBindFramebuffer(GL_FRAMEBUFFER, g_fbo);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_targetTex, 0);
             const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
@@ -334,6 +408,8 @@ namespace ui_media
             {
                 glDeleteFramebuffers(1, &g_fbo);
                 g_fbo = 0;
+                glDeleteTextures(1, &g_targetTex);
+                g_targetTex = 0;
                 return false;
             }
 
@@ -342,21 +418,124 @@ namespace ui_media
             g_videoTex = (ImTextureID)(intptr_t)g_targetTex;
             return true;
         }
+
+        struct WorkerArgs
+        {
+            jobject surface;   // global ref, owned by the worker
+            int     gen;
+        };
+
+        // The worker owns the MediaPlayer from here on. It creates it, reads
+        // the file (prepare blocks for as long as that takes) and starts it.
+        // None of this happens on the game's render thread.
+        inline void* VideoWorker(void* arg)
+        {
+            WorkerArgs* args = (WorkerArgs*)arg;
+            if (args == nullptr) return nullptr;
+            jobject surface = args->surface;
+            const int gen = args->gen;
+            delete args;
+
+            JNIEnv* env = Env();
+            if (env == nullptr || surface == nullptr)
+            {
+                if (gen == g_workerGen) g_workerState = 3;
+                return nullptr;
+            }
+
+            jobject player = env->NewObject(g_jni.mediaPlayer, g_jni.mpCtor);
+            if (player == nullptr)
+            {
+                env->ExceptionClear();
+                env->DeleteGlobalRef(surface);
+                if (gen == g_workerGen) g_workerState = 3;
+                return nullptr;
+            }
+
+            static const char* names[2] = { "loading.mp4", "velina-aegard.3840x2160.mp4" };
+            const std::string path = ResolveMedia(names, 2, ethnir_loading_video,
+                                                  ethnir_loading_video_len);
+            if (path.empty() || !SetSource(env, player, path))
+            {
+                env->CallVoidMethod(player, g_jni.mpRelease);
+                env->DeleteGlobalRef(surface);
+                if (gen == g_workerGen) g_workerState = 3;
+                return nullptr;
+            }
+
+            env->CallVoidMethod(player, g_jni.mpSetSurface, surface);
+            env->CallVoidMethod(player, g_jni.mpLoop, (jboolean)JNI_TRUE);
+            env->CallVoidMethod(player, g_jni.mpVolume, 0.0f, 0.0f);
+            if (env->ExceptionCheck())
+            {
+                env->ExceptionClear();
+                env->CallVoidMethod(player, g_jni.mpRelease);
+                env->DeleteGlobalRef(surface);
+                if (gen == g_workerGen) g_workerState = 3;
+                return nullptr;
+            }
+
+            // The blocking part - and it is off the render thread now.
+            env->CallVoidMethod(player, g_jni.mpPrepare);
+            if (env->ExceptionCheck())
+            {
+                env->ExceptionClear();
+                env->CallVoidMethod(player, g_jni.mpRelease);
+                env->DeleteGlobalRef(surface);
+                if (gen == g_workerGen) g_workerState = 3;
+                return nullptr;
+            }
+
+            g_workerW = (int)env->CallIntMethod(player, g_jni.mpWidth);
+            g_workerH = (int)env->CallIntMethod(player, g_jni.mpHeight);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); g_workerW = 0; g_workerH = 0; }
+
+            if (g_stopRequested)
+            {
+                env->CallVoidMethod(player, g_jni.mpRelease);
+                env->DeleteGlobalRef(surface);
+                if (gen == g_workerGen) g_workerState = 3;
+                return nullptr;
+            }
+
+            env->CallVoidMethod(player, g_jni.mpStart);
+            if (env->ExceptionCheck())
+            {
+                env->ExceptionClear();
+                env->CallVoidMethod(player, g_jni.mpRelease);
+                env->DeleteGlobalRef(surface);
+                if (gen == g_workerGen) g_workerState = 3;
+                return nullptr;
+            }
+
+            g_videoPlayer = player;
+            if (gen == g_workerGen) g_workerState = 2;
+
+            // Stay alive until the loader is done, then release the player.
+            while (!g_stopRequested)
+                usleep(50 * 1000);
+
+            env->CallVoidMethod(player, g_jni.mpRelease);
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            g_videoPlayer = nullptr;
+            env->DeleteGlobalRef(surface);
+            if (gen == g_workerGen) g_workerState = 3;
+            return nullptr;
+        }
     }
 
+    // Starts the video: the GL side here on the render thread, the MediaPlayer
+    // on its own thread. Returns true once the worker is running.
     inline bool StartVideo()
     {
         using namespace detail;
-        if (g_videoLive) return true;
+        if (g_workerState == 1 || g_workerState == 2) return true;
+
         if (!JniReady()) return false;
         if (!BuildProgram()) return false;
 
         JNIEnv* env = Env();
         if (env == nullptr) return false;
-
-        static const char* names[2] = { "loading.mp4", "velina-aegard.3840x2160.mp4" };
-        const std::string path = ResolveMedia(names, 2, ethnir_loading_video, ethnir_loading_video_len);
-        if (path.empty()) return false;
 
         if (g_oesTexture == 0)
         {
@@ -365,62 +544,69 @@ namespace ui_media
         }
         glBindTexture(GL_TEXTURE_EXTERNAL_OES, g_oesTexture);
 
-        jobject surfaceTexture = env->NewObject(g_jni.surfaceTexture, g_jni.stCtor, (jint)g_oesTexture);
+        // A previous attempt may have left a SurfaceTexture behind.
+        if (g_surfaceTexture != nullptr)
+        {
+            env->DeleteGlobalRef(g_surfaceTexture);
+            g_surfaceTexture = nullptr;
+        }
+
+        jobject surfaceTexture = env->NewObject(g_jni.surfaceTexture, g_jni.stCtor,
+                                                 (jint)g_oesTexture);
         if (surfaceTexture == nullptr) { env->ExceptionClear(); return false; }
 
         jobject surface = env->NewObject(g_jni.surface, g_jni.surfaceCtor, surfaceTexture);
-        if (surface == nullptr) { env->ExceptionClear(); return false; }
-
-        jobject player = env->NewObject(g_jni.mediaPlayer, g_jni.mpCtor);
-        if (player == nullptr) { env->ExceptionClear(); return false; }
-
-        if (!SetSource(env, player, path)) return false;
-
-        env->CallVoidMethod(player, g_jni.mpSetSurface, surface);
-        env->CallVoidMethod(player, g_jni.mpLoop, (jboolean)JNI_TRUE);
-        env->CallVoidMethod(player, g_jni.mpVolume, 0.0f, 0.0f);
-        env->CallVoidMethod(player, g_jni.mpPrepare);
-        if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
-
-        g_videoW = (int)env->CallIntMethod(player, g_jni.mpWidth);
-        g_videoH = (int)env->CallIntMethod(player, g_jni.mpHeight);
-        if (env->ExceptionCheck()) { env->ExceptionClear(); g_videoW = 0; g_videoH = 0; }
-
-        env->CallVoidMethod(player, g_jni.mpStart);
-        if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
-
-        g_videoPlayer    = env->NewGlobalRef(player);
-        g_surface        = env->NewGlobalRef(surface);
-        g_surfaceTexture = env->NewGlobalRef(surfaceTexture);
-
-        g_videoLive = g_videoPlayer != nullptr;
-        if (!EnsureTarget(g_videoW, g_videoH))
+        if (surface == nullptr)
         {
-            g_videoW = 0;
-            g_videoH = 0;
+            env->ExceptionClear();
+            env->DeleteLocalRef(surfaceTexture);
+            return false;
         }
-        return g_videoLive;
+
+        g_surfaceTexture = env->NewGlobalRef(surfaceTexture);
+        jobject surfaceGlobal = env->NewGlobalRef(surface);
+        env->DeleteLocalRef(surfaceTexture);
+        env->DeleteLocalRef(surface);
+        if (g_surfaceTexture == nullptr || surfaceGlobal == nullptr)
+        {
+            if (g_surfaceTexture != nullptr) { env->DeleteGlobalRef(g_surfaceTexture); g_surfaceTexture = nullptr; }
+            if (surfaceGlobal != nullptr) env->DeleteGlobalRef(surfaceGlobal);
+            return false;
+        }
+
+        g_stopRequested = 0;
+        const int gen = ++g_workerGen;
+        g_workerState = 1;
+
+        detail::WorkerArgs* args = new detail::WorkerArgs{ surfaceGlobal, gen };
+        if (pthread_create(&g_worker, nullptr, &detail::VideoWorker, args) != 0)
+        {
+            delete args;
+            env->DeleteGlobalRef(surfaceGlobal);
+            g_workerState = 3;
+            return false;
+        }
+        pthread_detach(g_worker);
+        g_worker = 0;
+        return true;
     }
 
     inline void UpdateVideo()
     {
         using namespace detail;
-        if (!g_videoLive || g_videoPlayer == nullptr || g_surfaceTexture == nullptr) return;
+        if (g_workerState != 2) return;          // the worker has not started it yet
         if (g_program == 0) return;
+        if (g_surfaceTexture == nullptr) return;
 
         JNIEnv* env = Env();
         if (env == nullptr) return;
 
         if (g_targetTex == 0 || g_fbo == 0)
         {
-            if (g_videoW <= 0 || g_videoH <= 0)
-            {
-                g_videoW = (int)env->CallIntMethod(g_videoPlayer, g_jni.mpWidth);
-                g_videoH = (int)env->CallIntMethod(g_videoPlayer, g_jni.mpHeight);
-                if (env->ExceptionCheck()) { env->ExceptionClear(); g_videoW = 0; g_videoH = 0; }
-            }
-            if (g_videoW <= 0 || g_videoH <= 0) return;
-            if (!EnsureTarget(g_videoW, g_videoH)) { g_videoW = 0; g_videoH = 0; return; }
+            const int w = g_workerW;
+            const int h = g_workerH;
+            if (w <= 0 || h <= 0) return;
+            if (!EnsureTarget(w, h)) return;
         }
 
         glBindTexture(GL_TEXTURE_EXTERNAL_OES, g_oesTexture);
@@ -439,10 +625,22 @@ namespace ui_media
             }
         }
 
+        // The game owns this context: put everything back the way it was, or
+        // the game's own renderer draws with the wrong state afterwards.
         GLint prevFbo = 0;
         GLint prevView[4] = {0, 0, 0, 0};
+        GLint prevActive = 0;
+        GLint prevArray = 0;
+        GLint prevProgram = 0;
+        GLboolean prevBlend = GL_FALSE;
+        GLboolean prevDepth = GL_FALSE;
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
         glGetIntegerv(GL_VIEWPORT, prevView);
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActive);
+        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevArray);
+        glGetIntegerv(GL_CURRENT_PROGRAM, &prevProgram);
+        prevBlend  = glIsEnabled(GL_BLEND);
+        prevDepth  = glIsEnabled(GL_DEPTH_TEST);
 
         glBindFramebuffer(GL_FRAMEBUFFER, g_fbo);
         glViewport(0, 0, g_targetW, g_targetH);
@@ -455,48 +653,98 @@ namespace ui_media
         glUniformMatrix4fv(g_uMatrix, 1, GL_FALSE, g_matrix);
         glBindVertexArray(g_vao);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindVertexArray(0);
-        glUseProgram(0);
+
+        glBindVertexArray((GLuint)prevArray);
+        glUseProgram((GLuint)prevProgram);
         glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFbo);
         glViewport(prevView[0], prevView[1], prevView[2], prevView[3]);
-        glEnable(GL_BLEND);
+        glActiveTexture((GLenum)prevActive);
+        if (prevBlend)  glEnable(GL_BLEND);      else glDisable(GL_BLEND);
+        if (prevDepth)  glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+
+        // Only now is the texture worth showing: it has a frame in it.
+        g_targetReady = true;
+    }
+
+    namespace detail
+    {
+        inline void* AudioWorker(void*)
+        {
+            JNIEnv* env = Env();
+            if (env == nullptr) { g_audioState = 0; return nullptr; }
+
+            jobject player = env->NewObject(g_jni.mediaPlayer, g_jni.mpCtor);
+            if (player == nullptr) { env->ExceptionClear(); g_audioState = 0; return nullptr; }
+
+            static const char* names[2] = { "loading.mp3", "lofi.mp3" };
+            const std::string path = ResolveMedia(names, 2, ethnir_loading_audio,
+                                                  ethnir_loading_audio_len);
+            bool ok = !path.empty() && SetSource(env, player, path);
+
+            if (ok)
+            {
+                env->CallVoidMethod(player, g_jni.mpLoop, (jboolean)JNI_FALSE);
+                env->CallVoidMethod(player, g_jni.mpVolume, 1.0f, 1.0f);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); ok = false; }
+            }
+
+            if (ok)
+            {
+                env->CallVoidMethod(player, g_jni.mpPrepare);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); ok = false; }
+            }
+
+            if (ok && g_audioStop)
+            {
+                env->CallVoidMethod(player, g_jni.mpRelease);
+                g_audioState = 0;
+                return nullptr;
+            }
+
+            if (ok)
+            {
+                env->CallVoidMethod(player, g_jni.mpStart);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); ok = false; }
+            }
+
+            if (!ok)
+            {
+                env->CallVoidMethod(player, g_jni.mpRelease);
+                g_audioState = 0;
+                return nullptr;
+            }
+
+            g_audioPlayer = env->NewGlobalRef(player);
+            g_audioLive   = g_audioPlayer != nullptr;
+            g_audioState  = g_audioLive ? 2 : 0;
+            return nullptr;
+        }
     }
 
     inline bool StartAudio()
     {
         using namespace detail;
         if (g_audioLive && g_audioPlayer != nullptr) return true;
+        if (g_audioState == 1) return false;
         if (!JniReady()) return false;
 
-        JNIEnv* env = Env();
-        if (env == nullptr) return false;
-
-        static const char* names[2] = { "loading.mp3", "lofi.mp3" };
-        const std::string path = ResolveMedia(names, 2, ethnir_loading_audio, ethnir_loading_audio_len);
-        if (path.empty()) return false;
-
-        jobject player = env->NewObject(g_jni.mediaPlayer, g_jni.mpCtor);
-        if (player == nullptr) { env->ExceptionClear(); return false; }
-
-        if (!SetSource(env, player, path)) return false;
-
-        env->CallVoidMethod(player, g_jni.mpLoop, (jboolean)JNI_FALSE);
-        env->CallVoidMethod(player, g_jni.mpVolume, 1.0f, 1.0f);
-        env->CallVoidMethod(player, g_jni.mpPrepare);
-        if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
-
-        env->CallVoidMethod(player, g_jni.mpStart);
-        if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
-
-        g_audioPlayer = env->NewGlobalRef(player);
-        g_audioLive   = g_audioPlayer != nullptr;
-        return g_audioLive;
+        g_audioStop = 0;
+        g_audioState = 1;
+        if (pthread_create(&g_audioWorker, nullptr, &detail::AudioWorker, nullptr) != 0)
+        {
+            g_audioState = 0;
+            return false;
+        }
+        pthread_detach(g_audioWorker);
+        g_audioWorker = 0;
+        return true;
     }
 
     inline void StopAudio()
     {
         using namespace detail;
         g_audioLive = false;
+        g_audioStop = 1;
         if (g_audioPlayer == nullptr) return;
         JNIEnv* env = Env();
         if (env != nullptr && g_jni.ok)
@@ -508,25 +756,20 @@ namespace ui_media
         g_audioPlayer = nullptr;
     }
 
+    // Stops the worker. The MediaPlayer is released by the worker itself, so
+    // this never blocks the render thread.
     inline void StopVideo()
     {
         using namespace detail;
         g_videoLive = false;
-        JNIEnv* env = Env();
-        if (env != nullptr && g_jni.ok)
+        g_stopRequested = 1;
+
+        if (g_surfaceTexture != nullptr)
         {
-            if (g_videoPlayer != nullptr)
-            {
-                env->CallVoidMethod(g_videoPlayer, g_jni.mpRelease);
-                if (env->ExceptionCheck()) env->ExceptionClear();
-                env->DeleteGlobalRef(g_videoPlayer);
-            }
-            if (g_surface != nullptr) env->DeleteGlobalRef(g_surface);
-            if (g_surfaceTexture != nullptr) env->DeleteGlobalRef(g_surfaceTexture);
+            JNIEnv* env = Env();
+            if (env != nullptr) env->DeleteGlobalRef(g_surfaceTexture);
+            g_surfaceTexture = nullptr;
         }
-        g_videoPlayer    = nullptr;
-        g_surface        = nullptr;
-        g_surfaceTexture = nullptr;
     }
 
     inline void Tick()
@@ -538,15 +781,21 @@ namespace ui_media
         {
             g_inited = true;
             StartVideo();
-            if (!g_audioLive) StartAudio();
         }
-        else if (!g_videoLive && retries < 3 && ++frames >= 30)
+        else if (g_workerState == 3 && retries < 3 && ++frames >= 30)
         {
             frames = 0;
             retries++;
             StartVideo();
         }
         UpdateVideo();
+
+        g_videoLive = (g_workerState == 2);
+        if (g_videoLive)
+        {
+            g_videoW = g_workerW;
+            g_videoH = g_workerH;
+        }
     }
 
     inline void Shutdown()
@@ -555,7 +804,7 @@ namespace ui_media
         StopVideo();
     }
 
-    inline bool  VideoReady()   { return g_videoLive && g_targetTex != 0; }
+    inline bool  VideoReady()   { return g_videoLive && g_targetTex != 0 && g_targetReady; }
     inline float VideoAspect()
     {
         if (g_videoW <= 0 || g_videoH <= 0) return 16.0f / 9.0f;
@@ -568,8 +817,12 @@ namespace ui_media
     inline void  Shutdown()  {}
     inline bool  StartAudio(){ return false; }
     inline void  StopAudio() {}
-    inline bool  VideoReady(){ return false; }
-    inline float VideoAspect(){ return 16.0f / 9.0f; }
+    inline bool  VideoReady(){ return ui_media::g_hostVideoTex != nullptr; }
+    inline float VideoAspect()
+    {
+        if (ui_media::g_hostVideoW <= 0 || ui_media::g_hostVideoH <= 0) return 16.0f / 9.0f;
+        return (float)ui_media::g_hostVideoW / (float)ui_media::g_hostVideoH;
+    }
 
 #endif
 
@@ -578,7 +831,7 @@ namespace ui_media
 #if defined(__ANDROID__)
         return ui_media::VideoReady() ? g_videoTex : nullptr;
 #else
-        return nullptr;
+        return ui_media::g_hostVideoTex;
 #endif
     }
 }

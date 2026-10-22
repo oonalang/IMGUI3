@@ -107,30 +107,29 @@ static void ScreenBackdrop(ImDrawList* dl, ImVec2 display, ImTextureID still)
     const float aspect = video != nullptr ? ui_media::VideoAspect()
                                           : (display.x > 0.0f ? display.x / display.y : 16.0f / 9.0f);
 
-    dl->AddRectFilled(ImVec2(0, 0), display, C::U(C::BgDeep));
+    // The field is painted first and unconditionally. The loader is hooked in
+    // before the game has drawn a frame of its own, so a pixel that is not
+    // painted here is the game's own black screen - that is what the black
+    // screen was: the video texture was drawn over the field while it was
+    // still empty. The video now goes on top of the field, never instead of it.
+    const float drift = std::sin(g_Time * 0.28f) * display.x * 0.06f;
+    const float rise  = std::cos(g_Time * 0.21f) * display.y * 0.04f;
+    dl->AddRectFilledMultiColor(ImVec2(0, 0), display,
+        IM_COL32(10, 4, 22, 255), IM_COL32(14, 6, 28, 255),
+        IM_COL32(4, 1, 12, 255),   IM_COL32(6, 2, 16, 255));
+
+    for (int i = 0; i < 3; ++i)
+    {
+        const float phase = g_Time * (0.16f + i * 0.05f) + i * 2.1f;
+        const ImVec2 c(display.x * (0.5f + 0.26f * std::sin(phase)) + drift * 0.35f,
+                       display.y * (0.42f + 0.22f * std::cos(phase * 0.8f)) + rise * 0.35f);
+        const float r = display.x * (0.22f + 0.05f * i);
+        dl->AddCircleFilled(c, r, C::UA(C::PurpleDeep, 0.10f - i * 0.02f), 64);
+        dl->AddCircleFilled(c, r * 0.55f, C::UA(C::Purple, 0.06f - i * 0.015f), 64);
+    }
 
     if (source != nullptr)
-    {
         CoverImage(dl, source, ImVec2(0, 0), display, aspect);
-    }
-    else
-    {
-        const float drift = std::sin(g_Time * 0.28f) * display.x * 0.06f;
-        const float rise  = std::cos(g_Time * 0.21f) * display.y * 0.04f;
-        dl->AddRectFilledMultiColor(ImVec2(0, 0), display,
-            IM_COL32(10, 4, 22, 255), IM_COL32(14, 6, 28, 255),
-            IM_COL32(4, 1, 12, 255),   IM_COL32(6, 2, 16, 255));
-
-        for (int i = 0; i < 3; ++i)
-        {
-            const float phase = g_Time * (0.16f + i * 0.05f) + i * 2.1f;
-            const ImVec2 c(display.x * (0.5f + 0.26f * std::sin(phase)) + drift * 0.35f,
-                           display.y * (0.42f + 0.22f * std::cos(phase * 0.8f)) + rise * 0.35f);
-            const float r = display.x * (0.22f + 0.05f * i);
-            dl->AddCircleFilled(c, r, C::UA(C::PurpleDeep, 0.10f - i * 0.02f), 64);
-            dl->AddCircleFilled(c, r * 0.55f, C::UA(C::Purple, 0.06f - i * 0.015f), 64);
-        }
-    }
 
     // Dim the field only: the card paints its own crisp crop of the same video.
     dl->AddRectFilled(ImVec2(0, 0), display,
@@ -154,30 +153,26 @@ static void CardBackdrop(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImTextureID still
                                           : (size.x > 0.0f ? size.x / size.y : 16.0f / 9.0f);
     if (!(size.x > 0.0f) || !(size.y > 0.0f) || aspect <= 0.0f) return;
 
-    if (source != nullptr)
-    {
-        // Video / live wallpaper, cover-scaled to fill the card only.
-        CoverImage(dl, source, mn, mx, aspect);
-    }
-    else
-    {
-        // Fallback gradient, constrained to the card rect.
-        const float drift = std::sin(g_Time * 0.28f) * size.x * 0.06f;
-        const float rise  = std::cos(g_Time * 0.21f) * size.y * 0.04f;
-        dl->AddRectFilledMultiColor(mn, mx,
-            IM_COL32(10, 4, 22, 255), IM_COL32(14, 6, 28, 255),
-            IM_COL32(4, 1, 12, 255),   IM_COL32(6, 2, 16, 255));
+    // Same rule as the field behind it: the card paints its own background
+    // first, and the video is laid over it only once it really has a frame.
+    const float drift = std::sin(g_Time * 0.28f) * size.x * 0.06f;
+    const float rise  = std::cos(g_Time * 0.21f) * size.y * 0.04f;
+    dl->AddRectFilledMultiColor(mn, mx,
+        IM_COL32(10, 4, 22, 255), IM_COL32(14, 6, 28, 255),
+        IM_COL32(4, 1, 12, 255),   IM_COL32(6, 2, 16, 255));
 
-        for (int i = 0; i < 3; ++i)
-        {
-            const float phase = g_Time * (0.16f + i * 0.05f) + i * 2.1f;
-            const ImVec2 c(mn.x + size.x * (0.5f + 0.26f * std::sin(phase)) + drift * 0.35f,
-                           mn.y + size.y * (0.42f + 0.22f * std::cos(phase * 0.8f)) + rise * 0.35f);
-            const float r = size.x * (0.22f + 0.05f * i);
-            dl->AddCircleFilled(c, r, C::UA(C::PurpleDeep, 0.10f - i * 0.02f), 64);
-            dl->AddCircleFilled(c, r * 0.55f, C::UA(C::Purple, 0.06f - i * 0.015f), 64);
-        }
+    for (int i = 0; i < 3; ++i)
+    {
+        const float phase = g_Time * (0.16f + i * 0.05f) + i * 2.1f;
+        const ImVec2 c(mn.x + size.x * (0.5f + 0.26f * std::sin(phase)) + drift * 0.35f,
+                       mn.y + size.y * (0.42f + 0.22f * std::cos(phase * 0.8f)) + rise * 0.35f);
+        const float r = size.x * (0.22f + 0.05f * i);
+        dl->AddCircleFilled(c, r, C::UA(C::PurpleDeep, 0.10f - i * 0.02f), 64);
+        dl->AddCircleFilled(c, r * 0.55f, C::UA(C::Purple, 0.06f - i * 0.015f), 64);
     }
+
+    if (source != nullptr)
+        CoverImage(dl, source, mn, mx, aspect);
 }
 
 static void GlassCard(ImDrawList* dl, ImVec2 mn, ImVec2 mx)

@@ -162,6 +162,7 @@ struct _JNIEnv {
     HOST_STUB_ANY_ARGS jdoubleArray  NewDoubleArray(A&&...) { return {}; }
 
     HOST_STUB_ANY_ARGS jsize        GetArrayLength(A&&...) { return {}; }
+    HOST_STUB_ANY_ARGS void         GetFloatArrayRegion(A&&...) {}
     HOST_STUB_ANY_ARGS void         GetByteArrayRegion(A&&...) {}
     HOST_STUB_ANY_ARGS void         SetByteArrayRegion(A&&...) {}
     HOST_STUB_ANY_ARGS jbyte*       GetByteArrayElements(A&&...) { return {}; }
