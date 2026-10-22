@@ -32,7 +32,7 @@ bool  SnowB = false;
 bool  isSpeedHackEnabled = false;
 
 std::string usedKey = "HOST-TEST";
-std::string userType = "PREMIUM";
+std::string userType = "NOIR ACCESS";
 
 namespace font { ImFont* inter_semibold = nullptr; }
 ImFont* F50 = nullptr;

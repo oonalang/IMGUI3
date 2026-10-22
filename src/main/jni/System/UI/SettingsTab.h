@@ -67,7 +67,7 @@ void RenderLicenseInfo(ImDrawList* draw, const ImVec2& startPos)
     if (!userType.empty())
     {
         ImGui::SameLine(0, 15.0f);
-        if (userType == "PREMIUM PAID")
+        if (userType == "NOIR ACCESS")
         {
             ImGui::TextColored(ImColor(191, 153, 0, 165), ": %s", userType.c_str());
         }

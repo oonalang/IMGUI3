@@ -106,7 +106,7 @@ LOCAL_C_INCLUDES += $(LOCAL_PATH)/curl/openssl-android-$(TARGET_ARCH_ABI)/includ
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/foxcheats
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/foxcheats/includes
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/ImGui
 
-                     
 include $(BUILD_SHARED_LIBRARY)
 # ============================================================================
