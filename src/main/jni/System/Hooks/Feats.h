@@ -876,16 +876,6 @@ inline void InitializeAllHooks() {
     HOOK_LIB("libunity.so", "0xA61AA00", IsWeaponAttachmentUnlock, orig_IsWeaponAttachmentUnlock);
 
     report_block::InstallReportBlockHooks();
-    report_block::NoteLanded(report_block::GateDoReport,       report_block::orig_DoReport != nullptr);
-    report_block::NoteLanded(report_block::GateDoReportPlayer, report_block::orig_DoReportPlayer != nullptr);
-    report_block::NoteLanded(report_block::GateBeginReport,    report_block::orig_BeginReportPlayerPull != nullptr);
-    report_block::NoteLanded(report_block::GateFillReportData, report_block::orig_FillPlayerFullData != nullptr);
-    report_block::NoteLanded(report_block::GateEndReport,      report_block::orig_EndReportPlayerPull != nullptr);
-
-    report_block::NoteLanded(report_block::GateAceGetData,  report_block::orig_AceGetReportData != nullptr);
-    report_block::NoteLanded(report_block::GateAceGetData2, report_block::orig_AceGetReportData2 != nullptr);
-    report_block::NoteLanded(report_block::GateAceGetData3, report_block::orig_AceGetReportData3 != nullptr);
-    report_block::NoteLanded(report_block::GateAceGetData4, report_block::orig_AceGetReportData4 != nullptr);
 
     anti_login::InstallAntiLoginHooks();
     anti_login::NoteLanded(anti_login::GateHeartbeatExec,  anti_login::orig_ExecuteReloginByRandomDelay != nullptr);
