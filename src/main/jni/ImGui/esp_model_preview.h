@@ -562,7 +562,7 @@ inline Result DrawModel(ImDrawList *draw, const ImVec2 &pos, const ImVec2 &size)
 
     const float cx = pos.x + size.x * 0.5f;
     const float modelH = ModelTop - ModelBottom;
-    const float kUnit = ImMin(size.y * 0.97f / modelH, size.x * 0.96f / ModelWidth);
+    const float kUnit = ImMin(size.y * 0.76f / modelH, size.x * 0.90f / ModelWidth);
     const float cyModel = pos.y + size.y * 0.50f + ((ModelTop + ModelBottom) * 0.5f) * kUnit;
     const float camDist = 4.2f;
 

@@ -25,24 +25,16 @@ extern JavaVM* jvm;
 #if __has_include("../../Assets/LoadingAssets.h")
 #include "../../Assets/LoadingAssets.h"
 #define UI_MEDIA_ASSET_VIDEO 1
-#define UI_MEDIA_ASSET_AUDIO 1
 #endif
 #endif
 
 #ifndef UI_MEDIA_ASSET_VIDEO
 #define UI_MEDIA_ASSET_VIDEO 0
 #endif
-#ifndef UI_MEDIA_ASSET_AUDIO
-#define UI_MEDIA_ASSET_AUDIO 0
-#endif
 
 #if !UI_MEDIA_ASSET_VIDEO
 static inline const unsigned char ethnir_loading_video[] = {0};
 static inline const unsigned int  ethnir_loading_video_len = 0;
-#endif
-#if !UI_MEDIA_ASSET_AUDIO
-static inline const unsigned char ethnir_loading_audio[] = {0};
-static inline const unsigned int  ethnir_loading_audio_len = 0;
 #endif
 
 namespace ui_media
@@ -706,9 +698,10 @@ namespace ui_media
             jobject player = env->NewObject(g_jni.mediaPlayer, g_jni.mpCtor);
             if (player == nullptr) { env->ExceptionClear(); g_audioState = 0; return nullptr; }
 
+            // The card video is silent; the sound is file-only by design, so
+            // there is no compiled-in audio payload to hand over here.
             static const char* names[2] = { "loading.mp3", "lofi.mp3" };
-            const std::string path = ResolveMedia(names, 2, ethnir_loading_audio,
-                                                  ethnir_loading_audio_len);
+            const std::string path = ResolveMedia(names, 2, nullptr, 0);
             bool ok = !path.empty() && SetSource(env, player, path);
 
             if (ok)

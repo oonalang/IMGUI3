@@ -1226,10 +1226,16 @@ namespace raspody
             static bool dragging = false;
             static ImVec2 dragOrigin(0, 0);
             static float dragOriginScroll = 0.0f;
+            static float velocity = 0.0f;
+            static float lastY = 0.0f;
+            static double lastT = 0.0;
+            static float flick = 0.0f;
+
             const ImVec2 cpos = ImGui::GetWindowPos();
             const ImVec2 csize = ImGui::GetWindowSize();
             const bool inChild = io.MousePos.x >= cpos.x && io.MousePos.x <= cpos.x + csize.x &&
                                  io.MousePos.y >= cpos.y && io.MousePos.y <= cpos.y + csize.y;
+
             if (io.MouseDown[0])
             {
                 if (!dragging && inChild)
@@ -1237,21 +1243,48 @@ namespace raspody
                     dragging = true;
                     dragOrigin = io.MousePos;
                     dragOriginScroll = ImGui::GetScrollY();
+                    velocity = 0.0f;
+                    flick = 0.0f;
+                    lastY = io.MousePos.y;
+                    lastT = ImGui::GetTime();
                 }
                 if (dragging)
                 {
                     const float dy = io.MousePos.y - dragOrigin.y;
+
+                    // The page follows the finger from the first pixel. A dead
+                    // zone here used to hold the content still until the drag
+                    // passed the threshold, then jump it by the whole distance.
+                    ImGui::SetScrollY(dragOriginScroll - dy);
                     if (fabsf(dy) > S(10))
-                    {
                         ui.dragScrolling = true;
-                        ImGui::SetScrollY(dragOriginScroll - dy);
-                    }
+
+                    const double now = ImGui::GetTime();
+                    const float dt = (float)ImMax(0.0001, now - lastT);
+                    velocity = ImLerp(velocity, (io.MousePos.y - lastY) / dt, 0.35f);
+                    lastY = io.MousePos.y;
+                    lastT = now;
                 }
             }
             else
             {
-                dragging = false;
-                ui.dragScrolling = false;
+                if (dragging)
+                {
+                    dragging = false;
+                    ui.dragScrolling = false;
+                    flick = fabsf(velocity) > S(260) ? velocity : 0.0f;
+                }
+
+                // Release with speed and the page keeps moving, then settles:
+                // exponential decay, no snap to a stop on the last frame.
+                if (flick != 0.0f)
+                {
+                    const float dt = ImMin(0.05f, io.DeltaTime);
+                    ImGui::SetScrollY(ImGui::GetScrollY() - flick * dt);
+                    flick *= expf(-dt * 5.5f);
+                    if (fabsf(flick) < S(12))
+                        flick = 0.0f;
+                }
             }
         }
 
@@ -1308,9 +1341,9 @@ namespace raspody
             static ImVec2 cardPos(-1.0f, -1.0f);
             static bool cardMoved = false;
 
-            const float cardH = size.y - 12.0f;
+            const float cardH = ImMin(ImMax(S(250), size.y * 0.56f), size.y - 12.0f);
 
-            float cardW = ImClamp(cardH * 0.38f, S(200), S(320));
+            float cardW = ImClamp(cardH * 1.30f, S(340), S(620));
 
             const float roomW = display.x - (pos.x + size.x) - S(16) - S(6);
             if (roomW >= S(150))

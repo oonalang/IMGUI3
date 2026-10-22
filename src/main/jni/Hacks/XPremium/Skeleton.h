@@ -1,4 +1,10 @@
 #pragma once
+
+#include <cmath>
+#include <ctime>
+
+#include "System/Core/FaultGuard.h"
+
 namespace BoneMapOffsets {
     static constexpr uintptr_t m_BoneMappings = 0xA8;
     static constexpr uintptr_t m_LeftToe = 0x20;
@@ -21,6 +27,45 @@ namespace BoneMapOffsets {
 
 static inline bool IsZeroVec3(const Vector3 &v) {
     return (v.x == 0.0f && v.y == 0.0f && v.z == 0.0f);
+}
+
+static inline bool IsFiniteVec3(const Vector3 &v) {
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z) &&
+           fabsf(v.x) < 100000.0f && fabsf(v.y) < 100000.0f && fabsf(v.z) < 100000.0f;
+}
+
+// A pawn whose bone chain faulted once is not asked again for a while. A
+// despawned body leaves the bone map holding pointers that are still inside a
+// mapped page, so IsPtrValid() cannot see the difference; the game's own
+// get_position() then walks the torn object and faults. Retrying every frame
+// would mean a fault every frame.
+struct SkeletonFaultEntry {
+    uintptr_t pawn = 0;
+    int64_t untilMs = 0;
+};
+
+static SkeletonFaultEntry g_skeletonFaults[16];
+static int g_skeletonFaultNext = 0;
+
+static inline int64_t SkeletonNowMs() {
+    struct timespec ts {};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static inline bool SkeletonCooldownActive(uintptr_t pawnAddr) {
+    const int64_t now = SkeletonNowMs();
+    for (int i = 0; i < 16; ++i) {
+        if (g_skeletonFaults[i].pawn == pawnAddr)
+            return now < g_skeletonFaults[i].untilMs;
+    }
+    return false;
+}
+
+static inline void SkeletonStartCooldown(uintptr_t pawnAddr) {
+    g_skeletonFaults[g_skeletonFaultNext].pawn = pawnAddr;
+    g_skeletonFaults[g_skeletonFaultNext].untilMs = SkeletonNowMs() + 1500;
+    g_skeletonFaultNext = (g_skeletonFaultNext + 1) % 16;
 }
 
 static inline Vector3 Normalized(Vector3 v) {
@@ -102,49 +147,68 @@ static inline void DrawSkeletonLine(ImDrawList* draw, Vector3 from, Vector3 to, 
 
 static bool DrawBoneMapSkeleton(ImDrawList *draw, Pawn *pawn, ImU32 color, float thickness, int sHeight) {
     uintptr_t pawnAddr = reinterpret_cast<uintptr_t>(pawn);
+    if (pawnAddr == 0 || SkeletonCooldownActive(pawnAddr)) {
+        return false;
+    }
+
     uintptr_t boneMap = SafeReadU64(pawnAddr + BoneMapOffsets::m_BoneMappings);
     if (!Tools::IsPtrValid(reinterpret_cast<void *>(boneMap))) {
         return false;
     }
 
     Vector3 bones[16];
-    bones[0] = GetBoneMapPos(boneMap, BoneMapOffsets::m_Head);
-    bones[1] = GetBoneMapPos(boneMap, BoneMapOffsets::m_Neck);
-    bones[2] = GetBoneMapPos(boneMap, BoneMapOffsets::m_Body);
-    bones[3] = GetBoneMapPos(boneMap, BoneMapOffsets::m_Hips);
-    bones[4] = GetBoneMapPos(boneMap, BoneMapOffsets::m_LeftUpperArm);
-    bones[5] = GetBoneMapPos(boneMap, BoneMapOffsets::m_LeftArm);
-    bones[6] = GetBoneMapPos(boneMap, BoneMapOffsets::m_LeftHand);
-    bones[7] = GetBoneMapPos(boneMap, BoneMapOffsets::m_RightUpperArm);
-    bones[8] = GetBoneMapPos(boneMap, BoneMapOffsets::m_RightArm);
-    bones[9] = GetBoneMapPos(boneMap, BoneMapOffsets::m_RightHand);
-    bones[10] = GetBoneMapPos(boneMap, BoneMapOffsets::m_LeftPaha);
-    bones[11] = GetBoneMapPos(boneMap, BoneMapOffsets::m_LeftBetis);
-    bones[12] = GetBoneMapPos(boneMap, BoneMapOffsets::m_LeftToe);
-    bones[13] = GetBoneMapPos(boneMap, BoneMapOffsets::m_RightPaha);
-    bones[14] = GetBoneMapPos(boneMap, BoneMapOffsets::m_RightBetis);
-    bones[15] = GetBoneMapPos(boneMap, BoneMapOffsets::m_RightToe);
+    Vector3 screenBones[16];
+    bool visible[16] = {};
+    int visibleCount = 0;
+
+    // The bone map of a pawn that is despawning still points inside a mapped
+    // page, so IsPtrValid() passes and the game's get_position() then walks a
+    // torn object. Every read into the game is inside this guard: a fault
+    // costs one skeleton, not the process, and the pawn is skipped for a
+    // moment afterwards so it is not faulted again on the next frame.
+    const bool safe = fault_guard::Run([&] {
+        bones[0] = GetBoneMapPos(boneMap, BoneMapOffsets::m_Head);
+        bones[1] = GetBoneMapPos(boneMap, BoneMapOffsets::m_Neck);
+        bones[2] = GetBoneMapPos(boneMap, BoneMapOffsets::m_Body);
+        bones[3] = GetBoneMapPos(boneMap, BoneMapOffsets::m_Hips);
+        bones[4] = GetBoneMapPos(boneMap, BoneMapOffsets::m_LeftUpperArm);
+        bones[5] = GetBoneMapPos(boneMap, BoneMapOffsets::m_LeftArm);
+        bones[6] = GetBoneMapPos(boneMap, BoneMapOffsets::m_LeftHand);
+        bones[7] = GetBoneMapPos(boneMap, BoneMapOffsets::m_RightUpperArm);
+        bones[8] = GetBoneMapPos(boneMap, BoneMapOffsets::m_RightArm);
+        bones[9] = GetBoneMapPos(boneMap, BoneMapOffsets::m_RightHand);
+        bones[10] = GetBoneMapPos(boneMap, BoneMapOffsets::m_LeftPaha);
+        bones[11] = GetBoneMapPos(boneMap, BoneMapOffsets::m_LeftBetis);
+        bones[12] = GetBoneMapPos(boneMap, BoneMapOffsets::m_LeftToe);
+        bones[13] = GetBoneMapPos(boneMap, BoneMapOffsets::m_RightPaha);
+        bones[14] = GetBoneMapPos(boneMap, BoneMapOffsets::m_RightBetis);
+        bones[15] = GetBoneMapPos(boneMap, BoneMapOffsets::m_RightToe);
+
+        Camera *mainCamera = Camera::get_main();
+        if (mainCamera == nullptr) {
+            return;
+        }
+
+        for (int i = 0; i < 16; ++i) {
+            screenBones[i] = mainCamera->WorldToScreenPoint(bones[i]);
+            visible[i] = IsFiniteVec3(bones[i]) && IsFiniteVec3(screenBones[i]) &&
+                         screenBones[i].z > 0.0f;
+            if (visible[i]) {
+                visibleCount++;
+            }
+        }
+    });
+
+    if (!safe) {
+        SkeletonStartCooldown(pawnAddr);
+        return false;
+    }
+
+    if (visibleCount == 0) {
+        return false;
+    }
 
     if (IsZeroVec3(bones[0]) && IsZeroVec3(bones[1]) && IsZeroVec3(bones[2]) && IsZeroVec3(bones[3])) {
-        return false;
-    }
-
-    auto mainCamera = Camera::get_main();
-    if (!mainCamera) {
-        return false;
-    }
-
-    Vector3 screenBones[16];
-    bool visible[16];
-    int visibleCount = 0;
-    for (int i = 0; i < 16; ++i) {
-        screenBones[i] = mainCamera->WorldToScreenPoint(bones[i]);
-        visible[i] = (screenBones[i].z > 0.0f);
-        if (visible[i]) {
-            visibleCount++;
-        }
-    }
-    if (visibleCount == 0) {
         return false;
     }
 

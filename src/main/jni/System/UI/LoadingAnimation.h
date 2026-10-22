@@ -349,7 +349,29 @@ static void StatusRow(ImDrawList* dl, ImFont* font, ImVec2 mn, ImVec2 mx, float 
                       : (progress < 0.95f) ? "PREPARING INTERFACE"
                       :                      "READY";
 
-    dl->AddText(font, 11.0f, ImVec2(mn.x, mn.y), IM_COL32(206, 196, 232, 232), stage);
+    // The stage label used to cut to the next one mid-bar. It now fades over
+    // the outgoing label and rises a couple of pixels, which reads as one
+    // continuous line instead of a flash of new text.
+    static const char* lastStage = nullptr;
+    static const char* fadingStage = nullptr;
+    static float stageFade = 1.0f;
+
+    if (lastStage != stage)
+    {
+        fadingStage = lastStage;
+        lastStage = stage;
+        stageFade = 0.0f;
+    }
+    stageFade = ImMin(1.0f, stageFade + ImGui::GetIO().DeltaTime * 6.5f);
+
+    if (fadingStage != nullptr && stageFade < 1.0f)
+    {
+        const int alpha = (int)(232.0f * (1.0f - stageFade));
+        dl->AddText(font, 11.0f, ImVec2(mn.x, mn.y), IM_COL32(206, 196, 232, alpha), fadingStage);
+    }
+
+    dl->AddText(font, 11.0f, ImVec2(mn.x, mn.y + 3.0f * (1.0f - stageFade)),
+                IM_COL32(206, 196, 232, (int)(232.0f * stageFade)), stage);
 
     char pct[8];
     std::snprintf(pct, sizeof(pct), "%d%%", (int)(progress * 100.0f + 0.5f));
