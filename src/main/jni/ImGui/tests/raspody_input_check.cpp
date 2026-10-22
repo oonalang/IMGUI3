@@ -117,8 +117,9 @@ int main()
         Check(false, "the floating preview card exists");
 
     const MenuWindow menuWin = ComputeMenuWindow(io.DisplaySize);
-    Check(espWin && std::fabs(espWin->Size.y - menuWin.size.y) < 1.0f,
-          "the preview card is as tall as the menu");
+    // The preview card sits 12 px shorter than the menu.
+    Check(espWin && std::fabs(espWin->Size.y - (menuWin.size.y - 12.0f)) < 1.0f,
+          "the preview card is 12 px shorter than the menu");
 
     ImVec2 modelMin(0.0f, 0.0f), modelSize(0.0f, 0.0f);
     if (espWin)

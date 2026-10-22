@@ -1521,13 +1521,20 @@ namespace raspody
         g_espPreview = fn;
     }
 
-    void DrawEspPreview(ImDrawList* dl, ImVec2 pos, float width, float height)
+    void DrawEspPreview(ImDrawList* dl, ImVec2 pos, float width, float height,
+                        bool drawBox, bool drawLine, bool drawSkeleton,
+                        bool drawHealth, bool drawName, bool drawDistance,
+                        ImU32 lineColor, ImU32 boxColor, ImU32 healthColor,
+                        ImU32 nameColor, ImU32 distColor)
     {
         if (!dl || width <= 0.0f || height <= 0.0f)
             return;
         if (g_espPreview)
         {
-            g_espPreview(dl, pos, width, height);
+            g_espPreview(dl, pos, width, height,
+                         drawBox, drawLine, drawSkeleton, drawHealth, drawName,
+                         drawDistance, lineColor, boxColor, healthColor, nameColor,
+                         distColor);
             return;
         }
 

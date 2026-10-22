@@ -96,47 +96,41 @@ static void CoverImage(ImDrawList* dl, ImTextureID tex, ImVec2 mn, ImVec2 mx, fl
     dl->AddImage(tex, texMin, texMax, ImVec2(0, 0), ImVec2(1, 1));
 }
 
-static void Backdrop(ImDrawList* dl, ImVec2 display, ImTextureID still)
+// The video / live wallpaper is the card's own background: it is cover-scaled
+// into the card rect and nothing is painted outside it.
+static void CardBackdrop(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImTextureID still)
 {
+    const ImVec2 size(mx.x - mn.x, mx.y - mn.y);
     const ImTextureID video = ui_media::VideoTexture();
     const ImTextureID source = video != nullptr ? video : still;
     const float aspect = video != nullptr ? ui_media::VideoAspect()
-                                          : (display.x > 0.0f ? display.x / display.y : 16.0f / 9.0f);
-
-    dl->AddRectFilled(ImVec2(0, 0), display, C::U(C::BgDeep));
+                                          : (size.x > 0.0f ? size.x / size.y : 16.0f / 9.0f);
+    if (!(size.x > 0.0f) || !(size.y > 0.0f) || aspect <= 0.0f) return;
 
     if (source != nullptr)
     {
-        CoverImage(dl, source, ImVec2(0, 0), display, aspect);
+        // Video / live wallpaper, cover-scaled to fill the card only.
+        CoverImage(dl, source, mn, mx, aspect);
     }
     else
     {
-        const float drift = std::sin(g_Time * 0.28f) * display.x * 0.06f;
-        const float rise  = std::cos(g_Time * 0.21f) * display.y * 0.04f;
-        dl->AddRectFilledMultiColor(ImVec2(0, 0), display,
+        // Fallback gradient, constrained to the card rect.
+        const float drift = std::sin(g_Time * 0.28f) * size.x * 0.06f;
+        const float rise  = std::cos(g_Time * 0.21f) * size.y * 0.04f;
+        dl->AddRectFilledMultiColor(mn, mx,
             IM_COL32(10, 4, 22, 255), IM_COL32(14, 6, 28, 255),
             IM_COL32(4, 1, 12, 255),   IM_COL32(6, 2, 16, 255));
 
         for (int i = 0; i < 3; ++i)
         {
             const float phase = g_Time * (0.16f + i * 0.05f) + i * 2.1f;
-            const ImVec2 c(display.x * (0.5f + 0.26f * std::sin(phase)) + drift * 0.35f,
-                           display.y * (0.42f + 0.22f * std::cos(phase * 0.8f)) + rise * 0.35f);
-            const float r = display.x * (0.22f + 0.05f * i);
+            const ImVec2 c(mn.x + size.x * (0.5f + 0.26f * std::sin(phase)) + drift * 0.35f,
+                           mn.y + size.y * (0.42f + 0.22f * std::cos(phase * 0.8f)) + rise * 0.35f);
+            const float r = size.x * (0.22f + 0.05f * i);
             dl->AddCircleFilled(c, r, C::UA(C::PurpleDeep, 0.10f - i * 0.02f), 64);
             dl->AddCircleFilled(c, r * 0.55f, C::UA(C::Purple, 0.06f - i * 0.015f), 64);
         }
     }
-
-    // The video is the background: only dim it enough to keep the card legible.
-    dl->AddRectFilled(ImVec2(0, 0), display,
-                      IM_COL32(6, 2, 14, source != nullptr ? 72 : 104));
-    dl->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(display.x, display.y * 0.55f),
-        IM_COL32(26, 10, 48, 62), IM_COL32(26, 10, 48, 62),
-        IM_COL32(0, 0, 0, 0),     IM_COL32(0, 0, 0, 0));
-    dl->AddRectFilledMultiColor(ImVec2(0, display.y * 0.55f), display,
-        IM_COL32(0, 0, 0, 0),           IM_COL32(0, 0, 0, 0),
-        IM_COL32(3, 1, 9, 176),         IM_COL32(3, 1, 9, 176));
 }
 
 static void GlassCard(ImDrawList* dl, ImVec2 mn, ImVec2 mx)
@@ -151,8 +145,10 @@ static void GlassCard(ImDrawList* dl, ImVec2 mn, ImVec2 mx)
                     kCardRound + grow, 0, 14.0f);
     }
 
-    dl->AddRectFilled(mn, mx, IM_COL32(16, 7, 30, 202), kCardRound);
-    dl->AddRectFilled(mn, mx, C::UA(C::BgDeep, 0.46f), kCardRound);
+    // Transparent glass: the video behind the card is the fill, so these two
+    // only tint it and leave the ETHNIR word and the bar readable.
+    dl->AddRectFilled(mn, mx, IM_COL32(16, 7, 30, 70), kCardRound);
+    dl->AddRectFilled(mn, mx, C::UA(C::BgDeep, 0.22f), kCardRound);
 
     const ImVec2 sheenMax(mx.x, mn.y + (mx.y - mn.y) * 0.46f);
     dl->AddRectFilledMultiColor(ImVec2(mn.x + 2, mn.y + 2), ImVec2(sheenMax.x - 2, sheenMax.y),
@@ -161,7 +157,7 @@ static void GlassCard(ImDrawList* dl, ImVec2 mn, ImVec2 mx)
 
     dl->AddRectFilledMultiColor(ImVec2(mn.x + 2, mn.y + (mx.y - mn.y) * 0.62f), ImVec2(mx.x - 2, mx.y - 2),
         IM_COL32(0, 0, 0, 0),            IM_COL32(0, 0, 0, 0),
-        C::UA(C::BgDeep, 0.55f),         C::UA(C::BgDeep, 0.55f));
+        C::UA(C::BgDeep, 0.35f),         C::UA(C::BgDeep, 0.35f));
 
     dl->AddRect(ImVec2(mn.x + 1.0f, mn.y + 1.0f), ImVec2(mx.x - 1.0f, mx.y - 1.0f),
                 C::UA(C::Border, 0.42f * breathe), kCardRound - 1.0f, 0, 1.4f);
@@ -315,8 +311,14 @@ inline bool RenderWindow(ImTextureID tex = nullptr) {
 
     const ImVec2 display = io.DisplaySize;
 
-    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(display, ImGuiCond_Always);
+    // Card-sized popup centred on the same rect the menu uses, with a band
+    // above and below for the fade-in and the rotating promo line.
+    const MenuWindow win = ComputeMenuWindow(display);
+    const float kPromoRoom = 130.0f;
+    const ImVec2 winPos(win.pos.x, win.pos.y - kPromoRoom * 0.5f);
+    const ImVec2 winSize(win.size.x, win.size.y + kPromoRoom);
+    ImGui::SetNextWindowPos(winPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(winSize, ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.0f);
 
     bool finished = false;
@@ -328,27 +330,22 @@ inline bool RenderWindow(ImTextureID tex = nullptr) {
     {
         ImDrawList* dl = ImGui::GetWindowDrawList();
 
-        Backdrop(dl, display, tex);
+        const ImVec2 cardMin = win.pos;
+        const ImVec2 cardMax(win.pos.x + win.size.x, win.pos.y + win.size.y);
+        const float cardW = win.size.x;
+        const float cardH = win.size.y;
+        const float cardCx = (cardMin.x + cardMax.x) * 0.5f;
 
-        // The video fades up from black instead of popping in on the first frame.
+        CardBackdrop(dl, cardMin, cardMax, tex);
+        GlassCard(dl, cardMin, cardMax);
+
+        // The card fades up from black instead of popping in on the first frame.
         const float enter = EaseOut(Clamp01(g_Time / 0.55f));
         if (enter < 0.999f)
-            dl->AddRectFilled(ImVec2(0, 0), display, IM_COL32(0, 0, 0, (int)((1.0f - enter) * 255.0f)));
+            dl->AddRectFilled(cardMin, cardMax, IM_COL32(0, 0, 0, (int)((1.0f - enter) * 255.0f)));
 
         ImFont* body = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
         ImFont* disp = F50 ? F50 : body;
-
-        // Entrance: the card settles from 96% and drops the last 16 px into place.
-        const float enterK = 0.960f + 0.040f * enter;
-        const float lift   = (1.0f - enter) * 16.0f;
-        const float cardW = ImMin(kCardW, ImMax(320.0f, display.x - 32.0f)) * enterK;
-        const float cardH = kCardH * enterK;
-        const ImVec2 cardMin((display.x - cardW) * 0.5f,
-                             ImMax(16.0f, (display.y - cardH) * 0.5f - 22.0f) + lift);
-        const ImVec2 cardMax(cardMin.x + cardW, cardMin.y + cardH);
-        const float cardCx = (cardMin.x + cardMax.x) * 0.5f;
-
-        GlassCard(dl, cardMin, cardMax);
 
         const float wordTop = cardMin.y + cardH * 0.240f;
         TextTracked(dl, disp, 46.0f, cardCx, wordTop + 2.0f, IM_COL32(0, 0, 0, 120), "ETHNIR", 5.0f);

@@ -1266,7 +1266,7 @@ namespace raspody
             static ImVec2 cardPos(-1.0f, -1.0f);
             static bool cardMoved = false;
 
-            const float cardH = size.y;
+            const float cardH = size.y - 12.0f;
 
             float cardW = ImClamp(cardH * 0.38f, S(200), S(320));
 
@@ -1298,7 +1298,25 @@ namespace raspody
                 ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoCollapse |
                 ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav);
             {
-                DrawEspPreview(ImGui::GetWindowDrawList(), cardPos, cardW, cardH);
+                // The preview mirrors the in-game player ESP, so it uses the very
+                // same toggles and colour pickers the Visuals page edits.
+                auto EspCol = [](float* c, ImU32 fallback) -> ImU32 {
+                    if (!c) return fallback;
+                    auto u8 = [](float v) {
+                        if (v <= 1.0f) v *= 255.0f;
+                        return (int)(ImClamp(v, 0.0f, 255.0f) + 0.5f);
+                    };
+                    return IM_COL32(u8(c[0]), u8(c[1]), u8(c[2]), u8(c[3]));
+                };
+
+                DrawEspPreview(ImGui::GetWindowDrawList(), cardPos, cardW, cardH,
+                    Config.ESPMenu.Box, Config.ESPMenu.isPlayerLine, Config.ESPMenu.Skeleton,
+                    Config.ESPMenu.Health, Config.ESPMenu.Name, Config.ESPMenu.Distance,
+                    EspCol(Config.sColorsESPPLAYER.LinePLAYER,   IM_COL32(255, 0, 0, 255)),
+                    EspCol(Config.sColorsESPPLAYER.BoxPLAYER,   IM_COL32(255, 0, 0, 255)),
+                    EspCol(Config.sColorsESPPLAYER.HealthPLAYER, IM_COL32(0, 255, 0, 255)),
+                    EspCol(Config.sColorsESPPLAYER.NamePLAYER,  IM_COL32(255, 255, 255, 255)),
+                    EspCol(Config.sColorsESPPLAYER.DistancePLAYER, IM_COL32(255, 255, 0, 255)));
 
                 ImGui::SetCursorScreenPos(ImVec2(cardPos.x + S(6), cardPos.y + S(2)));
                 ImGui::InvisibleButton("##raspody_esp_grip",

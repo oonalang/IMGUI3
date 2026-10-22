@@ -80,9 +80,15 @@ namespace raspody
     bool MatchesSearch(const char* label, const char* description);
     void ClearSearch();
 
-    typedef void (*EspPreviewFn)(ImDrawList*, ImVec2, float, float);
+    typedef void (*EspPreviewFn)(ImDrawList*, ImVec2, float, float,
+                                 bool, bool, bool, bool, bool, bool,
+                                 ImU32, ImU32, ImU32, ImU32, ImU32);
     void SetEspPreview(EspPreviewFn fn);
-    void DrawEspPreview(ImDrawList* dl, ImVec2 pos, float width, float height);
+    void DrawEspPreview(ImDrawList* dl, ImVec2 pos, float width, float height,
+                        bool drawBox, bool drawLine, bool drawSkeleton,
+                        bool drawHealth, bool drawName, bool drawDistance,
+                        ImU32 lineColor, ImU32 boxColor, ImU32 healthColor,
+                        ImU32 nameColor, ImU32 distColor);
 
     struct UiState
     {

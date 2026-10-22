@@ -1241,6 +1241,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         else if (!isLogin && ui_loading::IsActive()) {
             if (ui_loading::RenderWindow((ImTextureID)(intptr_t)runtime_preview_menu::g_menuBackground.id)) {
                 isLogin = true;
+                uncollapseOpenAnim = 0.0f;   // fade the menu in instead of flashing black
             }
         }
         else {
