@@ -330,7 +330,12 @@ inline void SelectSnowboardSkin(int skinId)
 }
 
 inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = false) {
-    ImGui::BeginChild("SkinContent", ImVec2(0, 0));
+    // No child window here. This used to open two nested children and close
+    // neither, so every EndChild after it (the menu's page area included)
+    // closed the wrong window and left ImGui's window stack unbalanced - the
+    // Skins page rendered as an empty box with stray text outside it. The
+    // content flows in the caller's window, and the page's own drag scroll
+    // moves it.
     ImGui::Dummy(ImVec2(0, 8 * c::scale));
 
     if (drawSubTabs) {
@@ -357,6 +362,7 @@ inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = fals
         ImGui::SameLine();
         if (custom::Page(skinSubTab == 6, "Snowboard", ImVec2(tabWidth, tabHeight), false, false)) skinSubTab = 6;
         if (subTabFont) ImGui::PopFont();
+        ImGui::PopStyleVar();   // the row push above was never popped
     }
 
     static char charSearchQuery[256] = "";
@@ -470,8 +476,6 @@ inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = fals
             custom::EndGroup();
         }
     }
-
-    ImGui::BeginChild("##SkinList", ImVec2(0, ImGui::GetContentRegionAvail().y - 10), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
     switch (skinSubTab) {
 case 0:
@@ -993,6 +997,12 @@ case 3:
         }
         break;
     }
+
+    // The list's tighter item spacing is scoped to the list alone. Left pushed,
+    // it leaked into every page rendered afterwards - and tripped ImGui's
+    // PushStyleVar/PopStyleVar stack assertion on the way out of the menu window.
+    ImGui::PopStyleVar();
+
     if (showKeyboard) {
         if (activeInputID == "##SearchCustomChar") {
             RenderVirtualKeyboard("##VirtualKeyboard", charSearchQuery, IM_ARRAYSIZE(charSearchQuery), &showKeyboard);

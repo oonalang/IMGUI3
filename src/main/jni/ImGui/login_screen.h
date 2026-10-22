@@ -321,8 +321,22 @@ namespace login_screen
 
         const char* brand = (p.brand && p.brand[0]) ? p.brand : "ethnir.cc";
 
+        // The card sits on the game's own frame, so it needs its own light:
+        // a soft ambient shadow under it and one faint purple rim outside it.
+        for (int i = 4; i >= 1; --i)
+        {
+            const float grow = (float)i * 7.0f * s;
+            dl->AddRect(ImVec2(L.cardMin.x - grow, L.cardMin.y - grow * 0.6f),
+                        ImVec2(L.cardMax.x + grow, L.cardMax.y + grow * 1.4f),
+                        IM_COL32(0, 0, 0, 16 + 6 * (4 - i)),
+                        L.cardRound + grow, 0, grow);
+        }
+
         dl->AddRectFilled(L.cardMin, L.cardMax, kPanel, L.cardRound);
         dl->AddRect(L.cardMin, L.cardMax, IM_COL32(139, 92, 246, 54), L.cardRound, 0, 1.0f);
+        dl->AddRect(ImVec2(L.cardMin.x + 6.0f * s, L.cardMin.y + 6.0f * s),
+                    ImVec2(L.cardMax.x - 6.0f * s, L.cardMax.y - 6.0f * s),
+                    IM_COL32(255, 255, 255, 10), L.cardRound - 6.0f * s, 0, 1.0f);
 
         {
             const ImVec2 barMax(L.cardMax.x, L.cardMin.y + L.headerH);
@@ -374,6 +388,20 @@ namespace login_screen
                                 ImVec2(0.5f + half + panX, 0.5f + half + panY), IM_COL32_WHITE,
                                 atCorner ? L.cardRound : 0.0f,
                                 atCorner ? ImDrawFlags_RoundCornersBottomLeft : 0);
+
+            // Feather the artwork into the panel instead of ending it on a hard
+            // vertical edge, and darken its foot so the form stays readable.
+            const float fadeW = ImMin(ImMax(colW * 0.26f, 18.0f * s), colW * 0.55f);
+            dl->AddRectFilledMultiColor(
+                ImVec2(L.wellMax.x - fadeW, L.wellMin.y), L.wellMax,
+                IM_COL32(18, 11, 29, 0), IM_COL32(18, 11, 29, 235),
+                IM_COL32(18, 11, 29, 255), IM_COL32(18, 11, 29, 0));
+
+            const float footH = ImMin(colH * 0.30f, 90.0f * s);
+            dl->AddRectFilledMultiColor(
+                ImVec2(L.wellMin.x, L.wellMax.y - footH), L.wellMax,
+                IM_COL32(10, 5, 18, 0), IM_COL32(10, 5, 18, 0),
+                IM_COL32(10, 5, 18, 190), IM_COL32(10, 5, 18, 190));
         }
         else
         {
@@ -421,6 +449,19 @@ namespace login_screen
             const bool focused = ImGui::IsItemActive();
             const bool hovered = ImGui::IsItemHovered();
             ImGui::PopFont();
+
+            // Focus reads from across the card: a bloom under the baseline, then
+            // the line itself on top of it.
+            if (focused)
+            {
+                for (int i = 3; i >= 1; --i)
+                {
+                    const float grow = (float)i * 2.6f * s;
+                    dl->AddLine(ImVec2(L.fieldL, L.fieldBot + grow),
+                                ImVec2(L.fieldR, L.fieldBot + grow),
+                                IM_COL32(139, 92, 246, 10 + 8 * (3 - i)), 3.0f * s);
+                }
+            }
 
             const ImU32 lineCol = focused ? kPurple : (hovered ? ImU32(IM_COL32(108, 84, 152, 255)) : kLine);
             dl->AddLine(ImVec2(L.fieldL, L.fieldBot), ImVec2(L.fieldR, L.fieldBot),

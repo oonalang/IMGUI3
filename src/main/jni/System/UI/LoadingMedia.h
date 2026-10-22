@@ -174,6 +174,9 @@ namespace ui_media
     static constexpr int kMaxVideoTexH = 1080;
 
     inline jobject g_surfaceTexture = nullptr;
+    // Reused transform scratch: allocating one per frame was a per-frame JNI
+    // allocation on the loader's hottest path.
+    inline jfloatArray g_matrixArray = nullptr;
     inline jobject g_audioPlayer   = nullptr;
 
     // Set once the video has actually been drawn into the target texture. Until
@@ -620,6 +623,20 @@ namespace ui_media
         if (g_program == 0) return;
         if (g_surfaceTexture == nullptr) return;
 
+        // The loader repaints at the display rate, but the clip is 30 fps. Copying
+        // the external frame into our own texture every render frame doubled the
+        // GL work (a full 960x540 blit plus the state save/restore around it) and
+        // produced frames identical to the previous one. One update per clip frame
+        // is enough and roughly halves the cost of the loader's slowest path.
+        {
+            struct timespec ts;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            const uint64_t nowMs = (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / 1000000ull;
+            static uint64_t lastMs = 0;
+            if (lastMs != 0 && nowMs - lastMs < 32ull) return;
+            lastMs = nowMs;
+        }
+
         JNIEnv* env = Env();
         if (env == nullptr) return;
 
@@ -637,13 +654,27 @@ namespace ui_media
 
         if (g_jni.stTransform != nullptr)
         {
-            jfloatArray arr = env->NewFloatArray(16);
-            if (arr != nullptr)
+            // One global array, reused. This used to allocate a 16-float JNI array
+            // every frame, which the loader then threw away - pure garbage for the
+            // ART collector to chase while the clip was decoding.
+            if (g_matrixArray == nullptr)
             {
-                env->CallVoidMethod(g_surfaceTexture, g_jni.stTransform, arr);
+                jfloatArray local = env->NewFloatArray(16);
+                if (local != nullptr)
+                {
+                    g_matrixArray = (jfloatArray)env->NewGlobalRef(local);
+                    env->DeleteLocalRef(local);
+                }
+                else
+                {
+                    env->ExceptionClear();
+                }
+            }
+            if (g_matrixArray != nullptr)
+            {
+                env->CallVoidMethod(g_surfaceTexture, g_jni.stTransform, g_matrixArray);
                 if (env->ExceptionCheck()) env->ExceptionClear();
-                else env->GetFloatArrayRegion(arr, 0, 16, g_matrix);
-                env->DeleteLocalRef(arr);
+                else env->GetFloatArrayRegion(g_matrixArray, 0, 16, g_matrix);
             }
         }
 
@@ -792,6 +823,13 @@ namespace ui_media
             JNIEnv* env = Env();
             if (env != nullptr) env->DeleteGlobalRef(g_surfaceTexture);
             g_surfaceTexture = nullptr;
+        }
+
+        if (g_matrixArray != nullptr)
+        {
+            JNIEnv* env = Env();
+            if (env != nullptr) env->DeleteGlobalRef(g_matrixArray);
+            g_matrixArray = nullptr;
         }
     }
 

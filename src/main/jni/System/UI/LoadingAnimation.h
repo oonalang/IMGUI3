@@ -113,48 +113,60 @@ static void CoverImage(ImDrawList* dl, ImTextureID tex, ImVec2 mn, ImVec2 mx, fl
         dl->AddImage(tex, mn, mx, ImVec2(u0, v0), ImVec2(u1, v1));
 }
 
-    // The field behind the card: the menu's own artwork, cover-scaled and dimmed
-    // so the card on top of it reads as the focal point. The video does not go
-    // here - it is the card's background, and painting it twice would just cost
-    // a second fullscreen blit of the same frame.
+    // The field behind the card. Once the clip really has a frame it is the
+    // video, full-bleed: the video is the card's background and the backdrop at
+    // the same time, so the two can never disagree.
+    //
+    // The still artwork is NOT painted here. It is the card's pre-video image
+    // (see CardBackdrop), and fullscreen it read as the app's own splash art
+    // sitting behind a loader rather than as part of the loader.
     //
     // This has to stay fullscreen either way: the menu is hooked at login time,
     // before the game has drawn a frame of its own, so every pixel the card does
     // not cover is the game's black screen.
-    static void ScreenBackdrop(ImDrawList* dl, ImVec2 display, ImTextureID still)
+    static void ScreenBackdrop(ImDrawList* dl, ImVec2 display)
     {
-        const ImTextureID source = still;
+    const ImTextureID source = ui_media::VideoTexture();
+    const bool ready = source != nullptr && ui_media::VideoReady();
+    const ImTextureID art = ready ? source : nullptr;
 
-    const float aspect = (display.x > 0.0f && display.y > 0.0f) ? display.x / display.y
-                                                               : 16.0f / 9.0f;
+    const float aspect = ready ? ui_media::VideoAspect()
+                               : ((display.x > 0.0f && display.y > 0.0f) ? display.x / display.y
+                                                                        : 16.0f / 9.0f);
 
     // The field is painted first and unconditionally. The loader is hooked in
     // before the game has drawn a frame of its own, so a pixel that is not
     // painted here is the game's own black screen - that is what the black
     // screen was: the video texture was drawn over the field while it was
     // still empty. The video now goes on top of the field, never instead of it.
-    const float drift = std::sin(g_Time * 0.28f) * display.x * 0.06f;
-    const float rise  = std::cos(g_Time * 0.21f) * display.y * 0.04f;
-    dl->AddRectFilledMultiColor(ImVec2(0, 0), display,
-        IM_COL32(10, 4, 22, 255), IM_COL32(14, 6, 28, 255),
-        IM_COL32(4, 1, 12, 255),   IM_COL32(6, 2, 16, 255));
-
-    for (int i = 0; i < 3; ++i)
+    // The procedural field is only worth painting when it will be seen: with a
+    // live frame on top it was a fullscreen gradient plus six large translucent
+    // circles per frame, every pixel of them overdrawn by the video.
+    if (art == nullptr)
     {
-        const float phase = g_Time * (0.16f + i * 0.05f) + i * 2.1f;
-        const ImVec2 c(display.x * (0.5f + 0.26f * std::sin(phase)) + drift * 0.35f,
-                       display.y * (0.42f + 0.22f * std::cos(phase * 0.8f)) + rise * 0.35f);
-        const float r = display.x * (0.22f + 0.05f * i);
-        dl->AddCircleFilled(c, r, C::UA(C::PurpleDeep, 0.10f - i * 0.02f), 64);
-        dl->AddCircleFilled(c, r * 0.55f, C::UA(C::Purple, 0.06f - i * 0.015f), 64);
+        const float drift = std::sin(g_Time * 0.28f) * display.x * 0.06f;
+        const float rise  = std::cos(g_Time * 0.21f) * display.y * 0.04f;
+        dl->AddRectFilledMultiColor(ImVec2(0, 0), display,
+            IM_COL32(10, 4, 22, 255), IM_COL32(14, 6, 28, 255),
+            IM_COL32(4, 1, 12, 255),   IM_COL32(6, 2, 16, 255));
+
+        for (int i = 0; i < 3; ++i)
+        {
+            const float phase = g_Time * (0.16f + i * 0.05f) + i * 2.1f;
+            const ImVec2 c(display.x * (0.5f + 0.26f * std::sin(phase)) + drift * 0.35f,
+                           display.y * (0.42f + 0.22f * std::cos(phase * 0.8f)) + rise * 0.35f);
+            const float r = display.x * (0.22f + 0.05f * i);
+            dl->AddCircleFilled(c, r, C::UA(C::PurpleDeep, 0.10f - i * 0.02f), 64);
+            dl->AddCircleFilled(c, r * 0.55f, C::UA(C::Purple, 0.06f - i * 0.015f), 64);
+        }
     }
 
-    if (source != nullptr)
-        CoverImage(dl, source, ImVec2(0, 0), display, aspect);
+    if (art != nullptr)
+        CoverImage(dl, art, ImVec2(0, 0), display, aspect);
 
     // Dim the field only: the card paints its own crisp crop of the same video.
     dl->AddRectFilled(ImVec2(0, 0), display,
-                      IM_COL32(6, 2, 14, source != nullptr ? 72 : 104));
+                      IM_COL32(6, 2, 14, art != nullptr ? 72 : 104));
     dl->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(display.x, display.y * 0.55f),
         IM_COL32(26, 10, 48, 62), IM_COL32(26, 10, 48, 62),
         IM_COL32(0, 0, 0, 0),     IM_COL32(0, 0, 0, 0));
@@ -166,37 +178,39 @@ static void CoverImage(ImDrawList* dl, ImTextureID tex, ImVec2 mn, ImVec2 mx, fl
     // The card's own background: the loading video, cover-scaled into the card so it
     // keeps a well-framed crop instead of being a window onto the field behind it.
     //
-    // The still is only used when there is no video to wait for at all. While the
-    // clip is still opening (VideoPending()) the card keeps its procedural field,
-    // so it never shows the old artwork and then swaps to the video a second later.
+    // Until the clip has its first frame the card shows the still artwork - the
+    // photo the loader opens on - and the video then replaces it in place. The
+    // still is never drawn anywhere but here, and never over a live frame.
     static void CardBackdrop(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImTextureID still)
     {
         const ImVec2 size(mx.x - mn.x, mx.y - mn.y);
         const ImTextureID video = ui_media::VideoTexture();
         const bool ready = video != nullptr && ui_media::VideoReady();
-        const ImTextureID source = ready ? video
-                                         : (ui_media::VideoPending() ? nullptr : still);
+        const ImTextureID source = ready ? video : still;
 
     const float aspect = ready ? ui_media::VideoAspect()
                                : (size.x > 0.0f ? size.x / size.y : 16.0f / 9.0f);
     if (!(size.x > 0.0f) || !(size.y > 0.0f) || aspect <= 0.0f) return;
 
-    // Same rule as the field behind it: the card paints its own background
-    // first, and the video is laid over it only once it really has a frame.
-    const float drift = std::sin(g_Time * 0.28f) * size.x * 0.06f;
-    const float rise  = std::cos(g_Time * 0.21f) * size.y * 0.04f;
-    dl->AddRectFilledMultiColor(mn, mx,
-        IM_COL32(10, 4, 22, 255), IM_COL32(14, 6, 28, 255),
-        IM_COL32(4, 1, 12, 255),   IM_COL32(6, 2, 16, 255));
-
-    for (int i = 0; i < 3; ++i)
+    // As on the field: only paint what can be seen. With an image over the whole
+    // card the gradient and the three circles were pure overdraw.
+    if (source == nullptr)
     {
-        const float phase = g_Time * (0.16f + i * 0.05f) + i * 2.1f;
-        const ImVec2 c(mn.x + size.x * (0.5f + 0.26f * std::sin(phase)) + drift * 0.35f,
-                       mn.y + size.y * (0.42f + 0.22f * std::cos(phase * 0.8f)) + rise * 0.35f);
-        const float r = size.x * (0.22f + 0.05f * i);
-        dl->AddCircleFilled(c, r, C::UA(C::PurpleDeep, 0.10f - i * 0.02f), 64);
-        dl->AddCircleFilled(c, r * 0.55f, C::UA(C::Purple, 0.06f - i * 0.015f), 64);
+        const float drift = std::sin(g_Time * 0.28f) * size.x * 0.06f;
+        const float rise  = std::cos(g_Time * 0.21f) * size.y * 0.04f;
+        dl->AddRectFilledMultiColor(mn, mx,
+            IM_COL32(10, 4, 22, 255), IM_COL32(14, 6, 28, 255),
+            IM_COL32(4, 1, 12, 255),   IM_COL32(6, 2, 16, 255));
+
+        for (int i = 0; i < 3; ++i)
+        {
+            const float phase = g_Time * (0.16f + i * 0.05f) + i * 2.1f;
+            const ImVec2 c(mn.x + size.x * (0.5f + 0.26f * std::sin(phase)) + drift * 0.35f,
+                           mn.y + size.y * (0.42f + 0.22f * std::cos(phase * 0.8f)) + rise * 0.35f);
+            const float r = size.x * (0.22f + 0.05f * i);
+            dl->AddCircleFilled(c, r, C::UA(C::PurpleDeep, 0.10f - i * 0.02f), 64);
+            dl->AddCircleFilled(c, r * 0.55f, C::UA(C::Purple, 0.06f - i * 0.015f), 64);
+        }
     }
 
     if (source != nullptr)
@@ -436,7 +450,7 @@ inline bool RenderWindow(ImTextureID tex = nullptr) {
         // first frame. The card's own contents still ease in below.
         const float enter = EaseOut(Clamp01(g_Time / 0.55f));
         dl->PushClipRect(ImVec2(0.0f, 0.0f), display, false);
-        ScreenBackdrop(dl, display, tex);
+        ScreenBackdrop(dl, display);
         dl->PopClipRect();
 
         CardBackdrop(dl, cardMin, cardMax, tex);

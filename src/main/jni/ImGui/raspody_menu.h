@@ -841,10 +841,12 @@ namespace raspody
     {
         if (subtab == 0)
         {
-            ImGui::SetCursorPos(ImVec2(p.origin.x + 200.0f, p.origin.y + 85.0f));
-            ImGui::BeginChild("SkinsBrowser##L9", ImVec2(0, 0), true);
+            // p.origin is a screen position; SetCursorPos takes window-local
+            // coordinates, so the browser used to land far outside the page and
+            // be clipped away. The content draws straight into the page now, so
+            // the page's drag scroll moves the skin list.
+            ImGui::SetCursorScreenPos(ImVec2(p.origin.x, p.origin.y));
             RenderSkinCategoryContent(0, true);
-            ImGui::EndChild();
             p.singleY = ImGui::GetCursorScreenPos().y - p.origin.y + S(8);
         }
         else
@@ -864,7 +866,7 @@ namespace raspody
             });
 
             AddPageCard(p, 0, "Weapon blueprints", [&] {
-                Checkbox("Blueprints", "Show blueprint / skin visuals on weapons (BlueprintWeaponInfo).",
+                Checkbox("Blueprints", "Show blueprint skins on weapons.",
                          &Config.ExtraMenu.MythicAttachments);
             });
 
@@ -1351,14 +1353,24 @@ namespace raspody
 
             if (!cardMoved)
             {
-                float cardX = pos.x + size.x + S(16);
-                if (cardX + cardW > display.x - S(6))
-                    cardX = display.x - cardW - S(6);
-
-                cardPos = ImVec2(cardX, pos.y);
+                // Dock beside the menu when there is real room for a side panel,
+                // otherwise centre the card on the display. Pushing it to the
+                // right edge (the old fallback) pinned the model against the
+                // screen border on a phone, which read as a cropped preview.
+                const float sideX = pos.x + size.x + S(16);
+                if (sideX + cardW <= display.x - S(6))
+                {
+                    cardPos = ImVec2(sideX, pos.y);
+                }
+                else
+                {
+                    cardPos = ImVec2((display.x - cardW) * 0.5f,
+                                     (display.y - cardH) * 0.5f);
+                }
             }
             cardPos.x = ImClamp(cardPos.x, 0.0f, ImMax(0.0f, display.x - cardW));
             cardPos.y = ImClamp(cardPos.y, 0.0f, ImMax(0.0f, display.y - cardH));
+
 
             ImGui::SetNextWindowPos(cardPos, ImGuiCond_Always);
             ImGui::SetNextWindowSize(ImVec2(cardW, cardH), ImGuiCond_Always);

@@ -189,6 +189,8 @@ struct KillDecorationDiag {
 
     int inventoryKillIconWrites = 0;
     int inventoryLevelWrites = 0;
+    int iconFallbackHits = 0;
+    int lastHeldWeaponID = 0;
 };
 KillDecorationDiag g_killDecorationDiag;
 
@@ -605,8 +607,29 @@ inline void KillDecoration_ApplyLocalInventoryInfo()
     const int weaponID = held->get_WeaponID();
     if (weaponID <= 0) return;
 
+    g_killDecorationDiag.lastHeldWeaponID = weaponID;
+
+    int killIcon = 0;
     auto iconIt = activeKillIcons.find(weaponID);
-    const int killIcon = (iconIt != activeKillIcons.end()) ? iconIt->second : 0;
+    if (iconIt != activeKillIcons.end()) killIcon = iconIt->second;
+
+    // The apply-time insert only happens when a weapon skin is ticked, and only
+    // for the ids the menu could resolve at that moment. A skin applied before
+    // the kill-icon table had loaded left this map empty, and since nothing
+    // retried, the kill icon never appeared for that weapon. Resolve the held
+    // weapon's own icon lazily instead, so the result does not depend on the
+    // order the player picked things in.
+    if (killIcon <= 0)
+    {
+        LoadKillIcons();
+        auto def = killIconByWeapon.find(weaponID);
+        if (def != killIconByWeapon.end() && def->second > 0)
+        {
+            killIcon = def->second;
+            g_killDecorationDiag.iconFallbackHits++;
+        }
+    }
+
     if (killIcon <= 0) return;
 
     auto *p = (uint8_t *)info;

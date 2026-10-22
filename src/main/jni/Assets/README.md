@@ -38,8 +38,14 @@ with the arknights file name tried before `loading.mp4` in each of them.
 adb push my-clip.mp4 /storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir/arknights-eyjafjallas-gentle-glow.1920x1080.mp4
 ```
 
-The video is drawn into the card and nowhere else. The frame behind it is the
-menu artwork, dimmed, so the card stays the focal point.
+The video is drawn into the card and across the fullscreen field behind it, so
+the card and the backdrop are the same live frame. Until the clip delivers its
+first frame the card shows the still artwork; the still is never painted
+fullscreen.
+
+One update per clip frame: the loader repaints at the display rate, but the
+external frame is only copied into our texture at ~30 Hz, and the procedural
+field behind an opaque frame is not painted at all.
 
 ## Regenerating the clip
 

@@ -5,9 +5,10 @@
 // field has to be the first thing painted, on the first frame, with no fade
 // from black on top of it.
 //
-// The card's background is the loading video, not the still artwork: the still
-// is only a last resort for a build with no clip at all, so the card must never
-// show the artwork while the video is still opening and then swap to it.
+// The loading video is both the card's background and the fullscreen backdrop,
+// so the two never disagree. The still artwork is the card's opening image and
+// belongs nowhere else: as a fullscreen backdrop it read as separate splash art
+// sitting behind the loader.
 //
 // The check renders the loader headless and looks at the draw commands.
 
@@ -134,24 +135,31 @@ int main()
         if (k.coversScreen && !k.image && k.maxAlpha > 0.99f) opaqueField = true;
     Check("the field covers the whole screen without a video", opaqueField);
 
-    // 2. The field behind the card is the menu artwork, fullscreen.
+    // 2. With no video yet the field is all there is behind the card: the still
+    //    artwork is not painted fullscreen.
     Frame(kStill);
     Collect(cmds);
 
-    int fieldIndex = -1, backdropIndex = -1;
-    for (int i = 0; i < (int)cmds.size(); ++i)
+    bool fullscreenStill = false, fullscreenImage = false, fieldPainted = false;
+    for (const Cmd& k : cmds)
     {
-        const Cmd& k = cmds[i];
         if (!k.coversScreen) continue;
-        if (k.image && k.tex == kStill) { if (backdropIndex < 0) backdropIndex = i; }
-        else if (!k.image && k.maxAlpha > 0.99f) { if (fieldIndex < 0) fieldIndex = i; }
+        if (k.image)
+        {
+            fullscreenImage = true;
+            if (k.tex == kStill) fullscreenStill = true;
+        }
+        else if (k.maxAlpha > 0.99f)
+        {
+            fieldPainted = true;
+        }
     }
-    Check("the field is still painted under the backdrop", fieldIndex >= 0);
-    Check("the still artwork is the backdrop", backdropIndex >= 0);
-    Check("the backdrop comes after the field", fieldIndex >= 0 && backdropIndex > fieldIndex);
+    Check("the field is painted with no video", fieldPainted);
+    Check("the still artwork is not the backdrop", !fullscreenStill);
+    Check("no image is painted fullscreen without a video", !fullscreenImage);
 
-    // 3. With a video ready: it is the card's background, and the backdrop is
-    //    still the artwork - the video must not be painted fullscreen as well.
+    // 3. With a video ready: it is the card's background and the backdrop, and
+    //    the still artwork is gone everywhere.
     ui_media::g_hostVideoTex     = kVideo;
     ui_media::g_hostVideoW       = 960;
     ui_media::g_hostVideoH       = 540;
@@ -160,35 +168,32 @@ int main()
     Frame(kStill);
     Collect(cmds);
 
-    int cardVideo = -1, cardStill = -1, fullscreenVideo = -1;
+    int cardVideo = -1, fullscreenVideo = -1, stillAnywhere = -1;
     for (int i = 0; i < (int)cmds.size(); ++i)
     {
         const Cmd& k = cmds[i];
         if (!k.image) continue;
-        if (InsideCard(k, win))
-        {
-            if (k.tex == kVideo && cardVideo < 0) cardVideo = i;
-            if (k.tex == kStill && cardStill < 0) cardStill = i;
-        }
+        if (k.tex == kStill && stillAnywhere < 0) stillAnywhere = i;
+        if (InsideCard(k, win) && k.tex == kVideo && cardVideo < 0) cardVideo = i;
         if (k.coversScreen && k.tex == kVideo && fullscreenVideo < 0) fullscreenVideo = i;
     }
 
     Check("the video is the card background", cardVideo >= 0);
-    Check("the card does not paint the still artwork over it", cardStill < 0);
-    Check("the video is not painted fullscreen", fullscreenVideo < 0);
+    Check("the video is the backdrop too", fullscreenVideo >= 0);
+    Check("the still artwork is not painted once the video is up", stillAnywhere < 0);
 
-    // 4. While the video is still opening the card keeps its own field: it must
-    //    not show the artwork and swap to the video a second later.
+    // 4. While the clip is still opening the card shows the opening photo, and
+    //    the video then replaces it in the card.
     ui_media::g_hostVideoTex = nullptr;
     ui_media::g_hostVideoPending = true;
 
     Frame(kStill);
     Collect(cmds);
 
-    bool cardImage = false;
+    bool cardStill = false;
     for (const Cmd& k : cmds)
-        if (k.image && InsideCard(k, win)) cardImage = true;
-    Check("the card shows nothing but its field before the video is ready", !cardImage);
+        if (k.image && k.tex == kStill && InsideCard(k, win)) cardStill = true;
+    Check("the card opens on the still artwork", cardStill);
 
     // 5. The card sits inside the screen and the field around it.
     Check("the card is on screen",
