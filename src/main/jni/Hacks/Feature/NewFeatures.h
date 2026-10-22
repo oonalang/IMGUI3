@@ -372,6 +372,13 @@ namespace NewFeatures
         static constexpr float kRayReach        = 1.00f;
         static constexpr float kSurfaceFrac     = 0.80f;
         static constexpr float kMinStemGap      = 0.05f;
+
+        // The bullet leaves the weapon, not the eye. A ray from the eye point
+        // hits the cover you are peeking over at ~0 m whenever the camera sits
+        // inside or on that cover - the "head glitch" case - and every shot
+        // came back as "wall in the way". Start where the muzzle really is.
+        static constexpr float kRayStem         = 0.30f;
+        static constexpr float kRayStepPast     = 0.05f;
         static constexpr float kHeadRadius      = 0.14f;
         static constexpr float kBodyRadius      = 0.30f;
 
@@ -594,6 +601,7 @@ namespace NewFeatures
         bool settling;
         bool asked;
         bool aiming;
+        void* comp;     // the fire component this scan already resolved
     };
 
     inline bool A_FireAdsSwapActive()
@@ -603,7 +611,7 @@ namespace NewFeatures
 
     inline ScopeSettle A_FireScopingTransition(void *weapon, Pawn *localPawn)
     {
-        ScopeSettle s{false, false, false};
+        ScopeSettle s{false, false, false, nullptr};
         const double now = A_FireNow();
         bool moved = false;
 
@@ -618,6 +626,7 @@ namespace NewFeatures
         }
 
         void *comp = GetCurrentFireComponent(weapon);
+        s.comp = comp;      // A_FireAdsGate reuses this instead of asking again
         if (!g_afireAdsCompSeen) {
             g_afireAdsCompSeen = true;
             g_afireAdsLastComp = comp;
@@ -668,9 +677,17 @@ namespace NewFeatures
             r.pawnAim = fn_PawnIsAiming((void *)localPawn);
         }
 
-        void *fireComp = GetCurrentFireComponent(weapon);
-        if (fireComp != nullptr)
-            r.fcAim = IsFireComponentScoping(fireComp, &r.fcOk);
+        // The scoping check has already resolved this weapon's fire component
+        // for this scan; asking the managed side again was the same call twice
+        // on every tick of an ADS-only triggerbot. And when the pawn flag
+        // already says "scoped" the answer cannot change, so the component call
+        // and its class-name lookup are skipped outright - that lookup was the
+        // per-tick work that only ADS-only mode paid for.
+        if (!r.pawnAim) {
+            void *fireComp = settle.comp != nullptr ? settle.comp : GetCurrentFireComponent(weapon);
+            if (fireComp != nullptr)
+                r.fcAim = IsFireComponentScoping(fireComp, &r.fcOk);
+        }
 
         if (Tools::IsPtrValid(weapon)) {
             r.fieldFlag = *(bool *)((uintptr_t)weapon + Offsets::Weapon_m_IsAiming);
@@ -681,6 +698,42 @@ namespace NewFeatures
         if (r.pawnOk  || r.fcOk)  { r.aiming = false; return r; }
         r.unknown = true;
         r.aiming  = true;
+        return r;
+    }
+
+    // The ADS state cannot change 250 times a second, so the expensive half of
+    // the gate - the "not scoped" verdict, which costs a managed call and a
+    // class-name lookup - is remembered for a few milliseconds. A fresh
+    // "scoped" answer needs no managed call at all and is never cached, so
+    // nothing is delayed when you actually scope in.
+    constexpr double kAdsGateRefreshSeconds = 0.012;
+    inline AdsRead   g_afireAdsNegCached{};
+    inline double    g_afireAdsNegTime     = -1000.0;
+    inline void     *g_afireAdsNegWeapon   = nullptr;
+    inline void     *g_afireAdsNegComp     = nullptr;
+    inline bool      g_afireAdsNegValid    = false;
+
+    inline AdsRead A_FireAdsGateTick(void *weapon, Pawn *localPawn, const ScopeSettle &settle)
+    {
+        if (settle.asked && settle.aiming)
+            return A_FireAdsGate(weapon, localPawn, settle);
+
+        const double now = A_FireNow();
+        if (g_afireAdsNegValid && g_afireAdsNegWeapon == weapon &&
+            g_afireAdsNegComp == settle.comp &&
+            (now - g_afireAdsNegTime) < kAdsGateRefreshSeconds)
+            return g_afireAdsNegCached;
+
+        const AdsRead r = A_FireAdsGate(weapon, localPawn, settle);
+        if (r.aiming) {
+            g_afireAdsNegValid = false;
+        } else {
+            g_afireAdsNegCached = r;
+            g_afireAdsNegTime   = now;
+            g_afireAdsNegWeapon = weapon;
+            g_afireAdsNegComp   = settle.comp;
+            g_afireAdsNegValid  = true;
+        }
         return r;
     }
 
@@ -1174,9 +1227,18 @@ namespace NewFeatures
         if (!(dist >= 0.01f)) return AF_Ray::Clear;
         const Vector3 dir(d.x / dist, d.y / dist, d.z / dist);
 
+        // Muzzle stem: skip what the eye is already inside of. A target closer
+        // than the stem is point blank - nothing can block that line.
+        const float stem = (dist > 4.0f * A_FireTune::kRayStem) ? A_FireTune::kRayStem : 0.0f;
+        const Vector3 start(from.x + dir.x * stem,
+                            from.y + dir.y * stem,
+                            from.z + dir.z * stem);
+        const float span = dist - stem;
+        if (!(span >= 0.01f)) return AF_Ray::Clear;
+
         if (fn_PhysicsRaycastAll != nullptr) {
-            const float reach = dist + A_FireTune::kRayReach;
-            void *arr = fn_PhysicsRaycastAll(from, dir, reach);
+            const float reach = span + A_FireTune::kRayReach;
+            void *arr = fn_PhysicsRaycastAll(start, dir, reach);
             AF_NamedHit h;
             if (A_FireRaycastAllNearest(arr, reach, target, localPawn, h,
                                         &g_triggerDiag.selfHitsSkipped,
@@ -1202,7 +1264,7 @@ namespace NewFeatures
         if (fn_PhysicsRaycastHitOut != nullptr) {
             unsigned char hitBuf[AF_RAYHIT_SIZE];
             memset(hitBuf, 0, sizeof hitBuf);
-            const bool got = fn_PhysicsRaycastHitOut(from, dir, hitBuf, dist + A_FireTune::kRayReach);
+            const bool got = fn_PhysicsRaycastHitOut(start, dir, hitBuf, span + A_FireTune::kRayReach);
             if (!got) return AF_Ray::Clear;
 
             const float hd = *(const float *)(hitBuf + AF_RAYHIT_DISTOFF);
@@ -1241,11 +1303,11 @@ namespace NewFeatures
         }
 
         if (fn_PhysicsRaycastSegment != nullptr) {
-            float stem = probeRadius * A_FireTune::kSurfaceFrac;
-            if (stem < A_FireTune::kMinStemGap) stem = A_FireTune::kMinStemGap;
-            const float stop = dist - stem;
+            float tail = probeRadius * A_FireTune::kSurfaceFrac;
+            if (tail < A_FireTune::kMinStemGap) tail = A_FireTune::kMinStemGap;
+            const float stop = span - tail;
             if (!(stop > 0.01f)) return AF_Ray::Clear;
-            return fn_PhysicsRaycastSegment(from, dir, stop) ? AF_Ray::Blocked : AF_Ray::Clear;
+            return fn_PhysicsRaycastSegment(start, dir, stop) ? AF_Ray::Blocked : AF_Ray::Clear;
         }
 
         return AF_Ray::Unknown;
@@ -1340,10 +1402,17 @@ namespace NewFeatures
         if (!(len > 0.0001f)) return nullptr;
         const Vector3 dir(rayDir.x / len, rayDir.y / len, rayDir.z / len);
 
+        // Same muzzle stem as the LOS probe: with the camera in the cover you
+        // are peeking over, the first thing the eye ray hits is that cover.
+        const Vector3 start(camPos.x + dir.x * A_FireTune::kRayStem,
+                            camPos.y + dir.y * A_FireTune::kRayStem,
+                            camPos.z + dir.z * A_FireTune::kRayStem);
+        const float reach = A_FireTune::kCrosshairRayMax - A_FireTune::kRayStem;
+
         if (fn_PhysicsRaycastAll != nullptr) {
-            void *arr = fn_PhysicsRaycastAll(camPos, dir, A_FireTune::kCrosshairRayMax);
+            void *arr = fn_PhysicsRaycastAll(start, dir, reach);
             AF_NamedHit h;
-            if (A_FireRaycastAllNearest(arr, A_FireTune::kCrosshairRayMax,
+            if (A_FireRaycastAllNearest(arr, reach,
                                         nullptr, localPawn, h,
                                         &g_triggerDiag.selfHitsSkipped,
                                         &g_triggerDiag.triggerHitsSkipped)) {
@@ -1359,21 +1428,36 @@ namespace NewFeatures
             return nullptr;
         }
 
-        unsigned char hitBuf[AF_RAYHIT_SIZE];
-        memset(hitBuf, 0, sizeof hitBuf);
-        if (!fn_PhysicsRaycastHitOut(camPos, dir, hitBuf, A_FireTune::kCrosshairRayMax))
-            return nullptr;
+        // Single-hit raycast: a hit on your own body used to end the probe. At
+        // point blank (and in a head glitch) your capsule is the first thing
+        // under the dot, so step past it and keep looking instead.
+        Vector3 origin = start;
+        float travelled = 0.0f;   // offset from the muzzle start, like the walk
+        float remaining = reach;
+        for (int attempt = 0; attempt < 3 && remaining > 0.01f; attempt++) {
+            unsigned char hitBuf[AF_RAYHIT_SIZE];
+            memset(hitBuf, 0, sizeof hitBuf);
+            if (!fn_PhysicsRaycastHitOut(origin, dir, hitBuf, remaining))
+                return nullptr;
 
-        const float hd = *(const float *)(hitBuf + AF_RAYHIT_DISTOFF);
-        if (hitDistOut != nullptr && hd >= 0.0f) *hitDistOut = hd;
+            const float hd = *(const float *)(hitBuf + AF_RAYHIT_DISTOFF);
+            if (hitDistOut != nullptr && hd >= 0.0f) *hitDistOut = travelled + hd;
 
-        void *hitTransform = A_FireColliderTransform(A_FireHitCollider(hitBuf));
-        if (A_FireObjectAlive(hitTransform) && localPawn != nullptr &&
-            A_FireHitIsTarget(hitTransform, localPawn)) {
-            g_triggerDiag.selfHitsSkipped++;
-            return nullptr;
+            void *hitTransform = A_FireColliderTransform(A_FireHitCollider(hitBuf));
+            if (A_FireObjectAlive(hitTransform) && localPawn != nullptr &&
+                A_FireHitIsTarget(hitTransform, localPawn)) {
+                g_triggerDiag.selfHitsSkipped++;
+                const float step = (hd >= 0.0f ? hd : 0.0f) + A_FireTune::kRayStepPast;
+                origin = Vector3(origin.x + dir.x * step,
+                                 origin.y + dir.y * step,
+                                 origin.z + dir.z * step);
+                travelled += step;
+                remaining -= step;
+                continue;
+            }
+            return A_FirePawnFromHitTransform(hitTransform, items, count);
         }
-        return A_FirePawnFromHitTransform(hitTransform, items, count);
+        return nullptr;
     }
 
     inline FireBlock A_FireScan(Pawn *localPawn, Weapon *weapon, TriggerTarget &out)
@@ -1502,9 +1586,21 @@ namespace NewFeatures
                     float r = A_FireCrosshairRadiusPx();
                     if (!(r > 4.0f)) r = 4.0f;
                     limitPx = r + 2.0f;
+                    // His body could not be projected (point blank, feet behind
+                    // the near plane, head bone only). The dot's own ray landed
+                    // on him, so bound the dot by his real half width at the hit
+                    // distance instead of the tiny dot radius: that refusal is
+                    // why close-range shots never arrived.
+                    if (centreHitDist > 0.05f && focalPx > 0.0f) {
+                        const float bodyPx =
+                            A_FireTune::kBodyHalfWidthM * focalPx / centreHitDist + 2.0f;
+                        if (bodyPx > limitPx) limitPx = bodyPx;
+                    }
                     testSq  = bestSq;
                 }
-                if (testSq < 0.0f || testSq > limitPx * limitPx) {
+                // bestSq < 0 means the aim point did not project at all; the ray
+                // hit is the only evidence left, and it says the dot is on him.
+                if (testSq >= 0.0f && testSq > limitPx * limitPx) {
                     d.dotRayDeclined++;
                     if (dotRayGate) return FireBlock::NoEnemyInZone;
                 } else {
@@ -1638,7 +1734,30 @@ namespace NewFeatures
 
             Vector3 probePoint  = c.aim.pos;
             float   probeRadius = c.aim.radius;
-            if (los != AF_Ray::Clear && c.aim.headOk) {
+            if (los != AF_Ray::Clear && c.aim.headOk && c.aim.feetOk) {
+                // Walk the body from the head down. A target peeking over cover
+                // shows one slice of himself: the chest probe is behind that
+                // cover while the slice is not, and testing only the chest and
+                // the head centre refused a shot that is plainly there.
+                static const float kProbeT[] = { 0.92f, 0.84f, 0.72f, 0.60f, 0.48f };
+                constexpr int kProbeCount = (int)(sizeof kProbeT / sizeof kProbeT[0]);
+                for (int pi = 0; pi < kProbeCount; pi++) {
+                    const Vector3 p = A_FireAlongBody(c.aim.head, c.aim.feet, kProbeT[pi]);
+                    const float   r = (kProbeT[pi] > 0.80f) ? A_FireTune::kHeadRadius
+                                                            : A_FireTune::kBodyRadius;
+                    bool  pIdentified = false;
+                    float pHitDist    = -1.0f;
+                    const AF_Ray probe = A_FireRayToTarget(camPos, p, c.pawn, r, localPawn,
+                                                          &pIdentified, &pHitDist);
+                    if (probe != AF_Ray::Clear) continue;
+                    los           = probe;
+                    losIdentified = pIdentified;
+                    losHitDist    = pHitDist;
+                    probePoint    = p;
+                    probeRadius   = r;
+                    break;
+                }
+            } else if (los != AF_Ray::Clear && c.aim.headOk) {
                 bool headIdentified = false;
                 float headHitDist = -1.0f;
                 const AF_Ray losHead = A_FireRayToTarget(camPos, c.aim.head, c.pawn,
@@ -1782,7 +1901,7 @@ namespace NewFeatures
         if (settle.settling) return FireBlock::AdsTransition;
 
         if (Config.NewFeaturesMenu.TriggerbotMode == 1) {
-            const AdsRead ads = A_FireAdsGate((void *)held, localPawn, settle);
+            const AdsRead ads = A_FireAdsGateTick((void *)held, localPawn, settle);
             d.adsFlag    = ads.fieldFlag ? 1 : 0;
             d.adsPct     = ads.fieldPct;
             d.adsUnknown = ads.unknown;
@@ -1968,9 +2087,18 @@ namespace NewFeatures
             const double since   = now - g_afireLastPressTime;
             const bool   tooSoon = since < (double)pace;
 
-            const bool   ready   = (fn_WeaponCanFire != nullptr) && fn_WeaponCanFire(held);
+            // The pacing floor is a floor. It used to be skipped for as long as
+            // Weapon.CanFire() merely said "yes", and CanFire is usually still
+            // true right after a press - so a scoped triggerbot pressed and
+            // released the trigger on alternating ticks (~125 shots a second),
+            // rebuilding the game's fire effects every time. Only the moment
+            // CanFire TURNS true (a reload or a bolt finishing) may jump the
+            // queue; the pace covers everything else.
+            const bool   readyNow    = d.canFire && (fn_WeaponCanFire != nullptr);
+            const bool   becameReady = readyNow && !g_afireCanFireLast;
             d.paceSeconds = pace;
-            if (tooSoon && !ready) {
+            g_afireCanFireLast = d.canFire;
+            if (tooSoon && !becameReady) {
                 d.repressSkipped++;
                 d.paceWaiting = true;
                 s_dbgTriggerState = 1;
@@ -2031,6 +2159,12 @@ namespace NewFeatures
         g_afireAdsCompSeen     = false;
         g_afireAdsSettling     = false;
         g_afireReleasePending  = false;
+
+        g_afireAdsNegCached = AdsRead{};
+        g_afireAdsNegTime   = -1000.0;
+        g_afireAdsNegWeapon = nullptr;
+        g_afireAdsNegComp   = nullptr;
+        g_afireAdsNegValid  = false;
     }
 
     inline void UpdateNoSprintFireDelayWeapon(void *localPawnInstance);

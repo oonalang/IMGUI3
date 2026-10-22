@@ -143,6 +143,12 @@ static Vector3 fake_screen_to_world(void *, Vector3 v)
 
 static std::vector<std::pair<float, FakeObj *>> g_centreHits;
 static std::vector<std::pair<float, FakeObj *>> g_losHits;
+// Per-call answers for the LOS walk (probe sequences) and for the single-ray
+// symbol (a self hit followed by the enemy at point blank).
+static std::vector<std::vector<std::pair<float, FakeObj *>>> g_losSequence;
+static size_t g_losSeqIndex = 0;
+static std::vector<std::pair<float, FakeObj *>> g_hitOutSequence;
+static size_t g_hitOutSeqIndex = 0;
 static int   g_segmentHit = 0;
 static int   g_rayAllCalls = 0, g_singleRayCalls = 0, g_segmentCalls = 0;
 static float g_lastRayAllMax = -1.0f;
@@ -158,7 +164,14 @@ static void *fake_raycastAll(Vector3, Vector3, float maxDist)
 {
     g_rayAllCalls++;
     g_lastRayAllMax = maxDist;
-    const std::vector<std::pair<float, FakeObj *>> &hits = hitsForMaxDist(maxDist);
+    const std::vector<std::pair<float, FakeObj *>> *hitsPtr = &hitsForMaxDist(maxDist);
+    if (maxDist <= 100.0f && !g_losSequence.empty()) {
+        const size_t idx = g_losSeqIndex < g_losSequence.size()
+                         ? g_losSeqIndex : g_losSequence.size() - 1;
+        hitsPtr = &g_losSequence[idx];
+        g_losSeqIndex++;
+    }
+    const std::vector<std::pair<float, FakeObj *>> &hits = *hitsPtr;
     std::memset(g_hitArrayBuf, 0, sizeof g_hitArrayBuf);
     *(size_t *)(g_hitArrayBuf + AF_ARRAY_LEN_OFF) = hits.size();
     for (size_t i = 0; i < hits.size(); i++) {
@@ -172,6 +185,14 @@ static void *fake_raycastAll(Vector3, Vector3, float maxDist)
 static bool fake_raycastHitOut(Vector3, Vector3, void *hitBuf, float maxDist)
 {
     g_singleRayCalls++;
+    if (!g_hitOutSequence.empty()) {
+        if (g_hitOutSeqIndex >= g_hitOutSequence.size()) return false;
+        const std::pair<float, FakeObj *> &h = g_hitOutSequence[g_hitOutSeqIndex++];
+        std::memset(hitBuf, 0, AF_RAYHIT_SIZE);
+        *(float *)((unsigned char *)hitBuf + AF_RAYHIT_DISTOFF) = h.first;
+        *(void **)((unsigned char *)hitBuf + AF_RAYHIT_COLLOFF) = h.second->b;
+        return true;
+    }
     const std::vector<std::pair<float, FakeObj *>> &hits = hitsForMaxDist(maxDist);
     if (hits.empty()) return false;
     std::memset(hitBuf, 0, AF_RAYHIT_SIZE);
@@ -225,6 +246,11 @@ static void resetWorld()
     NewFeatures::g_afireAdsCompSeen    = false;
     NewFeatures::g_afireAdsSettling    = false;
     NewFeatures::g_afireReleasePending = false;
+    NewFeatures::g_afireAdsNegCached   = NewFeatures::AdsRead{};
+    NewFeatures::g_afireAdsNegTime     = -1000.0;
+    NewFeatures::g_afireAdsNegWeapon   = nullptr;
+    NewFeatures::g_afireAdsNegComp     = nullptr;
+    NewFeatures::g_afireAdsNegValid    = false;
 
     objSetBone(g_localPawn,  Class_Pawn_m_HeadBone, &g_localHead);
     objSetBone(g_localPawn,  Class_Pawn_m_Mesh,     &g_localMesh);
@@ -250,6 +276,10 @@ static void resetWorld()
     g_recentlyRendered = 1;
     g_rayAllCalls = g_singleRayCalls = g_segmentCalls = 0;
     g_lastRayAllMax = -1.0f;
+    g_losSequence.clear();
+    g_losSeqIndex = 0;
+    g_hitOutSequence.clear();
+    g_hitOutSeqIndex = 0;
     g_triggerDiag = TriggerbotDiag{};
 }
 
@@ -1628,6 +1658,264 @@ static void testAdsScopeSwapGuard()
     resetWorld();
 }
 
+// A weapon whose CanFire simply says "yes" (ammo/state gate, not the fire
+// interval) used to be pressed and released on alternating ticks - a scoped
+// triggerbot restarted the shot ~125 times a second. The pacing floor now
+// holds unless CanFire TURNS true.
+static void testPressChurn()
+{
+    api12 = (uintptr_t)&fake_localPawnCounted;
+    api22 = (uintptr_t)&fake_currentWeapon;
+    fn_PawnIsAiming                  = nullptr;
+    fn_WeaponGetCurrentFireComponent = nullptr;
+    fn_FireComponentGetIsAiming      = nullptr;
+    fn_PawnGetIsFiring               = nullptr;
+    fn_WeaponIsAutoFire              = nullptr;      // semi auto -> edge press
+    fn_WeaponCanFire                 = fake_canFire;
+    fn_Weapon_StartFire              = fake_startFire;
+    fn_Weapon_StopFire               = fake_stopFire;
+    fn_WeaponRealFireInterval        = fake_realInterval;
+    g_realInterval = 0.10f;
+    g_canFireValue = true;
+
+    Config.NewFeaturesMenu.Triggerbot     = true;
+    Config.NewFeaturesMenu.TriggerbotMode = 0;
+
+    resetWorld();
+    armFiringWorld();
+    resetLocalPawnCache();
+    g_triggerDiag = TriggerbotDiag{};
+    g_startFireCalls = g_stopFireCalls = 0;
+    g_afireLastPressTime   = -1000.0;
+    g_afireLastPressWeapon = nullptr;
+    g_afireCanFireLast     = false;
+
+    for (int i = 0; i < 20; i++) { openTickWindow(); A_FireTick(nullptr); }
+    CHECK(g_startFireCalls == 1,
+          "Y9 a gun that always reports CanFire is pressed once per pace, not per tick");
+    CHECK(g_stopFireCalls == 1,
+          "Y9 ... and the trigger is cycled once, not twenty times");
+
+    g_afireLastPressTime = A_FireNow() - 0.20;
+    openTickWindow();
+    A_FireTick(nullptr);
+    CHECK(g_startFireCalls == 2, "Y9b once the pace elapses the next shot is pressed");
+
+    g_afireHoldingFire     = false;
+    g_afireFiringOn        = nullptr;
+    g_afireTargetPawn      = nullptr;
+    g_afireLastPressWeapon = nullptr;
+    g_afireLastPressTime   = -1000.0;
+    fn_Weapon_StartFire          = nullptr;
+    fn_Weapon_StopFire           = nullptr;
+    fn_WeaponCanFire             = nullptr;
+    fn_WeaponRealFireInterval    = nullptr;
+    Config.NewFeaturesMenu.Triggerbot = false;
+    resetWorld();
+}
+
+// A raycast that behaves like the engine's: it cannot return a hit that sits
+// behind the point the ray started from.
+static void *fake_raycastAllFromMuzzle(Vector3 from, Vector3, float maxDist)
+{
+    g_rayAllCalls++;
+    g_lastRayAllMax = maxDist;
+    static const Vector3 eye(0.0f, 1.6f, 0.0f);
+    const float shift = Vector3::Magnitude(Vector3(from.x - eye.x, from.y - eye.y, from.z - eye.z));
+
+    std::memset(g_hitArrayBuf, 0, sizeof g_hitArrayBuf);
+    size_t n = 0;
+    for (size_t i = 0; i < g_losHits.size() && n < 64; i++) {
+        if (g_losHits[i].first < shift - 1e-4f) continue;
+        unsigned char *e = g_hitArrayBuf + AF_ARRAY_DATA_OFF + n * AF_RAYHIT_SIZE;
+        *(float *)(e + AF_RAYHIT_DISTOFF) = g_losHits[i].first - shift;
+        *(void **)(e + AF_RAYHIT_COLLOFF) = g_losHits[i].second->b;
+        n++;
+    }
+    *(size_t *)(g_hitArrayBuf + AF_ARRAY_LEN_OFF) = n;
+    return g_hitArrayBuf;
+}
+
+// The ray has to leave the weapon, not the eye: when the camera sits inside
+// the cover you are peeking over, an eye ray is blocked by that cover at ~0 m
+// and every shot reads as "wall in the way" (the head-glitch report).
+static void testMuzzleStem()
+{
+    const Vector3 from(0.0f, 1.6f, 0.0f);
+
+    resetWorld();
+    {
+        const Vector3 to(0.5f, 1.7f, 3.3f);
+        const float dist = Vector3::Magnitude(Vector3(to.x - from.x, to.y - from.y, to.z - from.z));
+        A_FireRayToTarget(from, to, (Pawn *)g_targetPawn.b, A_FireTune::kBodyRadius,
+                          (Pawn *)g_localPawn.b, nullptr, nullptr);
+        CHECK(std::fabs(g_lastRayAllMax - (dist - A_FireTune::kRayStem + A_FireTune::kRayReach)) < 0.01f,
+              "Y1 the LOS ray starts at the muzzle (0.30 m forward), not at the eye");
+    }
+
+    resetWorld();
+    {
+        const Vector3 to(0.1f, 1.6f, 0.5f);   // point blank
+        const float dist = Vector3::Magnitude(Vector3(to.x - from.x, to.y - from.y, to.z - from.z));
+        A_FireRayToTarget(from, to, (Pawn *)g_targetPawn.b, A_FireTune::kBodyRadius,
+                          (Pawn *)g_localPawn.b, nullptr, nullptr);
+        CHECK(std::fabs(g_lastRayAllMax - (dist + A_FireTune::kRayReach)) < 0.01f,
+              "Y2 a point-blank target is never skipped by the stem");
+    }
+
+    resetWorld();
+    {
+        void *(*savedAll)(Vector3, Vector3, float) = fn_PhysicsRaycastAll;
+        fn_PhysicsRaycastAll = fake_raycastAllFromMuzzle;
+        // The wall lip the camera is inside of, 0.20 m from the eye: past the
+        // 0.15 m self-exclusion, so the old eye ray read it as 'wall in the way'.
+        g_losHits = { {0.20f, &g_wallCol}, {3.3f, &g_targetCol} };
+        g_lastOccVisible = 0;
+        g_recentlyRendered = 0;
+        bool ident = false;
+        const Vector3 to(0.5f, 1.7f, 3.3f);
+        const AF_Ray r = A_FireRayToTarget(from, to, (Pawn *)g_targetPawn.b,
+                                           A_FireTune::kBodyRadius, (Pawn *)g_localPawn.b,
+                                           &ident, nullptr);
+        CHECK(r == AF_Ray::Clear && ident,
+              "Y3 the cover the eye is inside of can no longer own the shot");
+        CHECK(g_triggerDiag.occOverrides == 0 && g_triggerDiag.selfHitsSkipped == 0,
+              "Y3 ... rescued by where the ray starts, not by a visibility guess");
+        fn_PhysicsRaycastAll = savedAll;
+    }
+}
+
+// A target peeking over cover shows one slice of himself. The old scan probed
+// the chest and the head centre only, so a slice between them was a refusal.
+static void testBodyProbes()
+{
+    Pawn *enemies[1] = { (Pawn *)g_targetPawn.b };
+
+    resetWorld();
+    setEnemyList(enemies, 1);
+    fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
+    killHonestDotRay();
+    g_w2sImpl = w2sOnCrosshair;
+    g_centreHits = { {0.02f, &g_selfCol} };
+    // chest (t=0.72) and head (t=0.92) blocked, the slice at t=0.84 open.
+    g_losSequence = {
+        { { 2.0f, &g_wallCol } },
+        { { 2.0f, &g_wallCol } },
+        {}
+    };
+    {
+        TriggerTarget out{};
+        const FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
+        CHECK(b == FireBlock::Fired && out.path == 1,
+              "Y4 a target whose only visible slice is between chest and head is fired");
+        CHECK(std::fabs(out.aimPoint.y - 1.7f * 0.84f) < 0.02f,
+              "Y4 ... at the slice that is actually exposed");
+    }
+
+    resetWorld();
+    setEnemyList(enemies, 1);
+    fn_GameGetMatchGame = []() -> void * { return g_gameObj.b; };
+    killHonestDotRay();
+    g_w2sImpl = w2sOnCrosshair;
+    g_centreHits = { {0.02f, &g_selfCol} };
+    g_losHits    = { {2.0f, &g_wallCol} };
+    {
+        TriggerTarget out{};
+        const FireBlock b = A_FireScan((Pawn *)g_localPawn.b, (Weapon *)g_weaponObj.b, out);
+        CHECK(b == FireBlock::NoLineOfSight,
+              "Y5 a target behind a wall from head to waist is still refused");
+        CHECK(g_triggerDiag.losBlockedScan == 1, "Y5 ... and counted once, not once per probe");
+    }
+
+    restoreHonestDotRay();
+    g_w2sImpl = nullptr;
+}
+
+// Your own capsule is the first thing under the dot at point blank, and the
+// single-ray symbol used to give up on it.
+static void testDotRayStepPastSelf()
+{
+    Pawn *enemies[1] = { (Pawn *)g_targetPawn.b };
+
+    resetWorld();
+    void *(*savedAll)(Vector3, Vector3, float) = fn_PhysicsRaycastAll;
+    fn_PhysicsRaycastAll = nullptr;
+    g_hitOutSequence = { { 0.05f, &g_selfCol }, { 1.20f, &g_targetCol } };
+    {
+        float hitDist = -1.0f;
+        Pawn *p = A_FireCrosshairRayPawn(Vector3(0.0f, 1.6f, 0.0f), Vector3(0.0f, 0.0f, 1.0f),
+                                        enemies, 1, (Pawn *)g_localPawn.b, &hitDist, nullptr);
+        CHECK(p == (Pawn *)g_targetPawn.b,
+              "Y6 the dot ray steps past our own capsule and names the enemy behind it");
+        CHECK(g_triggerDiag.selfHitsSkipped == 1, "Y6 ... and the skip is counted");
+    }
+
+    resetWorld();
+    fn_PhysicsRaycastAll = nullptr;
+    g_hitOutSequence = { { 0.05f, &g_selfCol } };
+    {
+        Pawn *p = A_FireCrosshairRayPawn(Vector3(0.0f, 1.6f, 0.0f), Vector3(0.0f, 0.0f, 1.0f),
+                                        enemies, 1, (Pawn *)g_localPawn.b, nullptr, nullptr);
+        CHECK(p == nullptr, "Y6b nothing behind us still means nothing (no invented target)");
+    }
+
+    fn_PhysicsRaycastAll = savedAll;
+    resetWorld();
+}
+
+// ADS-only mode was the only mode paying for the fire-component probe on every
+// 4 ms trigger tick. The verdict is remembered for a few milliseconds, and a
+// fresh "scoped" answer needs no component call at all.
+static void testAdsGateCost()
+{
+    api12 = (uintptr_t)&fake_localPawnCounted;
+    api22 = (uintptr_t)&fake_currentWeapon;
+
+    resetWorld();
+    installAdsFakes();
+    setWeaponAiming(false, 0.0f);
+    Config.NewFeaturesMenu.Triggerbot     = false;
+    Config.NewFeaturesMenu.TriggerbotMode = 1;
+    g_pawnAimingValue = false;
+    g_fcAimingValue   = false;
+    g_pawnAimingCalls = g_fcAimingCalls = 0;
+    armFiringWorld();
+    {
+        TriggerTarget out{};
+        int notBlocked = 0;
+        for (int i = 0; i < 40; i++) {
+            if (A_FireShouldFire(out) != FireBlock::ModeNotAds) notBlocked++;
+        }
+        CHECK(notBlocked == 0, "Y7 40 unscoped ADS-only scans all still block the shot");
+        CHECK(g_fcAimingCalls >= 1 && g_fcAimingCalls <= 3,
+              "Y7 40 ADS-only scans cost <= 3 fire-component probes (was 40)");
+    }
+
+    resetWorld();
+    installAdsFakes();
+    setWeaponAiming(false, 0.0f);
+    Config.NewFeaturesMenu.Triggerbot     = false;
+    Config.NewFeaturesMenu.TriggerbotMode = 1;
+    g_pawnAimingValue = true;
+    g_fcAimingValue   = false;
+    g_pawnAimingCalls = g_fcAimingCalls = 0;
+    armFiringWorld();
+    {
+        TriggerTarget out{};
+        CHECK(A_FireShouldFire(out) == FireBlock::Fired, "Y8 scoped -> fires");
+        CHECK(g_fcAimingCalls == 0,
+              "Y8 a pawn flag that already says 'scoped' skips the component call entirely");
+    }
+
+    fn_PawnIsAiming                  = nullptr;
+    fn_WeaponGetCurrentFireComponent = nullptr;
+    fn_FireComponentGetIsAiming      = nullptr;
+    objInit(g_weaponObj);
+    Config.NewFeaturesMenu.Triggerbot     = false;
+    Config.NewFeaturesMenu.TriggerbotMode = 0;
+    resetWorld();
+}
+
 int main()
 {
     installFns();
@@ -1644,6 +1932,11 @@ int main()
     testAdsGate();
     testRepressPacing();
     testAdsScopeSwapGuard();
+    testMuzzleStem();
+    testBodyProbes();
+    testDotRayStepPastSelf();
+    testAdsGateCost();
+    testPressChurn();
 
     if (g_failures == 0) {
         printf("\nOK: all LOS gate checks passed\n");
