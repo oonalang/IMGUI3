@@ -1,5 +1,11 @@
 #pragma once
 
+#include <cstdint>
+#include <mutex>
+#include <unistd.h>
+
+#include "Includes/Logger.h"
+
 bool (*orig_bypass)(void *ins);
 bool hook_bypass(void *ins) {
     return false;
@@ -7,74 +13,100 @@ bool hook_bypass(void *ins) {
 
 #if defined(__aarch64__)
 
+// mov x0, #0 ; ret
 inline const char *armFalse = "00 00 80 D2 C0 03 5F D6";
 
 #endif
 
-struct range {
-    uintptr_t Irt, Ind;
-    struct Iter {
-      uintptr_t val;
-      bool operator!=(const Iter& it) const {
-        return val <= it.val;
-      }
-      uintptr_t operator*() const {
-        return val;
-      }
-      void operator++() {
-        val += 4;
-      }
+// ---------------------------------------------------------------------------
+// RAVEN set (tested, current libanogs build).
+//
+// Two kinds of entry, and they are not interchangeable:
+//
+//  * patched: the routine is replaced with "return 0" outright. These are the
+//    report/check paths nothing else calls into, so nothing needs the original.
+//  * hooked: the same "return 0" through a trampoline instead of a byte patch.
+//    Kept for the three entry points that are also in the patch list below, so
+//    the set matches what was tested; the two must never be applied to the same
+//    address - a hook's jump and a hex patch overwrite each other and whichever
+//    lands second leaves a broken prologue.
+// ---------------------------------------------------------------------------
+namespace bypass_raven
+{
+    // Patched with "mov x0, #0; ret".
+    constexpr uintptr_t kPatched[] = {
+        0x2B9D8C,
+        0x2E4ED8,
+        0x325CC8,
+        0x3893D8,
+        0x4495A4,
+        0x470A04,
+        0x4AFC1C,
+        0x4F9DDC,
     };
-    Iter begin() const {
-      return {Irt};
+
+    // Redirected to hook_bypass().
+    constexpr uintptr_t kHooked[] = {
+        0x204218,
+        0x455A80,
+        0x497244,
+    };
+
+    constexpr int kPatchCount = (int)(sizeof kPatched / sizeof kPatched[0]);
+    constexpr int kHookCount  = (int)(sizeof kHooked  / sizeof kHooked[0]);
+
+    inline bool LibraryReady()
+    {
+        return Tools::IsPtrValid((void *)Tools::GetBaseAddress(OBFUSCATE("libanogs.so")));
     }
-    Iter end() const {
-      return {Ind};
-    }
-};
+}
 
 inline void InitializeProtection() {
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x202680), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x204218), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x258B6C), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x259670), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x3055A0), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x3075C4), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x30E234), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x35140C), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x303A68), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x47D0C8), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x245F34), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x2B8CDC), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x4AB5EC), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x4E70A4), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x39CD30), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x259010), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x44BC90), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x4A9A00), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x4952E8), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x4951C8), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x49521C), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x42BA18), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x420578), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x1FF3A4), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x455A80), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x4F03D4), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x39AE94), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x41BA40), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x1EE554), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x1F815C), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x203460), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x24D638), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x24EDD0), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x257B90), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x28F894), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x2A9338), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x2ABBC8), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x438154), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x44A714), (void*)hook_bypass, (void**)&orig_bypass);
-Tools::Hook((void*)KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), 0x48CF20), (void*)hook_bypass, (void**)&orig_bypass);
-for (auto offs : range{0x1, 0x1000}) {
-MemoryPatch::createWithHex("libanogs.so", offs, armFalse).Modify();
-    }
+#if defined(__aarch64__)
+    // Called from two init threads, and libanogs is mapped by the game's own
+    // startup - which can be after us. Resolving an address before the library
+    // is there patches address 0, and hooking the same offset twice corrupts
+    // the trampoline, so: wait for the library, and run the set exactly once.
+    static std::once_flag once;
+    std::call_once(once, []() {
+        for (int i = 0; i < 200; ++i) {
+            if (bypass_raven::LibraryReady()) break;
+            usleep(100 * 1000);
+        }
+        if (!bypass_raven::LibraryReady()) {
+            LOGE("[Bypass] libanogs.so never mapped; the bypass set was not applied");
+            return;
+        }
+
+        int patched = 0;
+        for (int i = 0; i < bypass_raven::kPatchCount; ++i) {
+            const uintptr_t off = bypass_raven::kPatched[i];
+            MemoryPatch patch = MemoryPatch::createWithHex(
+                OBFUSCATE("libanogs.so"), off, armFalse);
+            if (!patch.isValid()) {
+                LOGE("[Bypass] patch 0x%lX did not resolve",
+                     (unsigned long)off);
+                continue;
+            }
+            if (patch.Modify()) patched++;
+            else LOGE("[Bypass] patch 0x%lX could not be written",
+                      (unsigned long)off);
+        }
+
+        int hooked = 0;
+        for (int i = 0; i < bypass_raven::kHookCount; ++i) {
+            const uintptr_t off = bypass_raven::kHooked[i];
+            void *addr = KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), off);
+            if (!Tools::IsPtrValid(addr)) {
+                LOGE("[Bypass] hook 0x%lX did not resolve", (unsigned long)off);
+                continue;
+            }
+            Tools::Hook(addr, (void *)hook_bypass, (void **)&orig_bypass);
+            hooked++;
+        }
+
+        LOGI("[Bypass] raven set applied: %d/%d patched, %d/%d hooked",
+             patched, bypass_raven::kPatchCount, hooked, bypass_raven::kHookCount);
+    });
+#endif
 }

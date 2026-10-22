@@ -11,6 +11,7 @@
 #include "raspody_widgets.h"
 #include "System/UI/Keyboard.h"
 #include "raspody_font.h"
+#include "backdrop_blur.h"
 
 #include "System/UI/SkinTab.h"
 
@@ -1165,8 +1166,24 @@ namespace raspody
             dl->PopClipRect();
         }
 
-        dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), Col(clr.layout), S(30));
-        dl->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), Col(clr.separator, 0.55f), S(30), 0, 1.0f);
+        // Frosted glass: the blurred game frame behind the panel first, then the
+        // panel's own tint over it. Without a capture (first frame, or a device
+        // whose FBOs are refused) this is exactly the old flat fill.
+        const ImVec2 panelMin = pos;
+        const ImVec2 panelMax = ImVec2(pos.x + size.x, pos.y + size.y);
+        if (backdrop_blur::Ready())
+        {
+            ImVec2 uv0, uv1;
+            backdrop_blur::UvForRect(panelMin, panelMax, display, uv0, uv1);
+            dl->AddImageRounded(backdrop_blur::Texture(), panelMin, panelMax, uv0, uv1,
+                                Col(ImVec4(1.0f, 1.0f, 1.0f, 1.0f)), S(30));
+            dl->AddRectFilled(panelMin, panelMax, Col(clr.layout, 0.62f), S(30));
+        }
+        else
+        {
+            dl->AddRectFilled(panelMin, panelMax, Col(clr.layout), S(30));
+        }
+        dl->AddRect(panelMin, panelMax, Col(clr.separator, 0.55f), S(30), 0, 1.0f);
 
         RenderHeader(pos, size, pad, headerH);
         RenderTabRail(pos, pad, headerH, gap, tabW, contentH);
@@ -1342,6 +1359,16 @@ namespace raspody
         {
             static ImVec2 cardPos(-1.0f, -1.0f);
             static bool cardMoved = false;
+            static ImVec2 cardDisplay(-1.0f, -1.0f);
+
+            // A drag pins the card for the session; a rotation or a display
+            // change would otherwise leave it hanging off the new screen, which
+            // reads as "the preview is not centred". Re-dock on a resize.
+            if (display.x != cardDisplay.x || display.y != cardDisplay.y)
+            {
+                cardDisplay = display;
+                cardMoved = false;
+            }
 
             const float cardH = ImMin(ImMax(S(250), size.y * 0.56f), size.y - 12.0f);
 
@@ -1403,7 +1430,9 @@ namespace raspody
                     EspCol(Config.sColorsESPPLAYER.BoxPLAYER,   IM_COL32(255, 0, 0, 255)),
                     EspCol(Config.sColorsESPPLAYER.HealthPLAYER, IM_COL32(0, 255, 0, 255)),
                     EspCol(Config.sColorsESPPLAYER.NamePLAYER,  IM_COL32(255, 255, 255, 255)),
-                    EspCol(Config.sColorsESPPLAYER.DistancePLAYER, IM_COL32(255, 255, 0, 255)));
+                    EspCol(Config.sColorsESPPLAYER.DistancePLAYER, IM_COL32(255, 255, 0, 255)),
+                    (int)Config.ESPMenu.BoxType, (int)Config.ESPMenu.HealthPosition,
+                    (int)Config.ESPMenu.Target);
 
                 ImGui::SetCursorScreenPos(ImVec2(cardPos.x + S(6), cardPos.y + S(2)));
                 ImGui::InvisibleButton("##raspody_esp_grip",
