@@ -1164,6 +1164,13 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         runtime_preview_menu::EnsureTexturesLoaded();
         main_runtime_theme::ApplyThemeState();
 
+        // Warm the loading card's video while the login screen is up. The player is
+        // created and the first frame is in the texture before the loader appears,
+        // so the card has its video on frame one instead of a black gap followed by
+        // the still artwork and a swap.
+        if (!isLogin && !ui_loading::IsActive())
+            ui_media::Warmup();
+
         ImVec2 viewportCenter = ImGui::GetMainViewport()->GetCenter();
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
@@ -1214,6 +1221,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
                 if (loginUi.close) {
                     windowCollapsed = true;
+                    ui_media::Shutdown();   // nothing is going to show the video now
                 }
 
                 if (loginUi.paste) {

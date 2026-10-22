@@ -9,6 +9,9 @@
 #include <cstdlib>
 #include <string>
 
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #if defined(__ANDROID__)
 #include <jni.h>
 #include <pthread.h>
@@ -55,9 +58,10 @@ namespace ui_media
     // Host builds only. A test can pretend a video is playing so the loader can
     // be checked with one - the loader has to keep painting its field
     // underneath the video either way.
-    inline ImTextureID g_hostVideoTex = nullptr;
-    inline int         g_hostVideoW   = 0;
-    inline int         g_hostVideoH   = 0;
+    inline ImTextureID g_hostVideoTex   = nullptr;
+    inline int         g_hostVideoW     = 0;
+    inline int         g_hostVideoH     = 0;
+    inline bool        g_hostVideoPending = false;
 #endif
 
     namespace detail
@@ -107,9 +111,28 @@ namespace ui_media
             return "/storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir/";
         }
 
+        inline bool EnsureDir(const std::string& path)
+        {
+            struct stat st {};
+            if (stat(path.c_str(), &st) == 0) return S_ISDIR(st.st_mode) != 0;
+            return mkdir(path.c_str(), 0775) == 0;
+        }
+
         inline std::string ResolveMedia(const char* const* names, int nameCount,
                                         const unsigned char* embedded, unsigned embeddedSize)
         {
+            // The compiled-in clip is written into the game's own files directory
+            // before anything else is looked at. That directory is the first one
+            // searched, so the embedded clip is what the card plays: there is no
+            // file to push to the device first, and no other video on the SD card
+            // can take its place.
+            if (embedded != nullptr && embeddedSize > 0 && nameCount > 0)
+            {
+                const std::string dir = MediaRoot();
+                if (EnsureDir(dir))
+                    WriteAsset(dir + names[0], embedded, embeddedSize);
+            }
+
             std::string dirs[8];
             int dirCount = 0;
             dirs[dirCount++] = MediaRoot();
@@ -452,13 +475,13 @@ namespace ui_media
                 return nullptr;
             }
 
-            // The arknights encounter background is the primary loading card
-            // video: it replaces the empty ethnir video, so the card reads as a
-            // real frame instead of a window onto a black field.
-            static const char* names[3] = {
-                "loading.mp4",
-                "velina-aegard.3840x2160.mp4",
-                "arknights-eyjafjallas-gentle-glow.1920x1080.mp4"
+            // The arknights encounter background is the loading card video. The
+            // name is first so that a copy the loader wrote itself is found ahead
+            // of anything else; `loading.mp4` stays accepted for a device that
+            // already has one.
+            static const char* names[2] = {
+                "arknights-eyjafjallas-gentle-glow.1920x1080.mp4",
+                "loading.mp4"
             };
             const std::string path = ResolveMedia(names, 2, ethnir_loading_video,
                                                   ethnir_loading_video_len);
@@ -811,7 +834,22 @@ namespace ui_media
         StopVideo();
     }
 
+    // Starts the worker before the loader is up. The login screen calls this, so
+    // the player has been created, the file opened and a frame blitted into the
+    // texture by the time the card appears - the gap between the two is what
+    // showed as the black screen after signing in.
+    inline void Warmup() { Tick(); }
+
     inline bool  VideoReady()   { return g_videoLive && g_targetTex != 0 && g_targetReady; }
+
+    // True when a video is on its way: the clip is compiled in, or the worker is
+    // opening it. The card uses this to hold its procedural field for the frame
+    // or two that takes instead of showing the still photo and swapping later.
+    inline bool VideoPending()
+    {
+        return ethnir_loading_video_len > 0 || g_workerState == 1 || g_workerState == 2;
+    }
+
     inline float VideoAspect()
     {
         if (g_videoW <= 0 || g_videoH <= 0) return 16.0f / 9.0f;
@@ -822,9 +860,11 @@ namespace ui_media
 
     inline void  Tick()      {}
     inline void  Shutdown()  {}
+    inline void  Warmup()    {}
     inline bool  StartAudio(){ return false; }
     inline void  StopAudio() {}
     inline bool  VideoReady(){ return ui_media::g_hostVideoTex != nullptr; }
+    inline bool  VideoPending(){ return ui_media::g_hostVideoPending; }
     inline float VideoAspect()
     {
         if (ui_media::g_hostVideoW <= 0 || ui_media::g_hostVideoH <= 0) return 16.0f / 9.0f;

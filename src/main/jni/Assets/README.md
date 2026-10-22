@@ -1,16 +1,27 @@
 # Loading screen media
 
-`System/UI/LoadingMedia.h` plays two files and turns the video into an ImGui texture.
-It looks for them in this order.
+`System/UI/LoadingMedia.h` plays the loading card's video and turns it into an
+ImGui texture. The card's background is the video; the fullscreen backdrop
+behind the card is the menu artwork in `IMAGE/bg.h`.
 
-## 1. Drop them on the device (no rebuild)
+## The card video
 
-| media | accepted file names |
-| --- | --- |
-| video background | `loading.mp4`, `velina-aegard.3840x2160.mp4`, `arknights-eyjafjallas-gentle-glow.1920x1080.mp4` |
-| loading audio | `loading.mp3`, `lofi.mp3` |
+The clip is compiled into the binary from `LoadingAssets.h`: the Arknights
+gentle-glow encounter background, 960x540, 12 s, no audio, 653 KB. It is the
+source for `media-files/arknight_card.mp4`.
 
-Search order:
+On the first run the media layer writes those bytes to
+
+```
+/storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir/arknights-eyjafjallas-gentle-glow.1920x1080.mp4
+```
+
+and plays them from there. That directory is the first one searched, so the
+compiled-in clip is what the card plays. Nothing has to be pushed to the device.
+
+To use a different clip, overwrite that file (any resolution up to 1920x1080,
+H.264 in an mp4). A file named `loading.mp4` is also accepted. The full search
+order is:
 
 1. `/storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir/<name>`
 2. `/storage/emulated/0/Android/data/com.garena.game.codm/files/<name>`
@@ -21,47 +32,46 @@ Search order:
 7. `$TMPDIR/<name>` (the app cache directory)
 8. `/data/local/tmp/<name>`
 
-Every entry is tried with the renamed file (`loading.mp4` / `loading.mp3`) first
-and the original repo name second, so a file copied straight out of
-`eliwoahzja/media-files` works without renaming.
+with the arknights file name tried before `loading.mp4` in each of them.
 
-Push them with adb:
-
-```
-adb shell mkdir -p /storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir
-adb push velina-aegard.3840x2160.mp4 /storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir/loading.mp4
-adb push arknights-eyjafjallas-gentle-glow.1920x1080.mp4 /storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir/loading.mp4
-adb push lofi.mp3                      /storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir/loading.mp3
+```bash
+adb push my-clip.mp4 /storage/emulated/0/Android/data/com.garena.game.codm/files/ethnir/arknights-eyjafjallas-gentle-glow.1920x1080.mp4
 ```
 
-The 3840x2160 file decodes at 4K on the device GPU. If the loader costs too much,
-re-encode it to 1280x720 with the same name and nothing else changes.
+The video is drawn into the card and nowhere else. The frame behind it is the
+menu artwork, dimmed, so the card stays the focal point.
 
-The arknights encounter background (`arknights-eyjafjallas-gentle-glow.1920x1080.mp4`)
-is the recommended loading card video: it replaces the empty ethnir video so the
-card shows a real frame of Arknights instead of a window onto a black field.
+## Regenerating the clip
 
-Nothing has to be embedded for this to work: the media layer always tries the
-disk paths above first and only falls back to compiled-in bytes. Files copied to
-`/sdcard/Download` (for example from a file manager) are picked up too.
+`media-files/arknight.mp4` is the full source (1920x1080, 60 fps, 24 s). The
+committed clip is a 12 s cut at 960x540, which is the card's own size:
 
-## 2. Embed it in the binary (optional)
+```bash
+ffmpeg -i media-files/arknight.mp4 -t 12 -an \
+       -vf "scale=960:540:flags=lanczos,fps=30" \
+       -c:v libx264 -profile:v baseline -level 3.1 -pix_fmt yuv420p \
+       -crf 31 -preset slow -movflags +faststart media-files/arknight_card.mp4
 
-Without a file on disk, the loader falls back to byte arrays compiled into
-`.rodata`. Generate them once from this folder:
-
-```
 cd src/main/jni/Assets
-xxd -i -n ethnir_loading_video loading.mp4 | sed 's/^unsigned char/inline const unsigned char/; s/^unsigned int/inline const unsigned int/' > LoadingAssets.h
-xxd -i -n ethnir_loading_audio loading.mp3 | sed 's/^unsigned char/inline const unsigned char/; s/^unsigned int/inline const unsigned int/' >> LoadingAssets.h
+xxd -i -n ethnir_loading_video ../../../media-files/arknight_card.mp4 \
+  | sed -e 's/^unsigned char/inline const unsigned char/' \
+        -e 's/^unsigned int/inline const unsigned int/' > LoadingAssets.h
 ```
 
-`LoadingMedia.h` picks the header up through `__has_include`. Without it the
-disk paths above still drive the loader; only the last-resort copy is missing, and
-with no media at all the loader draws its procedural backdrop. Keep the arrays
-under a few megabytes - a 30 MB mp4 becomes a ~135 MB translation unit and will
-not compile on a phone-sized toolchain, so embed a short re-encoded clip rather
-than `velina-aegard.3840x2160.mp4`.
+The header is a C++17 inline variable, so every translation unit that includes
+`LoadingMedia.h` shares one copy. Keep it under a few megabytes: a 30 MB mp4
+becomes a ~180 MB translation unit and will not compile on a phone-sized
+toolchain.
+
+## Loading audio
+
+| media | accepted file names |
+| --- | --- |
+| loading audio | `loading.mp3`, `lofi.mp3` |
+
+Same search order, started when the loader's first frame ticks and released
+when the loader ends. Nothing is compiled in for it, so the loader is silent
+unless one of those files is on the device.
 
 ## Android APIs used
 
@@ -69,11 +79,13 @@ than `velina-aegard.3840x2160.mp4`.
   `GL_TEXTURE_EXTERNAL_OES`, decoded each frame in `updateTexImage()` and blitted
   into an RGBA texture through a GLES3 `samplerExternalOES` pass, so ImGui can
   sample it with the normal `ImTextureID` path.
-- A second `MediaPlayer` for the audio file, started when the loader's first frame
-  ticks (same thread as the video, so both share one JNI attach) and released when
-  the loader finishes.
-- Video size can arrive a frame or two after `prepare()` on some decoders, so the
-  RGBA target is created from whatever `getVideoWidth()`/`getVideoHeight()` report
-  on each update until it is non-zero.
+- Both the video and the audio player are opened on their own threads: `prepare()`
+  blocks for as long as it takes to read the file, and running that on the render
+  thread froze the game.
+- The video target is capped at 1920x1080. A 4K source is 33 MB of RGBA8 that
+  many devices refuse to allocate.
+- The login screen warms the video (`ui_media::Warmup()`) before the loader is
+  shown, so the card has a frame in its texture on its first frame instead of a
+  black gap followed by the artwork and a swap.
 - Both go through JNI (`JavaVM* jvm` from `Includes/Jni_Stuff.h`). On a host build
   every entry point compiles to a no-op.

@@ -81,35 +81,52 @@ static void TextTracked(ImDrawList* dl, ImFont* font, float size, float centerX,
     }
 }
 
-static void CoverImage(ImDrawList* dl, ImTextureID tex, ImVec2 mn, ImVec2 mx, float aspect)
+// Fills the box with the whole of the widest crop that keeps the source's aspect.
+// The crop is done in texture coordinates rather than by drawing a larger rect, so
+// the image can never spill out of the box it was asked to fill - the card corners
+// stay the card's.
+static void CoverImage(ImDrawList* dl, ImTextureID tex, ImVec2 mn, ImVec2 mx, float aspect,
+                       float rounding = 0.0f)
 {
     const float boxW = mx.x - mn.x;
     const float boxH = mx.y - mn.y;
     if (!(boxW > 0.0f) || !(boxH > 0.0f) || aspect <= 0.0f) return;
 
-    float w = boxW;
-    float h = w / aspect;
-    if (h < boxH) { h = boxH; w = h * aspect; }
+    const float boxAspect = boxW / boxH;
+    float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
+    if (boxAspect > aspect)
+    {
+        const float keep = aspect / boxAspect;
+        v0 = (1.0f - keep) * 0.5f;
+        v1 = 1.0f - v0;
+    }
+    else
+    {
+        const float keep = boxAspect / aspect;
+        u0 = (1.0f - keep) * 0.5f;
+        u1 = 1.0f - u0;
+    }
 
-    const ImVec2 texMin(mn.x + (boxW - w) * 0.5f, mn.y + (boxH - h) * 0.5f);
-    const ImVec2 texMax(texMin.x + w, texMin.y + h);
-    dl->AddImage(tex, texMin, texMax, ImVec2(0, 0), ImVec2(1, 1));
-}    // The field behind the card. This has to stay fullscreen: the menu is hooked at
-    // login time, before the game has drawn a frame of its own, so every pixel the
-    // card does not cover is the game's black screen. Cover-scaled like before, and
-    // dimmed so the card on top of it reads as the focal point.
+    if (rounding > 0.0f)
+        dl->AddImageRounded(tex, mn, mx, ImVec2(u0, v0), ImVec2(u1, v1), IM_COL32_WHITE, rounding);
+    else
+        dl->AddImage(tex, mn, mx, ImVec2(u0, v0), ImVec2(u1, v1));
+}
+
+    // The field behind the card: the menu's own artwork, cover-scaled and dimmed
+    // so the card on top of it reads as the focal point. The video does not go
+    // here - it is the card's background, and painting it twice would just cost
+    // a second fullscreen blit of the same frame.
     //
-    // The video is only drawn once a frame has really been written into it
-    // (VideoReady()). Until then the loader shows the still background, so the
-    // 2-second black flash right after login never appears: a partially-loaded
-    // MediaPlayer cannot paint an empty texture over the field.
+    // This has to stay fullscreen either way: the menu is hooked at login time,
+    // before the game has drawn a frame of its own, so every pixel the card does
+    // not cover is the game's black screen.
     static void ScreenBackdrop(ImDrawList* dl, ImVec2 display, ImTextureID still)
     {
-        const ImTextureID video = ui_media::VideoTexture();
-        const ImTextureID source = (video != nullptr && ui_media::VideoReady()) ? video : still;
+        const ImTextureID source = still;
 
-    const float aspect = video != nullptr ? ui_media::VideoAspect()
-                                          : (display.x > 0.0f ? display.x / display.y : 16.0f / 9.0f);
+    const float aspect = (display.x > 0.0f && display.y > 0.0f) ? display.x / display.y
+                                                               : 16.0f / 9.0f;
 
     // The field is painted first and unconditionally. The loader is hooked in
     // before the game has drawn a frame of its own, so a pixel that is not
@@ -146,20 +163,22 @@ static void CoverImage(ImDrawList* dl, ImTextureID tex, ImVec2 mn, ImVec2 mx, fl
         IM_COL32(3, 1, 9, 176),         IM_COL32(3, 1, 9, 176));
 }
 
-// The card's own background: a cover-scaled crop of the same video, so the card    // The card's own background: a cover-scaled crop of the same video, so the card
-    // keeps a well-framed image instead of being a window onto the field behind it.
+    // The card's own background: the loading video, cover-scaled into the card so it
+    // keeps a well-framed crop instead of being a window onto the field behind it.
     //
-    // The same rule as the field behind it: if the video is still warming up
-    // (VideoReady() false), the still is used instead so the card never flashes
-    // black while the MediaPlayer loads its file.
+    // The still is only used when there is no video to wait for at all. While the
+    // clip is still opening (VideoPending()) the card keeps its procedural field,
+    // so it never shows the old artwork and then swaps to the video a second later.
     static void CardBackdrop(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImTextureID still)
     {
         const ImVec2 size(mx.x - mn.x, mx.y - mn.y);
         const ImTextureID video = ui_media::VideoTexture();
-        const ImTextureID source = (video != nullptr && ui_media::VideoReady()) ? video : still;
+        const bool ready = video != nullptr && ui_media::VideoReady();
+        const ImTextureID source = ready ? video
+                                         : (ui_media::VideoPending() ? nullptr : still);
 
-    const float aspect = video != nullptr ? ui_media::VideoAspect()
-                                          : (size.x > 0.0f ? size.x / size.y : 16.0f / 9.0f);
+    const float aspect = ready ? ui_media::VideoAspect()
+                               : (size.x > 0.0f ? size.x / size.y : 16.0f / 9.0f);
     if (!(size.x > 0.0f) || !(size.y > 0.0f) || aspect <= 0.0f) return;
 
     // Same rule as the field behind it: the card paints its own background
@@ -181,7 +200,7 @@ static void CoverImage(ImDrawList* dl, ImTextureID tex, ImVec2 mn, ImVec2 mx, fl
     }
 
     if (source != nullptr)
-        CoverImage(dl, source, mn, mx, aspect);
+        CoverImage(dl, source, mn, mx, aspect, kCardRound);
 }
 
 static void GlassCard(ImDrawList* dl, ImVec2 mn, ImVec2 mx)
@@ -388,14 +407,14 @@ inline bool RenderWindow(ImTextureID tex = nullptr) {
         const float cardCx = (cardMin.x + cardMax.x) * 0.5f;
 
         // The field is drawn into a fullscreen clip rect: the loading window is
-        // card-sized, so without this the video would be clipped to the card and
+        // card-sized, so without this the backdrop would be clipped to the card and
         // the game's black frame would show all around it.
+        //
+        // There is no fade from black here: the backdrop is painted on the very
+        // first frame. The card's own contents still ease in below.
         const float enter = EaseOut(Clamp01(g_Time / 0.55f));
         dl->PushClipRect(ImVec2(0.0f, 0.0f), display, false);
         ScreenBackdrop(dl, display, tex);
-        if (enter < 0.999f)
-            dl->AddRectFilled(ImVec2(0.0f, 0.0f), display,
-                              IM_COL32(0, 0, 0, (int)((1.0f - enter) * 255.0f)));
         dl->PopClipRect();
 
         CardBackdrop(dl, cardMin, cardMax, tex);
