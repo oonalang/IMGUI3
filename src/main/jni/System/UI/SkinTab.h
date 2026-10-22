@@ -624,12 +624,29 @@ case 3:
         if (!itemData.empty())
         {
             auto applyWeaponSkin = [&](const auto& getitem) {
+                // The config ctor hooks on the game thread append to these lists
+                // while this runs, and a push_back can reallocate the vector we
+                // are iterating - the crash after applying a second skin. Take
+                // one snapshot under the data mutex (as the camo page does) and
+                // walk that instead. Only on a tap, so no per-frame cost.
+                std::vector<void *> itemInv, confs, extras, assetGroups,
+                                    itemResources, fireEffects;
+                {
+                    std::lock_guard<std::mutex> lock(g_dataMutex);
+                    itemInv       = itemInventoryInstance;
+                    confs         = weaponConfInstance;
+                    extras        = weaponExtraInstance;
+                    assetGroups   = weaponAssetGroupInstance;
+                    itemResources = itemResourceConfigInstance;
+                    fireEffects   = weaponFireEffectInstance;
+                }
+
                 int baseID = getitem.WeaponConf[0];
                 int extraID = getitem.WeaponExtra[0];
                 int skinID = getitem.WeaponConf[2];
                 int itemID = getitem.Item2Inventory[0];
                 int lootID = getitem.Item2Inventory[3];
-                for (auto item : itemInventoryInstance)
+                for (auto item : itemInv)
                 {
                     if (!item)
                         continue;
@@ -642,7 +659,7 @@ case 3:
                             item2Fields->WeaponIconID = getitem.Item2Inventory[2];
                     }
                 }
-                for (auto conf : weaponConfInstance)
+                for (auto conf : confs)
                 {
                     if (!conf)
                         continue;
@@ -657,7 +674,7 @@ case 3:
                         weaponconfFields->DefaultKillBrocast = getitem.WeaponConf[3];
                         weaponconfFields->ExternalUnVisible = true;
 
-                        for (auto skinConf : weaponConfInstance)
+                        for (auto skinConf : confs)
                         {
                             if (!skinConf)
                                 continue;
@@ -678,9 +695,7 @@ case 3:
                 if (getitem.WeaponExtra[4] > 0)
                 {
                     const int effectAssetID = getitem.WeaponExtra[4];
-                    auto itEffectItem = killEffectItemByAssetId.find(effectAssetID);
-                    const int effectItemID = itEffectItem != killEffectItemByAssetId.end()
-                                             ? itEffectItem->second : 0;
+                    const int effectItemID = KillEffectItemForAsset(effectAssetID);
                     const int effectKeys[5] = {baseID, extraID, skinID, itemID, lootID};
                     for (int key : effectKeys)
                     {
@@ -695,12 +710,12 @@ case 3:
                     const int mythicKeys[5] = {baseID, extraID, skinID, itemID, lootID};
                     for (int key : mythicKeys)
                     {
-                        auto itIcon = killIconByWeapon.find(key);
-                        if (itIcon != killIconByWeapon.end() && itIcon->second > 0)
-                            activeKillIcons[key] = itIcon->second;
+                        const int icon = KillIconForWeapon(key);
+                        if (icon > 0)
+                            activeKillIcons[key] = icon;
                     }
                 }
-                for (auto extra : weaponExtraInstance)
+                for (auto extra : extras)
                 {
                     if (!extra)
                         continue;
@@ -728,7 +743,7 @@ case 3:
                             weaponextraFields->DefaultKillEffectId = getitem.WeaponExtra[4];
                     }
                 }
-                for (auto asset : weaponAssetGroupInstance)
+                for (auto asset : assetGroups)
                 {
                     if (!asset)
                         continue;
@@ -741,7 +756,7 @@ case 3:
                         }
                     }
                 }
-                for (auto itemResource : itemResourceConfigInstance)
+                for (auto itemResource : itemResources)
                 {
                     if (!itemResource)
                         continue;
@@ -770,7 +785,7 @@ case 3:
                 }
 
                 int fireEffectID = 0;
-                for (auto asset : weaponAssetGroupInstance)
+                for (auto asset : assetGroups)
                 {
                     if (!asset)
                         continue;
@@ -784,7 +799,7 @@ case 3:
 
                 if (fireEffectID > 0)
                 {
-                    for (auto fireConf : weaponFireEffectInstance)
+                    for (auto fireConf : fireEffects)
                     {
                         if (!fireConf)
                             continue;

@@ -163,6 +163,37 @@ static uint64_t ToolsNowMs() {
     return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / 1000000ull;
 }
 
+// Parses the leading "lo-hi perms" of one /proc/self/maps line by hand.
+// sscanf over a few thousand lines was the expensive half of a refresh, and a
+// refresh runs on whichever thread first touches an address that is missing
+// from the snapshot - usually the render thread inside DrawESP. This keeps the
+// parse to a handful of instructions per line.
+static bool ToolsParseRangeLine(const char *line, uintptr_t &lo, uintptr_t &hi,
+                                bool &readable) {
+    const unsigned char *p = (const unsigned char *)line;
+    auto hex = [](unsigned char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+
+    uintptr_t a = 0, b = 0;
+    int digits = 0;
+    for (int d; (d = hex(*p)) >= 0; ++p, ++digits) a = (a << 4) | (uintptr_t)d;
+    if (digits == 0 || *p != '-') return false;
+    ++p;
+    digits = 0;
+    for (int d; (d = hex(*p)) >= 0; ++p, ++digits) b = (b << 4) | (uintptr_t)d;
+    if (digits == 0) return false;
+    if (*p == ' ') ++p;
+
+    readable = (*p == 'r');
+    lo = a;
+    hi = b;
+    return hi > lo;
+}
+
 static const ToolsRangeSnapshot *ToolsLiveRanges() {
     const int i = g_rangeLive.load(std::memory_order_acquire);
     return i >= 0 && i < kRangeSlots ? &g_rangeSlots[i] : nullptr;
@@ -208,9 +239,8 @@ static void ToolsRefreshReadableRanges(bool force = false) {
         char line[512];
         while (fgets(line, sizeof line, f)) {
             uintptr_t lo = 0, hi = 0;
-            char perms[8] = {0};
-            if (sscanf(line, "%" SCNxPTR "-%" SCNxPTR " %7s", &lo, &hi, perms) == 3 &&
-                perms[0] == 'r' && hi > lo) {
+            bool readable = false;
+            if (ToolsParseRangeLine(line, lo, hi, readable) && readable) {
                 snap.ranges.emplace_back(lo, hi);
             }
         }

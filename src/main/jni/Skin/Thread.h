@@ -49,13 +49,19 @@ CharacterModelFields *characterfields;
 RolePackFields *packfields;
 RoleConfFields *roleFields;
 ItemResourceFields *itemFields;
-WeaponConfFields *weaponconfFields;
+// These are scratch pointers, not state: each loop assigns the object it is
+// about to read. They must NOT be shared, because the loader thread and the
+// render thread both walk config lists, and a cross-thread overwrite made the
+// menu's apply path write into whatever object the loader had picked last
+// (a mythic skin write landing on a different WeaponConf is instant heap
+// corruption, and it is what crashed the game after applying two skins).
+thread_local WeaponConfFields *weaponconfFields;
 WeaponCamosFields *weaponcamosFields;
 WeaponSkinFields *weaponskinFields;
-Item2InventoryFields *item2Fields;
+thread_local Item2InventoryFields *item2Fields;
 WeaponAssetGroupFields *weaponAssetFields;
 WeaponFireEffectFields *weaponfireFields;
-WeaponConfExtraFields *weaponextraFields;
+thread_local WeaponConfExtraFields *weaponextraFields;
 MythicArmorFields *mythicarmorFields;
 MythicSightFields *mythicsightFields;
 KillEffectItemFields *killeffectFields;
@@ -545,49 +551,77 @@ uint8_t my_GetWeaponKillEffectLevelDecor(void *decorations) {
 static std::unordered_map<int, int> killIconByWeapon;
 static bool loadKillIcons = false;
 
+// killIconByWeapon and killEffectItemByAssetId are built on the skin loader
+// thread and read on the render thread (the Skins page's apply path and the
+// per-frame kill-decoration pass). An unordered_map insert from one thread
+// while the other iterates rehashes under the reader and frees the bucket
+// array it is walking - the "crash after applying a mythic skin" report.
+// Every access goes through this mutex; it is never held while a game native
+// call is made, so it cannot stall the game thread.
+inline std::mutex g_killDecoMapMutex;
+
+inline int KillIconForWeapon(int weaponID) {
+    std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
+    auto it = killIconByWeapon.find(weaponID);
+    return it != killIconByWeapon.end() ? it->second : 0;
+}
+
+inline int KillEffectItemForAsset(int assetID) {
+    std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
+    auto it = killEffectItemByAssetId.find(assetID);
+    return it != killEffectItemByAssetId.end() ? it->second : 0;
+}
+
 void LoadKillIcons() {
     if (loadKillIcons) return;
 
     std::vector<void*> killIcons;
     {
         std::lock_guard<std::mutex> lock(g_dataMutex);
+        if (killIconConfigInstance.empty()) return;
         killIcons = killIconConfigInstance;
     }
 
-    if (killIcons.empty()) return;
-
+    // Rank every icon once instead of re-scanning the whole icon list for each
+    // weapon id of each icon (that was O(icons x weapons x icons) on the render
+    // thread the first time a held weapon had no kill icon).
+    std::unordered_map<int, int> rankByIconId;
+    std::unordered_map<int, int> bestIconForWeapon;
     for (void *icon : killIcons) {
         if (!icon || !Tools::IsPtrValid(icon)) continue;
-        int id = *(int *)((uintptr_t)icon + 0x2C);
+        const int id = *(int *)((uintptr_t)icon + 0x2C);
+        if (id <= 0) continue;
+        rankByIconId[id] = *(int *)((uintptr_t)icon + 0x18) * 100 +
+                           *(int *)((uintptr_t)icon + 0x3C);
+    }
+    for (void *icon : killIcons) {
+        if (!icon || !Tools::IsPtrValid(icon)) continue;
+        const int id = *(int *)((uintptr_t)icon + 0x2C);
         if (id <= 0) continue;
         auto *equipArray = *(Array<int> **)((uintptr_t)icon + 0x70);
         if (!equipArray || !Tools::IsPtrValid(equipArray)) continue;
-        int len = equipArray->getLength();
+        const int len = equipArray->getLength();
+        const int rank = rankByIconId[id];
         for (int i = 0; i < len; i++) {
-            int weaponID = equipArray->m_Items[i];
+            const int weaponID = equipArray->m_Items[i];
             if (weaponID <= 0) continue;
-            auto it = killIconByWeapon.find(weaponID);
-            if (it != killIconByWeapon.end()) {
-                void *old = nullptr;
-                for (void *c : killIcons) {
-                    if (*(int *)((uintptr_t)c + 0x2C) == it->second) { old = c; break; }
-                }
-                if (old) {
-                    int rankOld = *(int *)((uintptr_t)old + 0x18) * 100 + *(int *)((uintptr_t)old + 0x3C);
-                    int rankNew = *(int *)((uintptr_t)icon + 0x18) * 100 + *(int *)((uintptr_t)icon + 0x3C);
-                    if (rankNew > rankOld)
-                        it->second = id;
-                } else {
-                    it->second = id;
-                }
+            auto best = bestIconForWeapon.find(weaponID);
+            if (best == bestIconForWeapon.end()) {
+                bestIconForWeapon[weaponID] = id;
             } else {
-                killIconByWeapon[weaponID] = id;
+                auto oldRank = rankByIconId.find(best->second);
+                if (oldRank == rankByIconId.end() || rank > oldRank->second)
+                    best->second = id;
             }
         }
     }
 
+    {
+        std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
+        killIconByWeapon = std::move(bestIconForWeapon);
+        g_killDecorationDiag.killIconWeapons = (int)killIconByWeapon.size();
+    }
     g_killDecorationDiag.killIconConfigs = (int)killIcons.size();
-    g_killDecorationDiag.killIconWeapons = (int)killIconByWeapon.size();
     loadKillIcons = true;
 }
 
@@ -609,23 +643,47 @@ inline void KillDecoration_ApplyLocalInventoryInfo()
 
     g_killDecorationDiag.lastHeldWeaponID = weaponID;
 
-    int killIcon = 0;
-    auto iconIt = activeKillIcons.find(weaponID);
-    if (iconIt != activeKillIcons.end()) killIcon = iconIt->second;
+    // This runs every render frame, so the resolution is cached per weapon id:
+    // the old version re-walked activeKillIcons and, when the id was missing,
+    // called LoadKillIcons() again - which locked the data mutex, copied the
+    // whole icon-config vector and re-scanned it, sixty times a second, until
+    // the game had built its icon table.
+    static int    s_iconWeaponID    = -1;
+    static int    s_iconForWeapon   = 0;
+    static double s_lastIconLoadTry = -1.0e9;
 
-    // The apply-time insert only happens when a weapon skin is ticked, and only
-    // for the ids the menu could resolve at that moment. A skin applied before
-    // the kill-icon table had loaded left this map empty, and since nothing
-    // retried, the kill icon never appeared for that weapon. Resolve the held
-    // weapon's own icon lazily instead, so the result does not depend on the
-    // order the player picked things in.
+    if (weaponID != s_iconWeaponID)
+    {
+        s_iconWeaponID  = weaponID;
+        s_iconForWeapon = 0;
+        auto iconIt = activeKillIcons.find(weaponID);
+        if (iconIt != activeKillIcons.end()) s_iconForWeapon = iconIt->second;
+    }
+
+    int killIcon = s_iconForWeapon;
+
     if (killIcon <= 0)
     {
-        LoadKillIcons();
-        auto def = killIconByWeapon.find(weaponID);
-        if (def != killIconByWeapon.end() && def->second > 0)
+        killIcon = KillIconForWeapon(weaponID);
+
+        // Resolve the held weapon's own icon lazily, so the result does not
+        // depend on the order the player picked things in - but never more than
+        // once a second.
+        if (killIcon <= 0 && !loadKillIcons)
         {
-            killIcon = def->second;
+            const double now = std::chrono::duration<double>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            if (now - s_lastIconLoadTry >= 1.0)
+            {
+                s_lastIconLoadTry = now;
+                LoadKillIcons();
+                killIcon = KillIconForWeapon(weaponID);
+            }
+        }
+
+        if (killIcon > 0)
+        {
+            s_iconForWeapon = killIcon;
             g_killDecorationDiag.iconFallbackHits++;
         }
     }
@@ -1210,8 +1268,10 @@ void LoadWeaponSkins() {
                 killEffectByWeapon[weaponID] = lastAssetID;
 
                 const int effectItemID = *(int *)((uintptr_t)kill + 0x2C);
-                if (effectItemID > 0 && lastAssetID > 0)
+                if (effectItemID > 0 && lastAssetID > 0) {
+                    std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
                     killEffectItemByAssetId[lastAssetID] = effectItemID;
+                }
             }
         }
     }

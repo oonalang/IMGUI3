@@ -573,7 +573,7 @@ struct WeaponConfFields
     void *UIProperty;
     void *UIPropertyUnlockLevel;
 };
-extern WeaponConfFields *weaponconfFields;
+extern thread_local WeaponConfFields *weaponconfFields;
 
 inline int ApplyCamoToEveryGun(int camoItemID,
                                const std::vector<void *> &weaponConfs,
@@ -689,7 +689,7 @@ struct Item2InventoryFields
     void *ConfigFilePath_PVEH;
     void *WeaponNameH;
 };
-extern Item2InventoryFields *item2Fields;
+extern thread_local Item2InventoryFields *item2Fields;
 
 struct WeaponAssetGroupFields
 {
@@ -805,7 +805,7 @@ struct WeaponConfExtraFields
     void *OpenViewSkillUnlockLevel;
     void *PropertyModifys;
 };
-extern WeaponConfExtraFields *weaponextraFields;
+extern thread_local WeaponConfExtraFields *weaponextraFields;
 
 struct MythicArmorFields
 {

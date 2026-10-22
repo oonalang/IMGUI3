@@ -1539,7 +1539,8 @@ namespace raspody
                         bool drawBox, bool drawLine, bool drawSkeleton,
                         bool drawHealth, bool drawName, bool drawDistance,
                         ImU32 lineColor, ImU32 boxColor, ImU32 healthColor,
-                        ImU32 nameColor, ImU32 distColor)
+                        ImU32 nameColor, ImU32 distColor,
+                        int boxType, int healthPosition, int lineTarget)
     {
         if (!dl || width <= 0.0f || height <= 0.0f)
             return;
@@ -1548,7 +1549,7 @@ namespace raspody
             g_espPreview(dl, pos, width, height,
                          drawBox, drawLine, drawSkeleton, drawHealth, drawName,
                          drawDistance, lineColor, boxColor, healthColor, nameColor,
-                         distColor);
+                         distColor, boxType, healthPosition, lineTarget);
             return;
         }
 

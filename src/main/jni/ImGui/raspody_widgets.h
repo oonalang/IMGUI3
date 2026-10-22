@@ -80,15 +80,19 @@ namespace raspody
     bool MatchesSearch(const char* label, const char* description);
     void ClearSearch();
 
+    // The last three carry EspBoxType, EspHealthPosition and LineTarget so the
+    // preview follows the same pickers the in-game ESP reads.
     typedef void (*EspPreviewFn)(ImDrawList*, ImVec2, float, float,
                                  bool, bool, bool, bool, bool, bool,
-                                 ImU32, ImU32, ImU32, ImU32, ImU32);
+                                 ImU32, ImU32, ImU32, ImU32, ImU32,
+                                 int, int, int);
     void SetEspPreview(EspPreviewFn fn);
     void DrawEspPreview(ImDrawList* dl, ImVec2 pos, float width, float height,
                         bool drawBox, bool drawLine, bool drawSkeleton,
                         bool drawHealth, bool drawName, bool drawDistance,
                         ImU32 lineColor, ImU32 boxColor, ImU32 healthColor,
-                        ImU32 nameColor, ImU32 distColor);
+                        ImU32 nameColor, ImU32 distColor,
+                        int boxType, int healthPosition, int lineTarget);
 
     struct UiState
     {

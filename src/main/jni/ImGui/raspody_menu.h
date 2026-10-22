@@ -1437,8 +1437,7 @@ namespace raspody
                     EspCol(Config.sColorsESPPLAYER.HealthPLAYER, IM_COL32(0, 255, 0, 255)),
                     EspCol(Config.sColorsESPPLAYER.NamePLAYER,  IM_COL32(255, 255, 255, 255)),
                     EspCol(Config.sColorsESPPLAYER.DistancePLAYER, IM_COL32(255, 255, 0, 255)),
-                    (int)Config.ESPMenu.BoxType, (int)Config.ESPMenu.HealthPosition,
-                    (int)Config.ESPMenu.Target);
+                    (int)Config.ESPMenu.BoxType, (int)Config.ESPMenu.HealthPosition, (int)Config.ESPMenu.Target);
 
                 ImGui::SetCursorScreenPos(ImVec2(cardPos.x + S(6), cardPos.y + S(2)));
                 ImGui::InvisibleButton("##raspody_esp_grip",

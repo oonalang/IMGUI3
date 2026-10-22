@@ -96,7 +96,7 @@ inline void InitializeProtection() {
         int hooked = 0;
         for (int i = 0; i < bypass_raven::kHookCount; ++i) {
             const uintptr_t off = bypass_raven::kHooked[i];
-            void *addr = KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), off);
+            void *addr = reinterpret_cast<void *>(KittyMemory::getAbsoluteAddress(OBFUSCATE("libanogs.so"), off));
             if (!Tools::IsPtrValid(addr)) {
                 LOGE("[Bypass] hook 0x%lX did not resolve", (unsigned long)off);
                 continue;

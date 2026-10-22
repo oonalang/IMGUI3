@@ -4,6 +4,7 @@
 #include "ToString.h"
 #include "Icon.h"
 #include "../XPremium/Skeleton.h"
+#include "esp_shared.h"
 
 #include <malloc.h>
 #include <errno.h>
@@ -385,39 +386,23 @@ static inline void DrawBoxEnemy(ImDrawList *draw, ImVec2 X, ImVec2 Y, float thic
     draw->AddLine({X.x, X.y}, {Y.x, Y.y}, color, thicc);
 }
 
+// These shapes live in ImGui/esp_shared.h now: the Visuals-page preview draws
+// its box and health bar from the same functions, which is how the preview
+// stays a picture of what the game actually draws.
 static inline void DrawEspBoxOutline(ImDrawList *draw, float x, float y, float w, float h, ImU32 color, float thickness) {
-    draw->AddRect(ImVec2(x, y), ImVec2(x + w, y + h), color, 0.0f, 0, thickness);
+    esp_shared::DrawOutline(draw, x, y, w, h, color, thickness);
 }
 
 static inline void DrawEspBoxFilled(ImDrawList *draw, float x, float y, float w, float h, ImU32 color, float thickness) {
-    ImVec4 c = ImGui::ColorConvertU32ToFloat4(color);
-    draw->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, 0.16f)));
-    draw->AddRect(ImVec2(x, y), ImVec2(x + w, y + h), color, 0.0f, 0, thickness);
+    esp_shared::DrawFilled(draw, x, y, w, h, color, thickness);
 }
 
 static inline void DrawEspBoxCorner(ImDrawList *draw, float x, float y, float w, float h, ImU32 color, float thickness) {
-    float iw = w / 4.0f;
-    float ih = h / 4.0f;
-    draw->AddLine(ImVec2(x, y), ImVec2(x + iw, y), color, thickness);
-    draw->AddLine(ImVec2(x + w - iw, y), ImVec2(x + w, y), color, thickness);
-    draw->AddLine(ImVec2(x, y), ImVec2(x, y + ih), color, thickness);
-    draw->AddLine(ImVec2(x + w - 1.0f, y), ImVec2(x + w - 1.0f, y + ih), color, thickness);
-    draw->AddLine(ImVec2(x, y + h), ImVec2(x + iw, y + h), color, thickness);
-    draw->AddLine(ImVec2(x + w - iw, y + h), ImVec2(x + w, y + h), color, thickness);
-    draw->AddLine(ImVec2(x, y + h - ih), ImVec2(x, y + h), color, thickness);
-    draw->AddLine(ImVec2(x + w - 1.0f, y + h - ih), ImVec2(x + w - 1.0f, y + h), color, thickness);
+    esp_shared::DrawCorner(draw, x, y, w, h, color, thickness);
 }
 
 static inline void DrawEspVerticalHealthBar(ImDrawList *draw, float x, float y, float h, int curHP, int maxHP) {
-    if (maxHP <= 0) return;
-    float ratio = ImClamp(curHP / (float)maxHP, 0.0f, 1.0f);
-    int r = (int)std::min(510.0f * (1.0f - ratio), 255.0f);
-    int g = (int)std::min(510.0f * ratio, 255.0f);
-    ImU32 hpColor = IM_COL32(r, g, 0, 255);
-    const float barW = 4.0f;
-    draw->AddRectFilled(ImVec2(x, y), ImVec2(x + barW, y + h), IM_COL32(0, 0, 0, 120));
-    draw->AddRect(ImVec2(x, y), ImVec2(x + barW, y + h), IM_COL32(0, 0, 0, 220), 0.0f, 0, 1.0f);
-    draw->AddRectFilled(ImVec2(x, y + h * (1.0f - ratio)), ImVec2(x + barW, y + h), hpColor);
+    esp_shared::SideHealthBar(draw, x, y, h, curHP, maxHP);
 }
 
 static inline void DrawEsp3DBox(ImDrawList *draw, Vector3 rootPos, int glHeight, ImU32 color, float thickness) {
@@ -731,16 +716,25 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
 
         if (!Tools::IsPtrValid((void *)m_AttackableInfo)) continue;
 
-        int CurHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_Health);
-        int MaxHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_MaxHealth);
+        // Health is only read when the option is on - the attackable-info
+        // pointer still gates the pawn, so nothing that used to draw stops
+        // drawing, but the two field reads per enemy go away when they are not
+        // being drawn.
+        int CurHP = 0;
+        int MaxHP = 1;
+        if (Config.ESPMenu.Health) {
+            CurHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_Health);
+            MaxHP = (int)*(float *)(m_AttackableInfo + Class_AttackableTarget_m_MaxHealth);
 
-        if (MaxHP <= 0) { CurHP = 0; MaxHP = 1; }
-        if (CurHP < 0) CurHP = 0;
-        if (CurHP > MaxHP) CurHP = MaxHP;
+            if (MaxHP <= 0) { CurHP = 0; MaxHP = 1; }
+            if (CurHP < 0) CurHP = 0;
+            if (CurHP > MaxHP) CurHP = MaxHP;
+        }
 
         auto m_HeadBone = *(Transform **)(pawn + Class_Pawn_m_HeadBone);
         auto m_Mesh = *(Transform **)(pawn + Class_Pawn_m_Mesh);
-        if (!Tools::IsPtrValid(m_HeadBone) || !m_Mesh || !*(bool *)(pawn + Class_Pawn_m_IsAlive)) continue;
+        const bool pawnAlive = *(bool *)(pawn + Class_Pawn_m_IsAlive);
+        if (!Tools::IsPtrValid(m_HeadBone) || !m_Mesh || !pawnAlive) continue;
 
         bool isBot = *(bool *)((uintptr_t)pawn + Class_Pawn_m_IsBot);
 
@@ -778,21 +772,26 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
         float distanceToMe = Vector3::Distance(pLocalPawn_rootPos, pEnemyPawn_rootPos);
         float actualHeight = Vector3::Distance(pEnemyPawn_headPos, pEnemyPawn_rootPos);
 
-        if (HeadSc.z > 0 && pawn->m_IsAlive()) {
+        // `pawnAlive` was read above; calling m_IsAlive() again was a second
+        // managed call per enemy per frame for an answer we already had.
+        if (HeadSc.z > 0) {
             Vector2 screen(sWidth, sHeight);
             Vector2 location(RootSc.x, HeadSc.y);
-            float magic_number = distanceToMe;
             float boxHeight = std::abs(HeadSc.y - RootSc.y);
             float boxWidth = boxHeight * 0.65f;
 
             if (boxHeight < 5.0f || boxHeight > sHeight * 0.85f) continue;
             if (boxWidth < 2.0f) continue;
 
-            float mx = (glWidth / 6) / magic_number;
-            float healthLength = glWidth / 20;
-            if (healthLength < mx) healthLength = mx;
+            // The box is drawn at RootSc.x, so everything that is positioned
+            // relative to the box (the side health bar, the armour bar) has to
+            // use the same x. Anchoring them to the head's screen x - which
+            // only matches once the camera is square behind the pawn - put the
+            // health bar inside the box on one flank and floating away from it
+            // on the other, which is what looked like a broken health bar.
+            const float boxX = RootSc.x - (boxWidth / 2.0f);
 
-            Rect PlayerRect(HeadSc.x - (boxWidth / 2), sHeight - HeadSc.y, boxWidth, boxHeight);
+            Rect PlayerRect(boxX, sHeight - HeadSc.y, boxWidth, boxHeight);
 
             if (HeadSc.z > 0) {
                 if (Config.ESPMenu.Alert) {
@@ -919,15 +918,13 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
                     }
 
                     if (Config.ESPMenu.Health && Config.ESPMenu.HealthPosition == EspHealthPosition::HealthTop && MaxHP > 0) {
-                        float hpRatio = ImClamp((float)CurHP / (float)MaxHP, 0.0f, 1.0f);
-                        long curHP_Color = IM_COL32(std::min((int)(510.0f * (1.0f - hpRatio)), 255), std::min((int)(510.0f * hpRatio), 255), 0, 255);
-                        float infoHealthBarHeight = 7.0f * scaleFactor;
-                        float infoHealthBarPadding = 5.0f * scaleFactor;
-                        float infoHealthBarX = infoContainerX + infoHealthBarPadding;
-                        float infoHealthBarWidth = infoContainerWidth - (infoHealthBarPadding * 2);
-                        draw->AddRectFilled(ImVec2(infoHealthBarX, infoCurrentY), ImVec2(infoHealthBarX + infoHealthBarWidth, infoCurrentY + infoHealthBarHeight), IM_COL32(0, 0, 0, 120));
-                        draw->AddRectFilled(ImVec2(infoHealthBarX, infoCurrentY), ImVec2(infoHealthBarX + infoHealthBarWidth * hpRatio, infoCurrentY + infoHealthBarHeight), curHP_Color);
-                        draw->AddRect(ImVec2(infoHealthBarX, infoCurrentY), ImVec2(infoHealthBarX + infoHealthBarWidth, infoCurrentY + infoHealthBarHeight), IM_COL32(0, 0, 0, 255), 0.0f, 0, 1.0f);
+                        const float infoHealthBarHeight = 7.0f * scaleFactor;
+                        const float infoHealthBarPadding = 5.0f * scaleFactor;
+                        const float infoHealthBarX = infoContainerX + infoHealthBarPadding;
+                        const float infoHealthBarWidth = infoContainerWidth - (infoHealthBarPadding * 2);
+                        esp_shared::TopHealthBar(draw, infoHealthBarX, infoCurrentY,
+                                                 infoHealthBarWidth, infoHealthBarHeight,
+                                                 CurHP, MaxHP);
                     }
                 }
 
@@ -966,7 +963,7 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
                 }
 
                 if (Config.ESPMenu.Box) {
-                    float x = RootSc.x - (boxWidth / 2.0f);
+                    float x = boxX;
                     float y = sHeight - HeadSc.y;
                     float w = boxWidth;
                     float h = boxHeight;
