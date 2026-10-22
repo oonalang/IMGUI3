@@ -17,7 +17,7 @@ namespace ui_loading {
 
 static bool  g_Active   = false;
 static float g_Timer    = 0.0f;
-static float g_Duration = 7.0f;
+static float g_Duration = 12.0f;
 static float g_Time     = 0.0f;
 
 // Same card as the menu and the login screen.
@@ -96,8 +96,55 @@ static void CoverImage(ImDrawList* dl, ImTextureID tex, ImVec2 mn, ImVec2 mx, fl
     dl->AddImage(tex, texMin, texMax, ImVec2(0, 0), ImVec2(1, 1));
 }
 
-// The video / live wallpaper is the card's own background: it is cover-scaled
-// into the card rect and nothing is painted outside it.
+// The field behind the card. This has to stay fullscreen: the menu is hooked at
+// login time, before the game has drawn a frame of its own, so every pixel the
+// card does not cover is the game's black screen. Cover-scaled like before, and
+// dimmed so the card on top of it reads as the focal point.
+static void ScreenBackdrop(ImDrawList* dl, ImVec2 display, ImTextureID still)
+{
+    const ImTextureID video = ui_media::VideoTexture();
+    const ImTextureID source = video != nullptr ? video : still;
+    const float aspect = video != nullptr ? ui_media::VideoAspect()
+                                          : (display.x > 0.0f ? display.x / display.y : 16.0f / 9.0f);
+
+    dl->AddRectFilled(ImVec2(0, 0), display, C::U(C::BgDeep));
+
+    if (source != nullptr)
+    {
+        CoverImage(dl, source, ImVec2(0, 0), display, aspect);
+    }
+    else
+    {
+        const float drift = std::sin(g_Time * 0.28f) * display.x * 0.06f;
+        const float rise  = std::cos(g_Time * 0.21f) * display.y * 0.04f;
+        dl->AddRectFilledMultiColor(ImVec2(0, 0), display,
+            IM_COL32(10, 4, 22, 255), IM_COL32(14, 6, 28, 255),
+            IM_COL32(4, 1, 12, 255),   IM_COL32(6, 2, 16, 255));
+
+        for (int i = 0; i < 3; ++i)
+        {
+            const float phase = g_Time * (0.16f + i * 0.05f) + i * 2.1f;
+            const ImVec2 c(display.x * (0.5f + 0.26f * std::sin(phase)) + drift * 0.35f,
+                           display.y * (0.42f + 0.22f * std::cos(phase * 0.8f)) + rise * 0.35f);
+            const float r = display.x * (0.22f + 0.05f * i);
+            dl->AddCircleFilled(c, r, C::UA(C::PurpleDeep, 0.10f - i * 0.02f), 64);
+            dl->AddCircleFilled(c, r * 0.55f, C::UA(C::Purple, 0.06f - i * 0.015f), 64);
+        }
+    }
+
+    // Dim the field only: the card paints its own crisp crop of the same video.
+    dl->AddRectFilled(ImVec2(0, 0), display,
+                      IM_COL32(6, 2, 14, source != nullptr ? 72 : 104));
+    dl->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(display.x, display.y * 0.55f),
+        IM_COL32(26, 10, 48, 62), IM_COL32(26, 10, 48, 62),
+        IM_COL32(0, 0, 0, 0),     IM_COL32(0, 0, 0, 0));
+    dl->AddRectFilledMultiColor(ImVec2(0, display.y * 0.55f), display,
+        IM_COL32(0, 0, 0, 0),           IM_COL32(0, 0, 0, 0),
+        IM_COL32(3, 1, 9, 176),         IM_COL32(3, 1, 9, 176));
+}
+
+// The card's own background: a cover-scaled crop of the same video, so the card
+// keeps a well-framed image instead of being a window onto the field behind it.
 static void CardBackdrop(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImTextureID still)
 {
     const ImVec2 size(mx.x - mn.x, mx.y - mn.y);
@@ -287,7 +334,7 @@ static void StatusRow(ImDrawList* dl, ImFont* font, ImVec2 mn, ImVec2 mx, float 
     dl->AddText(font, 11.0f, ImVec2(mx.x - w, mn.y), C::UA(C::PurpleBrt, 0.98f), pct);
 }
 
-inline void Start(float durationSeconds = 7.0f) {
+inline void Start(float durationSeconds = 12.0f) {
     g_Active   = true;
     g_Timer    = 0.0f;
     g_Time     = 0.0f;
@@ -336,13 +383,19 @@ inline bool RenderWindow(ImTextureID tex = nullptr) {
         const float cardH = win.size.y;
         const float cardCx = (cardMin.x + cardMax.x) * 0.5f;
 
+        // The field is drawn into a fullscreen clip rect: the loading window is
+        // card-sized, so without this the video would be clipped to the card and
+        // the game's black frame would show all around it.
+        const float enter = EaseOut(Clamp01(g_Time / 0.55f));
+        dl->PushClipRect(ImVec2(0.0f, 0.0f), display, false);
+        ScreenBackdrop(dl, display, tex);
+        if (enter < 0.999f)
+            dl->AddRectFilled(ImVec2(0.0f, 0.0f), display,
+                              IM_COL32(0, 0, 0, (int)((1.0f - enter) * 255.0f)));
+        dl->PopClipRect();
+
         CardBackdrop(dl, cardMin, cardMax, tex);
         GlassCard(dl, cardMin, cardMax);
-
-        // The card fades up from black instead of popping in on the first frame.
-        const float enter = EaseOut(Clamp01(g_Time / 0.55f));
-        if (enter < 0.999f)
-            dl->AddRectFilled(cardMin, cardMax, IM_COL32(0, 0, 0, (int)((1.0f - enter) * 255.0f)));
 
         ImFont* body = font::inter_semibold ? font::inter_semibold : ImGui::GetFont();
         ImFont* disp = F50 ? F50 : body;
@@ -370,7 +423,10 @@ inline bool RenderWindow(ImTextureID tex = nullptr) {
     if (g_Timer >= g_Duration) {
         g_Active = false;
         g_Timer  = 0.0f;
-        ui_media::StopAudio();
+        // Release the MediaPlayer too, not just the audio: the loading video is
+        // ~20 s long, and leaving it running past the loading screen keeps a live
+        // SurfaceTexture and an OES texture around long after the menu is up.
+        ui_media::Shutdown();
         finished = true;
     }
     return finished;

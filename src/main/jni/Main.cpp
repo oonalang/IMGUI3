@@ -1230,7 +1230,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         SaveLoginTextToFile(s);
                         g_LoginTextLoaded = true;
                         err.clear();
-                        ui_loading::Start(7.0f);
+                        ui_loading::Start(12.0f);
                     }
                 }
             }
