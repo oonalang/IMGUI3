@@ -2622,8 +2622,10 @@ namespace NewFeatures
             d.localPawn = pawnInstance;
             d.pawnLocalTicks++;
 
+            fault_guard::NotePhase("local pawn tick");
             UpdateNoSprintFireDelayWeapon(pawnInstance);
             A_FireTick(nullptr);
+            fault_guard::NotePhase("aim lock");
             aim_lock::Tick((Pawn *)pawnInstance);
         }
     }
@@ -2636,6 +2638,7 @@ namespace NewFeatures
         if (instance == nullptr) return;
 
         g_triggerDiag.weaponTicks++;
+        fault_guard::NotePhase("weapon tick");
         A_FireTick(instance);
     }
 

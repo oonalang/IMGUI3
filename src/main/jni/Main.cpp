@@ -9,6 +9,7 @@
 #include "IL2CppSDKGenerator/IL2Cpp/Call_IL2Cpp.h"
 #include "Hacks/Hacks.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
+#include "System/Core/FaultGuard.h"
 #include "AstralPrtctn/AntiHook.h"
 #include "foxcheats/include/ScanEngine.hpp"
 #include "Includes/Jni_Stuff.h"
@@ -1372,6 +1373,11 @@ void Init_Thread() {
     while (!m_unity) { m_unity = Tools::GetBaseAddress("libunity.so"); sleep(1); }
     LOGI("libunity.so: %p", m_unity);
     UpdateAllOffset();
+
+    // Armed from the first second rather than at the first guarded feature
+    // read, so a crash during startup still names its offset inside libunity.so.
+    fault_guard::SetModuleBase((void *)m_unity);
+    fault_guard::Install();
 
     Patches.A1 = MemoryPatch::createWithHex("libunity.so", 0x8D781DC, "1F 20 03 D5 E0 03 13 AA");
     Patches.NoCrouch = MemoryPatch::createWithHex("libunity.so", 0x511F50C, "00 00 80 D2 C0 03 5F D6");

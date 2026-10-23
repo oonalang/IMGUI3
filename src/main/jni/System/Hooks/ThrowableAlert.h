@@ -4,11 +4,19 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../Core/FaultGuard.h"
+
 namespace ThrowAlertCfg {
     constexpr uintptr_t PosRva = 0xB1F087C;
 
     constexpr uintptr_t TickRva = 0xB1F4E2C;
-    constexpr uintptr_t Exploded = 0xA1;
+
+    // WeaponProjectile.get_HasExploded. The bool at 0xA1 is bHasExplode, which
+    // says the projectile is capable of exploding - true for every grenade and
+    // every mine from the moment it spawns. Reading it as "this one has already
+    // exploded" erased every throwable and every placed item on its first
+    // tracked tick, which is why the placed ESP never drew anything.
+    constexpr uintptr_t HasExplodedRva = 0xB1F08E4;
 
     constexpr uintptr_t DamageRadius = 0x98;
     constexpr uintptr_t ItemId = 0xE4;
@@ -41,6 +49,21 @@ inline const char* ThrowName(int itemId)
     return itemId > 0 ? "THROWABLE" : "PROJECTILE";
 }
 
+inline bool WeaponProjectileHasExploded(void* proj)
+{
+    using Fn = bool (*)(void*);
+    static Fn fn = nullptr;
+    if (fn == nullptr)
+        fn = (Fn)getAbsoluteAddress("libunity.so", ThrowAlertCfg::HasExplodedRva);
+    if (fn == nullptr)
+        return false;
+
+    bool exploded = false;
+    if (!fault_guard::Run([&] { exploded = fn(proj); }))
+        return false;
+    return exploded;
+}
+
 inline Vector3 GetThrowPos(void* proj)
 {
     using Fn = Vector3 (*)(void*);
@@ -53,8 +76,7 @@ inline void TrackThrowable(void* proj)
     if (!Tools::IsPtrValid(proj))
         return;
 
-    bool exploded = *(bool*)((uintptr_t)proj + ThrowAlertCfg::Exploded);
-    if (exploded) {
+    if (WeaponProjectileHasExploded(proj)) {
         g_Throws.erase((uintptr_t)proj);
         return;
     }

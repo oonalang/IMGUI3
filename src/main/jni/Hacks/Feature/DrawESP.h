@@ -681,6 +681,7 @@ static inline void DrawVehicleESP(ImDrawList *draw, int sWidth, int sHeight) {
 }
 
 void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
+    fault_guard::NotePhase("esp draw");
     ApplySpeedhack();
     ApplyNoGravityRuntime();
 

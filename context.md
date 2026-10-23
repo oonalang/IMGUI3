@@ -169,7 +169,7 @@ f4734ee Licence keys carry a device list, and the signing key is rotated
   pawns that are mid-spawn/despawn: their pointers still sit inside mapped pages, so
   `IsPtrValid()` says "fine" and the game's own getter faults on the torn object. The
   skeleton ESP already guards this exact failure with `fault_guard`; the triggerbot
-  (rewritten in `a3ec950`, never device-tested) did not. Fixed in the working tree:
+  (rewritten in `a3ec950`, never device-tested) did not. Fixed and pushed as `e84f09e`:
   every read into a target in `NewFeatures.h` and `AimLock.h` (head-bone walk) now runs
   under `fault_guard::Run` with a per-pawn/per-weapon 1.5 s cooldown and a logged stage
   (`native fault during '<stage>'`), and `TriggerbotDiag` gained a `faults` counter.
@@ -178,24 +178,52 @@ f4734ee Licence keys carry a device list, and the signing key is rotated
   names the exact stage.
 
 * **Startup crash at roughly 50 seconds.** A native crash that arrives about the time the
-  game's guest/login buttons appear, before the panel sign-in. Not diagnosed: a native
-  tombstone is required and nothing in the tree identifies the faulting offset. From a PC:
+  game's guest/login buttons appear, before the panel sign-in. Still not diagnosed. The
+  mod's own patches and hooks were checked against the 1.6.57 dump and match their intended
+  functions (`CanCrouch`, `IsAutoOpenWingsuit`, `ChangePunchAngleByGetHit`,
+  `UpdateBreatheTrembling`, `get_UseSlideTackleLimit`, `get_IsInEM3Eye`,
+  `get_IsKineticArmor`, `get_UseGetReadyTime`, `get_SpringFireGetReady`), and the anti-login
+  gates forward to the originals with the signatures the dump gives, so no wrong-address
+  write has been found by inspection.
+
+  What was added instead is a report, because the next run has to answer this. The fault
+  guard in `System/Core/FaultGuard.h` installs its SIGSEGV/SIGBUS/SIGILL handler from
+  `Init_Thread` (with the libunity base recorded) and, when a fault arrives outside any
+  guard, logs one line before re-raising for the tombstone:
 
   ```
-  adb logcat -b crash -d > crash.txt
-  adb shell ls /data/tombstones/
-  adb pull /data/tombstones/tombstone_00
+  [EthnirCrash] native crash: signal=11 fault=0x0 pc=libunity.so+0x9b5b850 lr=libunity.so+0x... phase=esp draw
   ```
 
-  Lead worth checking once a trace exists: the pawn tick hooks in
-  `Hacks/Feature/NewFeatures.h` run an entity scan about ten times a second even with the
-  triggerbot switched off, so they scan a scene that is not a match yet.
+  `pc` is an offset into libunity.so, so it can be looked up in a dump directly; `phase`
+  names the mod feature that was running (`esp draw`, `placable draw`, `local pawn tick`,
+  `aim lock`, `weapon tick`, `init`). `System/Core/tests/fault_guard_check.cpp` covers the
+  offset and phase formatting. What is needed now is that line plus the tombstone:
+
+  ```
+  adb logcat -b crash -d | grep -i ethnircrash
+  adb logcat -d | grep -iE 'EthnirCrash|DEBUG|backtrace'
+  adb shell ls /data/tombstones/ && adb pull /data/tombstones/tombstone_00
+  ```
+
+  The old lead still stands as the first thing to look at once `pc` names a function: the
+  pawn tick hooks scan the scene about ten times a second even with the triggerbot off.
 
 * **Crash while scoping back to back with ADS only.** Reported in the mission, not
   reproduced or traced.
 
-* **Placed ESP does not draw.** `System/Hooks/PlacableEsp.h` and `DrawESP.h` are the places
-  to start; the user reports dying to a tripmine that should have been visible.
+* **Placed ESP does not draw. Fixed, not yet verified on device.** Root cause found against
+  the 1.6.57 dump: the tracking code read the bool at `WeaponProjectile + 0xA1` as "this
+  projectile has already exploded". 0xA1 is `bHasExplode`, the config flag that says the
+  projectile *can* explode, and it is true for every mine and grenade from the moment it
+  spawns. `TrackPlacable` therefore erased each item on its first tracked tick, so nothing
+  was ever drawn - and the grenade warning in `System/Hooks/ThrowableAlert.h` used the same
+  byte and was dead for the same reason. Both now ask the game itself through
+  `WeaponProjectile.get_HasExploded` (RVA `0xB1F08E4`) under `fault_guard`, and keep
+  `mIsDestroyed` (0x18D) as the destroyed check. `PlacableEsp.h` also logs one line every
+  five seconds while the feature is on (`[Placable] tracked= drawn= posFail= scanned=
+  list= ticks= class=`), which distinguishes "scanning and finding nothing" from "finding
+  and failing to project". Host check: `System/Hooks/tests/placable_esp_check.cpp`.
 
 * **The signing key is public.** It is inside `licence-panel.zip` in this repository and,
   as of the last commit, as `tools/licence/private/licence_private.pem`. Anyone with the

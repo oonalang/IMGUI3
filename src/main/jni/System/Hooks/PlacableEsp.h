@@ -8,6 +8,8 @@
 #include <vector>
 #include <unordered_map>
 
+#include "../../Includes/Logger.h"
+
 namespace PlacableCfg {
     constexpr uintptr_t StickTickRva    = 0x956D4CC;
     constexpr uintptr_t TripMineTickRva = 0x9B5B850;
@@ -24,7 +26,6 @@ namespace PlacableCfg {
     constexpr uintptr_t ComponentGetTransformRva = 0x50291B0;
     constexpr uintptr_t TransformGetPositionRva  = 0x507C19C;
 
-    constexpr uintptr_t ExplodedOff  = 0xA1;
     constexpr uintptr_t DestroyedOff = 0x18D;
     constexpr uintptr_t OwnerCampOff = 0xB0;
     constexpr float MaxDist  = 100.0f;
@@ -77,6 +78,7 @@ struct PlacableDiag
 };
 
 inline PlacableDiag g_placableDiag{};
+inline double g_placableDiagStamp = -1000.0;
 
 struct PlacableInfo {
     const char *label;
@@ -235,12 +237,10 @@ inline void TrackPlacable(void *proj, PlacableRoute route = PlcRouteTick)
     }
 
     const uintptr_t base = (uintptr_t)proj;
-    bool exploded = false;
     bool destroyed = false;
-    if (!PlacableReadBool(base, PlacableCfg::ExplodedOff, exploded) ||
-        !PlacableReadBool(base, PlacableCfg::DestroyedOff, destroyed))
+    if (!PlacableReadBool(base, PlacableCfg::DestroyedOff, destroyed))
         return;
-    if (exploded || destroyed) {
+    if (WeaponProjectileHasExploded(proj) || destroyed) {
         std::lock_guard<std::mutex> lock(g_PlacableMutex);
         g_Placables.erase(base);
         return;
@@ -387,6 +387,7 @@ inline int PlacableLocalCamp()
 
 inline void DrawPlacableESP(ImDrawList *draw, int width, int height, const Vector3 &localPos)
 {
+    fault_guard::NotePhase("placable draw");
     g_placableDiag.drawn = 0;
     g_placableDiag.posFailed = 0;
 
@@ -414,11 +415,9 @@ inline void DrawPlacableESP(ImDrawList *draw, int width, int height, const Vecto
                 continue;
             }
 
-            bool exploded = false;
             bool destroyed = false;
-            if (!PlacableReadBool(key, PlacableCfg::ExplodedOff, exploded) ||
-                !PlacableReadBool(key, PlacableCfg::DestroyedOff, destroyed) ||
-                exploded || destroyed) {
+            if (!PlacableReadBool(key, PlacableCfg::DestroyedOff, destroyed) || destroyed ||
+                WeaponProjectileHasExploded((void *)key)) {
                 it = g_Placables.erase(it);
                 continue;
             }
@@ -483,6 +482,18 @@ inline void DrawPlacableESP(ImDrawList *draw, int width, int height, const Vecto
                             color, IM_COL32(0, 0, 0, 255), fontSize);
 
         g_placableDiag.drawn++;
+    }
+
+    // One line every five seconds while the feature is on. Placed items are
+    // rare, so there is no other way to tell a working esp from a scan that
+    // never finds anything: this says which of the two it is.
+    const double nowSec = (double)ImGui::GetTime();
+    if (nowSec - g_placableDiagStamp >= 5.0) {
+        g_placableDiagStamp = nowSec;
+        LOGI("[Placable] tracked=%d drawn=%d posFail=%d scanned=%d list=%d ticks=%d class=%s",
+             (int)items.size(), g_placableDiag.drawn, g_placableDiag.posFailed,
+             g_placableDiag.scanned, listWalked ? 1 : 0, g_placableDiag.tickCalls,
+             g_placableDiag.lastClass[0] ? g_placableDiag.lastClass : "-");
     }
 
     if (warnLabel != nullptr) {
