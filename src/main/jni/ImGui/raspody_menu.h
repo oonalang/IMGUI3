@@ -823,7 +823,7 @@ namespace raspody
                          &Config.ExtraMenu.BlockReportEvidence);
                 Checkbox("Block ACE report", "Empty the ACE report payload.",
                          &Config.ExtraMenu.BlockAceReport);
-                Checkbox("Anti-login", "Block the forced relogin on location change.",
+                Checkbox("Anti-login", "Re-login instantly when another device signs in, so it is refused.",
                          &Config.ExtraMenu.AntiLogin);
                 Checkbox("Reset guest", "Reset the guest account state.", &Config.ExtraMenu.ResetGuest);
             });

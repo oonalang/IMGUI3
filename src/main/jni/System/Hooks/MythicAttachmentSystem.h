@@ -14,9 +14,12 @@
 
 namespace mythic_attachment_system
 {
+// Gated on its own toggle. It used to read the plain attachment unlock (which
+// ships on), so wiring this in would have made the whole runtime active for
+// everyone; the menu switch is the only thing that should decide it.
 inline bool MythicAttachmentsEnabled()
 {
-    return Config.ExtraMenu.Attachment;
+    return Config.ExtraMenu.MythicAttachments;
 }
 
 std::unordered_map<int, int> activeWeaponSkins;

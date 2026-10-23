@@ -68,10 +68,6 @@ namespace NewFeatures
         constexpr uintptr_t Gameplay_get_LocalPawn          = 0x856AA08;
         constexpr uintptr_t BaseGame_GetEnemyPawns          = 0x9CAFE38;
         constexpr uintptr_t Pawn_get_HeadPosition           = 0x51B86EC;
-        // The muzzle the bullet actually leaves. LOS is checked from here, not
-        // from the eye, so peeking over cover (a head glitch) no longer reads
-        // your own ledge as blocking the shot.
-        constexpr uintptr_t Pawn_get_FirePosition           = 0x51B8900;
         constexpr uintptr_t Pawn_get_LastPawnPos            = 0x51B8D30;
         constexpr uintptr_t Camera_get_main                 = 0x5024010;
         constexpr uintptr_t Camera_WorldToScreenPoint       = 0x5023B54;
@@ -85,7 +81,6 @@ namespace NewFeatures
         constexpr uintptr_t Physics_RaycastAll               = 0x506CBB0;
 
         constexpr uintptr_t Collider_IsTrigger               = 0x50279D4;
-        constexpr uintptr_t Object_InstanceIDToObject        = 0x5068274;
 
         constexpr uintptr_t Transform_get_forward            = 0x509C650;
         constexpr uintptr_t Transform_get_parent             = 0x507BDEC;
@@ -290,7 +285,6 @@ namespace NewFeatures
     inline void *(*fn_PhysicsRaycastAll)(Vector3, Vector3, float) = nullptr;
 
     inline bool (*fn_ColliderIsTrigger)(void *) = nullptr;
-    inline void *(*fn_ObjectInstanceIDToObject)(int32_t) = nullptr;
 
     inline Vector3 (*fn_TransformGetForward)(void *) = nullptr;
     inline void   *(*fn_TransformGetParent)(void *) = nullptr;
@@ -314,7 +308,6 @@ namespace NewFeatures
     inline void *(*fn_GameGetMatchGame)() = nullptr;
     inline bool (*fn_PawnRecentlyRendered)(void *) = nullptr;
     inline bool (*fn_PawnLastOccVisible)(void *) = nullptr;    inline bool   (*fn_PawnGetIsFiring)(void *) = nullptr;
-    inline Vector3 (*fn_PawnGetFirePosition)(void *) = nullptr;
 
 
     inline bool  (*fn_WeaponIsAutoFire)(void *) = nullptr;
@@ -1271,27 +1264,20 @@ namespace NewFeatures
         return p;
     }
 
-    // LOS is cast from the muzzle, because that is what the bullet uses. When
-    // you peek over cover (a head glitch) your eye is still inside the ledge but
-    // the muzzle is past it, so an eye-origin ray reads your own cover as
-    // blocking and refuses every shot. Falls back to a short stem along the aim
-    // from the eye when the muzzle is unavailable or implausible (stale read).
+    // Ray origin: the eye, stepped a short stem along the aim.
+    //
+    // This used to read Pawn.get_FirePosition (the muzzle) instead. That call is
+    // the only thing the crashing triggerbot did that the stable one did not,
+    // and it ran dozens of times per tick inside the weapon's own Tick. A getter
+    // that walks the avatar and the weapon socket is not free of game state: on
+    // a weapon whose model is still streaming it walks a half-built socket, and
+    // a managed fault there is an unhandled managed exception, which aborts the
+    // process - something no SIGSEGV guard can ever contain. The stable build
+    // used the eye and a stem, so that is what this does again.
     inline Vector3 A_FireRayOrigin(Pawn *localPawn, const Vector3 &eye,
                                    const Vector3 &aimDir, float fallbackStem)
     {
-        if (fn_PawnGetFirePosition != nullptr && A_FireObjectAlive((void *)localPawn)) {
-            Vector3 muzzle = Vector3::zero();
-            const bool muzzleSafe = A_FireGuardedRun("muzzle position", (uintptr_t)localPawn, [&] {
-                muzzle = fn_PawnGetFirePosition(localPawn);
-            });
-            if (muzzleSafe && (muzzle.x != 0.0f || muzzle.y != 0.0f || muzzle.z != 0.0f)) {
-                const float dx = muzzle.x - eye.x;
-                const float dy = muzzle.y - eye.y;
-                const float dz = muzzle.z - eye.z;
-                if (dx * dx + dy * dy + dz * dz <= 4.0f)   // within 2 m of the eye
-                    return muzzle;
-            }
-        }
+        (void)localPawn;
         const float alen = Vector3::Magnitude(aimDir);
         if (alen > 1.0e-4f) {
             const float s = fallbackStem / alen;
@@ -1465,20 +1451,14 @@ namespace NewFeatures
         Unknown = 2
     };
 
+    // RaycastHit.m_Collider is a Collider reference at 0x28 (dump 1.6.57), so the
+    // slot is a plain object pointer. It was briefly decoded as an instance ID
+    // and resolved through Object.InstanceIDToObject - another call the stable
+    // build never made, on every ray hit - for no gain.
     inline void *A_FireHitCollider(const unsigned char *hitBuf)
     {
         if (hitBuf == nullptr) return nullptr;
-        uintptr_t raw = 0;
-        std::memcpy(&raw, hitBuf + AF_RAYHIT_COLLOFF, sizeof raw);
-        if (raw > UINT32_MAX) {
-            if ((raw & (alignof(void *) - 1)) != 0) return nullptr;
-            void *collider = (void *)raw;
-            return A_FireObjectAlive(collider) ? collider : nullptr;
-        }
-        int32_t instanceId = 0;
-        std::memcpy(&instanceId, hitBuf + AF_RAYHIT_COLLOFF, sizeof instanceId);
-        if (instanceId == 0 || fn_ObjectInstanceIDToObject == nullptr) return nullptr;
-        void *collider = fn_ObjectInstanceIDToObject(instanceId);
+        void *collider = *(void *const *)(hitBuf + AF_RAYHIT_COLLOFF);
         return A_FireObjectAlive(collider) ? collider : nullptr;
     }
 
@@ -1887,13 +1867,31 @@ namespace NewFeatures
                     (uintptr_t)centred, [&] {
                     if (IsSameTeamAcceptBots(localPawn, centred) || !A_FirePawnAlive(centred))
                         return;
+                    // The ray proves a body is under the dot, not that this shot
+                    // lands. Where the aim point projects, it has to project into
+                    // the zone; only a body that cannot be projected at all
+                    // (point blank, feet behind the near plane) is taken on the
+                    // ray's word. The stable triggerbot had this gate, the
+                    // crashing one dropped it when the centre ray became a fast
+                    // path, and that is what turned "shoot the enemy I am
+                    // looking at" into "shoot whatever the dot clips".
+                    const A_FireAimPoint ap = A_FireAimPointFor(centred);
+                    if (ap.valid) {
+                        Vector3 sc = Vector3::zero();
+                        if (w2s(ap.pos, sc) && sc.z > 0.0f) {
+                            const float dx = sc.x - cx, dy = sc.y - cy;
+                            const float miss = sqrtf(dx * dx + dy * dy);
+                            const float bodyPx = (focalPx > 0.0f && centreHitDist > 0.05f)
+                                ? A_FireTune::kBodyHalfWidthM * focalPx / centreHitDist : 0.0f;
+                            if (miss > radius + bodyPx + 2.0f) return;
+                        }
+                    }
                     bool identified = false;
                     float muzzleHitDist = -1.0f;
                     const AF_Ray los = A_FireRayToTarget(camPos, centreHitPoint, centred,
                         0.0f, localPawn, &identified, &muzzleHitDist);
                     d.lastLosHitDist = muzzleHitDist;
                     if (los == AF_Ray::Clear) {
-                        const A_FireAimPoint ap = A_FireAimPointFor(centred);
                         out.pawn = centred;
                         out.aim = ap;
                         out.aimPoint = centreHitPoint;
@@ -2888,10 +2886,6 @@ namespace NewFeatures
         if (Tools::IsPtrValid(trigAddr))
             fn_ColliderIsTrigger = (bool (*)(void *))trigAddr;
 
-        auto instanceIdAddr = UnityRva(RVA::Object_InstanceIDToObject);
-        if (Tools::IsPtrValid(instanceIdAddr))
-            fn_ObjectInstanceIDToObject = (void *(*)(int32_t))instanceIdAddr;
-
         auto fwdAddr = UnityRva(RVA::Transform_get_forward);
         if (Tools::IsPtrValid(fwdAddr))
             fn_TransformGetForward = (Vector3 (*)(void *))fwdAddr;
@@ -2939,10 +2933,6 @@ namespace NewFeatures
         auto firingAddr = UnityRva(RVA::Pawn_get_IsFiring);
         if (Tools::IsPtrValid(firingAddr))
             fn_PawnGetIsFiring = (bool (*)(void *))firingAddr;
-
-        auto firePosAddr = UnityRva(RVA::Pawn_get_FirePosition);
-        if (Tools::IsPtrValid(firePosAddr))
-            fn_PawnGetFirePosition = (Vector3 (*)(void *))firePosAddr;
 
         auto ggmAddr = UnityRva(RVA::Gameplay_get_MatchGame);
         if (Tools::IsPtrValid(ggmAddr))
@@ -3081,10 +3071,9 @@ namespace NewFeatures
              (void *)fn_ColliderIsTrigger, (void *)fn_TransformGetForward,
              (void *)fn_TransformGetParent, (void *)fn_PhysicsRaycastLOS,
              (void *)fn_TransformGetRight, (void *)fn_TransformGetUp);
-        LOGI("[NewFeatures] triggerbot: AmmoCanFire=%p ClipAmmoCount=%p PawnIsAiming=%p "
-             "InstanceIDToObject=%p", (void *)fn_WeaponAmmoCanFire,
-             (void *)fn_WeaponGetClipAmmoCount, (void *)fn_PawnIsAiming,
-             (void *)fn_ObjectInstanceIDToObject);
+        LOGI("[NewFeatures] triggerbot: AmmoCanFire=%p ClipAmmoCount=%p PawnIsAiming=%p",
+             (void *)fn_WeaponAmmoCanFire,
+             (void *)fn_WeaponGetClipAmmoCount, (void *)fn_PawnIsAiming);
     }
 
     inline bool A_FireHeartbeatAlive()

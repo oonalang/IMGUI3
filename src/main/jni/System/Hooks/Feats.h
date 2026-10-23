@@ -571,6 +571,8 @@ inline bool IsUnlocked(void *instance) {
 
 #include "MythicAttachments.h"
 
+#include "MythicAttachmentSystem.h"
+
 #include "ReportBlock.h"
 
 #include "AntiLogin.h"
@@ -897,4 +899,22 @@ inline void InitializeAllHooks() {
     anti_login::NoteLanded(anti_login::GateReloginCallback, anti_login::orig_ReloginCallback != nullptr);
     anti_login::NoteLanded(anti_login::GateLogout,         anti_login::orig_Logout != nullptr);
     anti_login::NoteLanded(anti_login::GateLoadCallback,   anti_login::orig_OnNotifyNeedReloginCallback != nullptr);
+    anti_login::NoteLanded(anti_login::GateLobbyLogout,    anti_login::orig_OnReceiveLobbyLogout != nullptr);
+    anti_login::NoteLanded(anti_login::GateDsLogout,       anti_login::orig_OnReceiveDSLogout != nullptr);
+    anti_login::NoteLanded(anti_login::GateAutoRetry,      anti_login::orig_CanRetryAutoLogin != nullptr);
+    anti_login::NoteLanded(anti_login::GateAutoStart,      anti_login::orig_CanStartAutoLogin != nullptr);
+    anti_login::NoteLanded(anti_login::GateAutoMax,        anti_login::orig_GetMaxAutoLoginNum != nullptr);
+
+    // The mythic attachment runtime (AttachmentGroupNew, AttachItem,
+    // Weapon.InitOneWeaponPart and their data objects) was written but never
+    // installed, so the menu switch only ever unlocked the attachment items: a
+    // mythic attachment could be equipped and still render stock. Installed
+    // here; every resolution path inside is gated on the same switch, so with
+    // it off the hooks are inert.
+    const uintptr_t unityBase = (uintptr_t)getAbsoluteAddress("libunity.so", 0);
+    const bool mythicInstalled =
+        mythic_attachment_system::InstallMythicAttachmentHooksFresh(unityBase);
+    LOGI("[Mythic] attachment runtime %s (base=%p toggle=%d)",
+         mythicInstalled ? "installed" : "not installed", (void *)unityBase,
+         (int)Config.ExtraMenu.MythicAttachments);
 }
