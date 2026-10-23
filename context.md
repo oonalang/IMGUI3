@@ -225,12 +225,35 @@ f4734ee Licence keys carry a device list, and the signing key is rotated
   `camera forward`, `crosshair projection`, `camera axes`) now run under `fault_guard`
   too. Not verified on device.
 
-* **A character turning invisible.** Not explained. Nothing in the mod hides a pawn: the
-  only `GameObject.SetActive` interference is the no-smoke hook, which is gated on names
-  containing `smoke`/`smog`/`smk`, and the armour and BR-class ESP only draw. The skin
-  system is the remaining suspect - it rewrites config asset ids, and a skin whose asset
-  the client does not have can render as nothing. Needs the user to say whose model
-  vanishes (own or enemy) and whether it still happens with skins off.
+* **A character turning invisible.** Nothing in the mod hides a pawn: the only
+  `GameObject.SetActive` interference is the no-smoke hook, gated on names containing
+  `smoke`/`smog`/`smk`, and the armour and BR-class ESP only draw. The skin system was the
+  suspect, and the apply path in `Skin/Fields.h` had two ways to leave a body half
+  dressed. Both are fixed: the first-person and third-person bodies are now resolved as
+  two separate configs (the old loop wrote whichever one matched either id and left the
+  other on its stock ids), both fall back to the stock Charly configs
+  (`710001101` / `710001102`, item and role `100301208`) when the selected ids are absent,
+  and a role pack is no longer skipped when it already has a `LobbySceneType` or no
+  `LoadingFrame` - that gate meant the outfit pointed at a pack that kept its old ids.
+  Host check: `Skin/tests/fields_apply_check.cpp` (9 checks). **Still not confirmed on
+  device**; if a model still vanishes, the remaining question is whether it happens with
+  the skin set back to default, which separates the skin system from the game's own
+  streaming.
+
+* **Feats (`github.com/oonalang/Feats`) port.** Read all eight headers. It is the same
+  build generation: `RoleSkinFields` (`ClothType` 0x18, `BRBagAssetID` 0x24) and
+  `WeaponSkinFields` (`SkinID1P` 0x48, `SkinID3P` 0x50) match the 1.6.57 dump, and all
+  five attachment entry points resolve to the right methods
+  (`0x8719E4C` `AttachmentGroupNew..ctor(uint,int,uint,uint,int,bool,bool,bool)`,
+  `0x8449500` `AttachItem..ctor(uint,int,uint)`, `0x517C4D0`
+  `Weapon.InitOneWeaponPart(WeaponPartInfo,bool,bool)`, plus the part-asset and
+  attachment-conf ctors at `0xAF85628` and `0x6FE9168`). The character-skin apply path has
+  been ported (above). `MythicAttachmentSystem.h` has NOT been ported: it is ~1.2k lines
+  of new hooks (AttachmentGroupNew, AttachItem, AttachSkinData, LoadoutAttachItem,
+  Weapon.InitOneWeaponPart), it resolves mythic attach ids from
+  `WeaponSkinConfig.SkinID1P/3P` without needing a menu, and it is only verifiable on a
+  device, so it should be its own change with the toggle off by default rather than
+  folded into a crash fix. `SkinHaxSystem.h` is mostly the selector UI for it.
 
 * **Placed ESP does not draw. Fixed, not yet verified on device.** Root cause found against
   the 1.6.57 dump: the tracking code read the bool at `WeaponProjectile + 0xA1` as "this

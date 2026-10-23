@@ -471,12 +471,35 @@ inline void ApplyCharacterSkin(const charInfo &getchar,
                                const std::vector<void *> &roleConfs,
                                const std::vector<void *> &rolePacks)
 {
+    // The first-person and third-person bodies are two different
+    // CharacterModel configs. Writing whichever one matched either id left the
+    // other side on its old ids, and a body whose model ids disagree with the
+    // role it belongs to renders as nothing at all. Each side is resolved on
+    // its own here, with the stock default config as the fallback.
+    constexpr int kStockTraitor1P = 710001101;
+    constexpr int kStockTraitor3P = 710001102;
+    constexpr int kStockItemId    = 100301208;
+
+    CharacterModelFields *body1P = nullptr;
+    CharacterModelFields *body3P = nullptr;
+    CharacterModelFields *stock1P = nullptr;
+    CharacterModelFields *stock3P = nullptr;
+
     for (auto charModel : charModels) {
         if (!charModel) continue;
         auto *cf = (CharacterModelFields *)((uintptr_t)charModel + 0x10);
-        if (cf->Traitor1P != selTraitor1P && cf->Traitor3P != selTraitor3P)
-            continue;
+        if (cf == nullptr) continue;
 
+        if (cf->Traitor1P == kStockTraitor1P) stock1P = cf;
+        if (cf->Traitor3P == kStockTraitor3P) stock3P = cf;
+        if (cf->Traitor1P == selTraitor1P) body1P = cf;
+        if (cf->Traitor3P == selTraitor3P) body3P = cf;
+    }
+    if (body1P == nullptr) body1P = stock1P;
+    if (body3P == nullptr) body3P = stock3P;
+
+    const auto writeModel = [&getchar](CharacterModelFields *cf) {
+        if (cf == nullptr) return;
         cf->BRBagModel         = getchar.charModel[0];
         cf->BRHeadModel        = getchar.charModel[1];
         cf->BRLobby            = getchar.charModel[2];
@@ -489,12 +512,28 @@ inline void ApplyCharacterSkin(const charInfo &getchar,
         cf->GuarderBagModel    = getchar.charModel[9];
         cf->GuarderHeadModel   = getchar.charModel[10];
         cf->GuarderLobby       = getchar.charModel[11];
-    }
+    };
+
+    writeModel(body1P);
+    writeModel(body3P);
+
+    ItemResourceFields *item = nullptr;
+    ItemResourceFields *stockItem = nullptr;
 
     for (auto itemRes : itemResources) {
         if (!itemRes) continue;
         auto *itf = (ItemResourceFields *)((uintptr_t)itemRes + 0x10);
+        if (itf == nullptr) continue;
+
+        if (itf->ID == kStockItemId) stockItem = itf;
         if (itf->ID != selItemID) continue;
+        item = itf;
+        break;
+    }
+    if (item == nullptr) item = stockItem;
+
+    if (item != nullptr) {
+        auto *itf = item;
 
         if (getchar.charRes[0] != 0) itf->FxAssetID        = getchar.charRes[0];
         if (getchar.charRes[1] != 0) itf->InventoryModelID = getchar.charRes[1];
@@ -506,11 +545,23 @@ inline void ApplyCharacterSkin(const charInfo &getchar,
         if (getchar.ItemRes2[3] != 0) itf->UISquareSpriteNameIndex = getchar.ItemRes2[3];
     }
 
+    RoleConfFields *role = nullptr;
+    RoleConfFields *stockRole = nullptr;
+
     for (auto roles : roleConfs) {
         if (!roles) continue;
         auto *rf = (RoleConfFields *)((uintptr_t)roles + 0x10);
-        if (rf->ID != selRoleID) continue;
+        if (rf == nullptr) continue;
 
+        if (rf->ID == kStockItemId) stockRole = rf;
+        if (rf->ID != selRoleID) continue;
+        role = rf;
+        break;
+    }
+    if (role == nullptr) role = stockRole;
+
+    if (role != nullptr) {
+        auto *rf = role;
         rf->roleLeftArmID       = getchar.charRole[0];
         rf->roleFinalSuitID     = getchar.charRole[1];
         rf->roleBasicHologramID = getchar.charRole[2];
@@ -525,10 +576,7 @@ inline void ApplyCharacterSkin(const charInfo &getchar,
     for (auto pack : rolePacks) {
         if (!pack) continue;
         auto *pf = (RolePackFields *)((uintptr_t)pack + 0x10);
-        if (pf->RolePackID != selPackID ||
-            pf->LobbySceneType != 0 ||
-            pf->LoadingFrame == 0)
-            continue;
+        if (pf == nullptr || pf->RolePackID != selPackID) continue;
 
         pf->EntryAnimID      = getchar.charPack[1];
         pf->GestureId        = getchar.charPack[2];
