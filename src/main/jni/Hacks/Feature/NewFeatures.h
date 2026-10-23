@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 
 #include "../../IL2CppSDKGenerator/BasicStructs/Vector3.hpp"
 #include "../../IL2CppSDKGenerator/BasicStructs/Vector2.h"
@@ -83,6 +84,7 @@ namespace NewFeatures
         constexpr uintptr_t Physics_RaycastAll               = 0x506CBB0;
 
         constexpr uintptr_t Collider_IsTrigger               = 0x50279D4;
+        constexpr uintptr_t Object_InstanceIDToObject        = 0x5068274;
 
         constexpr uintptr_t Transform_get_forward            = 0x509C650;
         constexpr uintptr_t Transform_get_parent             = 0x507BDEC;
@@ -287,6 +289,7 @@ namespace NewFeatures
     inline void *(*fn_PhysicsRaycastAll)(Vector3, Vector3, float) = nullptr;
 
     inline bool (*fn_ColliderIsTrigger)(void *) = nullptr;
+    inline void *(*fn_ObjectInstanceIDToObject)(int32_t) = nullptr;
 
     inline Vector3 (*fn_TransformGetForward)(void *) = nullptr;
     inline void   *(*fn_TransformGetParent)(void *) = nullptr;
@@ -295,11 +298,17 @@ namespace NewFeatures
     inline Vector3 (*fn_TransformGetUp)(void *) = nullptr;
     inline void *(*fn_CameraGetMain)() = nullptr;
 
+    inline bool A_FireVectorFinite(const Vector3 &v)
+    {
+        return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+    }
+
     inline bool A_FireWorldToScreenSafe(void *cam, const Vector3 &world, Vector3 &out)
     {
-        if (fn_WorldToScreen == nullptr || !A_FireObjectAlive(cam)) return false;
+        if (fn_WorldToScreen == nullptr || !A_FireObjectAlive(cam) ||
+            !A_FireVectorFinite(world)) return false;
         out = fn_WorldToScreen(cam, world);
-        return true;
+        return A_FireVectorFinite(out);
     }
     inline void *(*fn_GameGetMatchGame)() = nullptr;
     inline bool (*fn_PawnRecentlyRendered)(void *) = nullptr;
@@ -611,6 +620,25 @@ namespace NewFeatures
         return dx * dx + dy * dy;
     }
 
+    inline Vector3 A_FireClosestBodyPoint(const A_FireAimPoint &aim,
+                                          const Vector3 &screenHead, const Vector3 &screenFeet,
+                                          float cx, float cy)
+    {
+        if (!(screenHead.z > 0.0f && screenFeet.z > 0.0f)) return aim.pos;
+        const float dx = screenFeet.x - screenHead.x;
+        const float dy = screenFeet.y - screenHead.y;
+        const float lenSq = dx * dx + dy * dy;
+        float u = lenSq > 0.0001f
+            ? ((cx - screenHead.x) * dx + (cy - screenHead.y) * dy) / lenSq : 0.0f;
+        if (u < 0.0f) u = 0.0f;
+        if (u > 1.0f) u = 1.0f;
+        const float headWeight = (1.0f - u) / screenHead.z;
+        const float feetWeight = u / screenFeet.z;
+        const float total = headWeight + feetWeight;
+        if (!(total > 0.0f) || !std::isfinite(total)) return aim.pos;
+        return (aim.head * headWeight + aim.feet * feetWeight) / total;
+    }
+
     inline A_FireAimPoint A_FireAimPointFor(Pawn *pawn)
     {
         A_FireAimPoint ap{};
@@ -647,22 +675,18 @@ namespace NewFeatures
     inline bool A_FireWeaponSwitching(void *weapon)
     {
         if (!Tools::IsPtrValid(weapon)) return false;
-        if (fn_WeaponInSwitchWeaponState != nullptr && fn_WeaponInSwitchWeaponState(weapon)) return true;
-        if (fn_WeaponHasSwitchingState  != nullptr && fn_WeaponHasSwitchingState(weapon))  return true;
-        return false;
+        return fn_WeaponInSwitchWeaponState != nullptr && fn_WeaponInSwitchWeaponState(weapon);
     }
 
     inline bool A_FireWeaponHasAmmo(void *weapon)
     {
-        if (!Tools::IsPtrValid(weapon)) return false;
-        if (fn_WeaponAmmoCanFire != nullptr && !fn_WeaponAmmoCanFire(weapon)) return false;
-
-        // A weapon that is not a gun (throwable, launcher, melee) has no clip,
-        // and its clip count reads 0 - that must not read as "empty".
-        const bool gun = (fn_InventoryIsGun == nullptr) || fn_InventoryIsGun(weapon);
-        if (gun && fn_WeaponGetClipAmmoCount != nullptr && fn_WeaponGetClipAmmoCount(weapon) <= 0)
+        if (!A_FireObjectAlive(weapon) || fn_WeaponAmmoCanFire == nullptr ||
+            !fn_WeaponAmmoCanFire(weapon))
             return false;
-        return true;
+
+        const bool gun = fn_InventoryIsGun == nullptr || fn_InventoryIsGun(weapon);
+        return !gun || (fn_WeaponGetClipAmmoCount != nullptr &&
+                        fn_WeaponGetClipAmmoCount(weapon) > 0);
     }
 
     inline bool A_FireWeaponCanFire(void *weapon)
@@ -701,16 +725,41 @@ namespace NewFeatures
     inline double    g_afireAdsSettleUntil = -1000.0;
     inline double    g_afireAdsSettleMax   = -1000.0;
     inline int       g_afireAdsLastState   = -1;
-    inline void     *g_afireAdsLastComp     = nullptr;
-    inline bool      g_afireAdsCompSeen     = false;
+    inline void     *g_afireAdsLastWeapon   = nullptr;
+    inline bool      g_afireAdsWeaponSeen   = false;
     inline bool      g_afireAdsSettling     = false;
+    inline bool      g_afireAdsTracePending = false;
+    inline bool      g_afireAdsFireTracePending = false;
+    inline thread_local bool g_afireAdsTraceActive = false;
+
+    inline void A_FireAdsTrace(const char *stage)
+    {
+        if (g_afireAdsTraceActive) LOGI("[NewFeatures][ADS] %s", stage);
+    }
+
+    inline bool A_FirePressTrigger(void *weapon)
+    {
+        if (fn_Weapon_StartFire == nullptr || !A_FireObjectAlive(weapon) ||
+            A_FireWeaponSwitching(weapon) || !A_FireWeaponHasAmmo(weapon))
+            return false;
+
+        const bool trace = g_afireAdsTraceActive ||
+            (Config.NewFeaturesMenu.TriggerbotMode == 1 && g_afireAdsFireTracePending);
+        if (trace) LOGI("[NewFeatures][ADS] start trigger weapon=%p", weapon);
+        fn_Weapon_StartFire(weapon);
+        if (trace) {
+            LOGI("[NewFeatures][ADS] start complete");
+            g_afireAdsFireTracePending = false;
+        }
+        return true;
+    }
 
     struct ScopeSettle
     {
         bool settling;
         bool asked;
         bool aiming;
-        void* comp;     // the fire component this scan already resolved
+        void* comp;
     };
 
     inline bool A_FireAdsSwapActive()
@@ -728,28 +777,20 @@ namespace NewFeatures
             s.asked  = true;
             s.aiming = fn_PawnIsAiming((void *)localPawn);
             const int state = s.aiming ? 1 : 0;
+            if (state != g_afireAdsLastState) {
+                g_afireAdsTracePending = s.aiming;
+                g_afireAdsFireTracePending = s.aiming;
+            }
             if (g_afireAdsLastState != -1 && state != g_afireAdsLastState) moved = true;
             g_afireAdsLastState = state;
         } else {
             g_afireAdsLastState = -1;
         }
 
-        void *comp = GetCurrentFireComponent(weapon);
-        s.comp = comp;      // A_FireAdsGate reuses this instead of asking again
-        if (!g_afireAdsCompSeen) {
-            g_afireAdsCompSeen = true;
-            g_afireAdsLastComp = comp;
-        } else if (comp != g_afireAdsLastComp) {
-            moved = true;
-            g_afireAdsLastComp = comp;
-        }
+        if (g_afireAdsWeaponSeen && weapon != g_afireAdsLastWeapon) moved = true;
+        g_afireAdsLastWeapon = weapon;
+        g_afireAdsWeaponSeen = true;
 
-        // Start a settle window the first time a transition is seen, but never
-        // extend one that is already running. A fire component that is rebuilt
-        // every tick (round transition, some weapon swaps) used to push the
-        // deadline out on every tick, so the triggerbot settled forever on the
-        // 2nd round: it never fired, and the per-tick component lookups kept the
-        // frame hitching before the game gave out.
         if (moved && !g_afireAdsSettling) {
             g_afireAdsSettleUntil = now + kAdsSettleSeconds;
             g_afireAdsSettleMax   = now + kAdsSettleMaxSeconds;
@@ -766,10 +807,6 @@ namespace NewFeatures
             return s;
         }
 
-        // Past the settle window the weapon has settled. Only keep waiting when
-        // it genuinely cannot fire yet (mid-reload); a component pointer that
-        // merely wiggled is a rebuilt wrapper, not a scope transition, so it no
-        // longer counts against stability.
         if (!A_FireWeaponCanFire(weapon)) {
             s.settling = true;
             g_afireAdsSettling = true;
@@ -795,35 +832,11 @@ namespace NewFeatures
             r.pawnAim = fn_PawnIsAiming((void *)localPawn);
         }
 
-        // The scoping check has already resolved this weapon's fire component
-        // for this scan; asking the managed side again was the same call twice
-        // on every tick of an ADS-only triggerbot. And when the pawn flag
-        // already says "scoped" the answer cannot change, so the component call
-        // and its class-name lookup are skipped outright - that lookup was the
-        // per-tick work that only ADS-only mode paid for.
-        if (!r.pawnAim) {
-            void *fireComp = settle.comp != nullptr ? settle.comp : GetCurrentFireComponent(weapon);
-            if (fireComp != nullptr)
-                r.fcAim = IsFireComponentScoping(fireComp, &r.fcOk);
-        }
-
-        if (Tools::IsPtrValid(weapon)) {
-            r.fieldFlag = *(bool *)((uintptr_t)weapon + Offsets::Weapon_m_IsAiming);
-            r.fieldPct  = *(float *)((uintptr_t)weapon + Offsets::Weapon_m_AimingPercentage);
-        }
-
-        if (r.pawnAim || r.fcAim) { r.aiming = true;  return r; }
-        if (r.pawnOk  || r.fcOk)  { r.aiming = false; return r; }
-        r.unknown = true;
-        r.aiming  = true;
+        r.unknown = !r.pawnOk;
+        r.aiming = r.pawnOk && r.pawnAim;
         return r;
     }
 
-    // The ADS state cannot change 250 times a second, so the expensive half of
-    // the gate - the "not scoped" verdict, which costs a managed call and a
-    // class-name lookup - is remembered for a few milliseconds. A fresh
-    // "scoped" answer needs no managed call at all and is never cached, so
-    // nothing is delayed when you actually scope in.
     constexpr double kAdsGateRefreshSeconds = 0.012;
     inline AdsRead   g_afireAdsNegCached{};
     inline double    g_afireAdsNegTime     = -1000.0;
@@ -961,6 +974,7 @@ namespace NewFeatures
                 if (dist < 0.2f || dist >= targetDist) continue;
 
                 const float along = Vector3::Dot(to, dir);
+                if (!(along > 0.0f && along < targetDist)) continue;
                 const Vector3 lat(to.x - dir.x * along, to.y - dir.y * along, to.z - dir.z * along);
                 const float lateral = Vector3::Magnitude(lat);
 
@@ -1199,6 +1213,11 @@ namespace NewFeatures
         viaGame = false;
         fellBack = false;
         plainCentre = false;
+        if (fn_TransformGetForward == nullptr || camTransform == nullptr) {
+            out = Vector3::zero();
+            plainCentre = true;
+            return;
+        }
         out = fn_TransformGetForward(camTransform);
 
         float cx = 0.0f, cy = 0.0f;
@@ -1281,6 +1300,20 @@ namespace NewFeatures
         const int idx = (int)b;
         d.lastBlock = idx;
         if (idx >= 0 && idx < (int)FireBlock::Count) d.blockCount[idx]++;
+        static int lastLogged = -1;
+        static double lastLogTime = -1000.0;
+        const double now = A_FireNow();
+        if (Config.NewFeaturesMenu.Triggerbot &&
+            (idx != lastLogged || now - lastLogTime >= 2.0)) {
+            LOGI("[NewFeatures] triggerbot: block=%s mode=%d dot=%d ammo=%d pawn=%p weapon=%p "
+                 "localTicks=%d heldTicks=%d scans=%d targets=%d fires=%d",
+                 A_FireBlockText(b), Config.NewFeaturesMenu.TriggerbotMode,
+                 (int)Config.NewFeaturesMenu.TriggerbotDotRay, (int)d.ammoOk,
+                 d.localPawn, d.heldWeapon, d.pawnLocalTicks, d.weaponHeldTicks,
+                 d.scans, d.targets, d.fires);
+            lastLogged = idx;
+            lastLogTime = now;
+        }
     }
 
     struct TriggerTarget
@@ -1319,8 +1352,18 @@ namespace NewFeatures
     inline void *A_FireHitCollider(const unsigned char *hitBuf)
     {
         if (hitBuf == nullptr) return nullptr;
-        void *collider = *(void *const *)(hitBuf + AF_RAYHIT_COLLOFF);
-        return Tools::IsPtrValid(collider) ? collider : nullptr;
+        uintptr_t raw = 0;
+        std::memcpy(&raw, hitBuf + AF_RAYHIT_COLLOFF, sizeof raw);
+        if (raw > UINT32_MAX) {
+            if ((raw & (alignof(void *) - 1)) != 0) return nullptr;
+            void *collider = (void *)raw;
+            return A_FireObjectAlive(collider) ? collider : nullptr;
+        }
+        int32_t instanceId = 0;
+        std::memcpy(&instanceId, hitBuf + AF_RAYHIT_COLLOFF, sizeof instanceId);
+        if (instanceId == 0 || fn_ObjectInstanceIDToObject == nullptr) return nullptr;
+        void *collider = fn_ObjectInstanceIDToObject(instanceId);
+        return A_FireObjectAlive(collider) ? collider : nullptr;
     }
 
     inline void *A_FireColliderTransform(void *collider)
@@ -1329,18 +1372,27 @@ namespace NewFeatures
         return (void *)((Component *)collider)->get_transform();
     }
 
-    inline bool A_FireHitIsTarget(void *hitTransform, Pawn *pawn, int *depthOut = nullptr)
+    inline void *A_FireTargetForCollider(void *collider)
+    {
+        if (fn_AtkMapGetTargetForCollider == nullptr || !A_FireObjectAlive(collider))
+            return nullptr;
+        void *map = fn_GameGetAttackableColliderMap ? fn_GameGetAttackableColliderMap() : nullptr;
+        if (!A_FireObjectAlive(map)) return nullptr;
+        A_FireAdsTrace("collider owner lookup");
+        void *target = fn_AtkMapGetTargetForCollider(map, collider);
+        return A_FireObjectAlive(target) ? target : nullptr;
+    }
+
+    inline bool A_FireHitIsTarget(void *collider, void *hitTransform, Pawn *pawn,
+                                 int *depthOut = nullptr)
     {
         if (depthOut != nullptr) *depthOut = -1;
         if (!A_FireObjectAlive(hitTransform) || !A_FireObjectAlive((void *)pawn)) return false;
 
-        if (fn_AtkMapGetTargetForCollider != nullptr) {
-            void *map = fn_GameGetAttackableColliderMap ? fn_GameGetAttackableColliderMap() : nullptr;
-            if (A_FireObjectAlive(map)) {
-                void *target = fn_AtkMapGetTargetForCollider(map, hitTransform);
-                if (A_FireObjectAlive(target) && target != (void *)pawn)
-                    return false;
-            }
+        void *target = A_FireTargetForCollider(collider);
+        if (target != nullptr) {
+            if (target == (void *)pawn && depthOut != nullptr) *depthOut = 0;
+            return target == (void *)pawn;
         }
 
         Transform *root = pawn->get_transform();
@@ -1358,13 +1410,6 @@ namespace NewFeatures
             t = parent;
         }
 
-        const Vector3 head = pawn->get_HeadPosition();
-        if (head.x != 0.0f || head.y != 0.0f || head.z != 0.0f) {
-            const Vector3 hp = ((Transform *)hitTransform)->get_position();
-            const float dx = hp.x - head.x, dy = hp.y - head.y, dz = hp.z - head.z;
-            const float r = 0.60f;
-            if (dx * dx + dy * dy + dz * dz <= r * r) return true;
-        }
         return false;
     }
 
@@ -1403,13 +1448,13 @@ namespace NewFeatures
 
             void *collider = A_FireHitCollider(hitBuf);
             void *hitTransform = A_FireColliderTransform(collider);
-            if (hitTransform != nullptr && A_FireHitIsTarget(hitTransform, target)) {
+            if (hitTransform != nullptr && A_FireHitIsTarget(collider, hitTransform, target)) {
                 if (identified != nullptr) *identified = true;
                 return AF_Ray::Clear;
             }
 
             const bool self = hitTransform != nullptr && localPawn != nullptr &&
-                              A_FireHitIsTarget(hitTransform, localPawn);
+                              A_FireHitIsTarget(collider, hitTransform, localPawn);
             const bool trigger = !self && collider != nullptr &&
                                  fn_ColliderIsTrigger != nullptr && fn_ColliderIsTrigger(collider);
             if (self || trigger) {
@@ -1426,10 +1471,6 @@ namespace NewFeatures
             }
 
             if (hitTransform == nullptr) return AF_Ray::Unknown;
-            if (totalDistance <= A_FireTune::kSelfExclusion && A_FireGameSaysVisible(target)) {
-                g_triggerDiag.occOverrides++;
-                return AF_Ray::Clear;
-            }
             return AF_Ray::Blocked;
         }
         return remaining <= 0.0f ? AF_Ray::Clear : AF_Ray::Unknown;
@@ -1442,38 +1483,25 @@ namespace NewFeatures
         if (identified != nullptr) *identified = false;
         if (hitDistance != nullptr) *hitDistance = -1.0f;
 
-        // Cast from the muzzle when we have one: the bullet leaves the barrel,
-        // so this is the honest occlusion line and it clears cover you peek over.
-        // Fallback stem is 0: with no muzzle the origin stays the eye and this
-        // function's own stem below applies once, as before.
+        if (!A_FireVectorFinite(from) || !A_FireVectorFinite(to))
+            return AF_Ray::Unknown;
         const Vector3 from2 = A_FireRayOrigin(localPawn, from,
             Vector3((to.x - from.x), (to.y - from.y), (to.z - from.z)),
             0.0f);
 
         Vector3 d(to.x - from2.x, to.y - from2.y, to.z - from2.z);
         const float dist = Vector3::Magnitude(d);
+        if (!std::isfinite(dist)) return AF_Ray::Unknown;
         if (!(dist >= 0.01f)) return AF_Ray::Clear;
         const Vector3 dir(d.x / dist, d.y / dist, d.z / dist);
 
-        // Muzzle stem: skip what the muzzle is already inside of. A target
-        // closer than the stem is point blank - nothing can block that line.
-        const float stem = (dist > 4.0f * A_FireTune::kRayStem) ? A_FireTune::kRayStem : 0.0f;
-        const Vector3 start(from2.x + dir.x * stem,
-                            from2.y + dir.y * stem,
-                            from2.z + dir.z * stem);
-        const float span = dist - stem;
-        if (!(span >= 0.01f)) return AF_Ray::Clear;
-
-        const AF_Ray singleHit = A_FireRayToTargetSingleHit(start, dir,
-            span + A_FireTune::kRayReach, target, localPawn, identified, hitDistance);
+        const AF_Ray singleHit = A_FireRayToTargetSingleHit(from2, dir,
+            dist, target, localPawn, identified, hitDistance);
         if (singleHit != AF_Ray::Unknown) return singleHit;
+        if (fn_PhysicsRaycastHitOut != nullptr) return AF_Ray::Unknown;
 
         if (fn_PhysicsRaycastSegment != nullptr) {
-            float tail = probeRadius * A_FireTune::kSurfaceFrac;
-            if (tail < A_FireTune::kMinStemGap) tail = A_FireTune::kMinStemGap;
-            const float stop = span - tail;
-            if (!(stop > 0.01f)) return AF_Ray::Clear;
-            return fn_PhysicsRaycastSegment(start, dir, stop) ? AF_Ray::Blocked : AF_Ray::Clear;
+            return fn_PhysicsRaycastSegment(from2, dir, dist) ? AF_Ray::Blocked : AF_Ray::Clear;
         }
 
         return AF_Ray::Unknown;
@@ -1481,8 +1509,10 @@ namespace NewFeatures
 
     inline AF_Ray A_FireRaySegmentClear(const Vector3 &from, const Vector3 &to)
     {
+        if (!A_FireVectorFinite(from) || !A_FireVectorFinite(to)) return AF_Ray::Unknown;
         Vector3 d(to.x - from.x, to.y - from.y, to.z - from.z);
         const float dist = Vector3::Magnitude(d);
+        if (!std::isfinite(dist)) return AF_Ray::Unknown;
         if (!(dist >= 0.01f)) return AF_Ray::Clear;
         const Vector3 dir(d.x / dist, d.y / dist, d.z / dist);
         if (fn_PhysicsRaycastSegment != nullptr)
@@ -1490,17 +1520,14 @@ namespace NewFeatures
         return AF_Ray::Unknown;
     }
 
-    inline int A_FireRegistryOwnerIs(void *hitTransform, Pawn *pawn)
+    inline int A_FireRegistryOwnerIs(void *collider, Pawn *pawn)
     {
-        if (fn_AtkMapGetTargetForCollider == nullptr) return 0;
-        void *map = fn_GameGetAttackableColliderMap ? fn_GameGetAttackableColliderMap() : nullptr;
-        if (!A_FireObjectAlive(map)) return 0;
-        void *target = fn_AtkMapGetTargetForCollider(map, hitTransform);
-        if (!A_FireObjectAlive(target)) return 0;
+        void *target = A_FireTargetForCollider(collider);
+        if (target == nullptr) return 0;
         return target == (void *)pawn ? 1 : -1;
     }
 
-    inline Pawn *A_FirePawnFromHitTransform(void *hitTransform, Pawn **items, int count,
+    inline Pawn *A_FirePawnFromHitTransform(void *collider, void *hitTransform, Pawn **items, int count,
                                             int *depthOut = nullptr)
     {
         if (depthOut != nullptr) *depthOut = -1;
@@ -1515,22 +1542,17 @@ namespace NewFeatures
             if (A_FireListObjectAlive((void *)p)) tcache[i] = (void *)p->get_transform();
         }
 
-        if (fn_AtkMapGetTargetForCollider != nullptr) {
-            void *map = fn_GameGetAttackableColliderMap ? fn_GameGetAttackableColliderMap() : nullptr;
-            if (A_FireObjectAlive(map)) {
-                void *target = fn_AtkMapGetTargetForCollider(map, hitTransform);
-                if (A_FireObjectAlive(target) && A_FireObjectAlive(target)) {
-                    for (int i = 0; i < count; i++) {
-                        Pawn *p = items[i];
-                        if (!A_FireListObjectAlive((void *)p)) continue;
-                        if ((void *)p == target) {
-                            if (depthOut != nullptr) *depthOut = 0;
-                            return p;
-                        }
-                    }
-                    return nullptr;
+        void *target = A_FireTargetForCollider(collider);
+        if (target != nullptr) {
+            for (int i = 0; i < count; i++) {
+                Pawn *p = items[i];
+                if (!A_FireListObjectAlive((void *)p)) continue;
+                if ((void *)p == target) {
+                    if (depthOut != nullptr) *depthOut = 0;
+                    return p;
                 }
             }
+            return nullptr;
         }
 
         void *t = hitTransform;
@@ -1560,19 +1582,19 @@ namespace NewFeatures
 
     inline Pawn *A_FireCrosshairRayPawn(const Vector3 &camPos, const Vector3 &rayDir,
                                         Pawn **items, int count, Pawn *localPawn,
-                                        float *hitDistOut, bool *symbolMissing)
+                                        float *hitDistOut, bool *symbolMissing,
+                                        Vector3 *hitPointOut = nullptr)
     {
         if (hitDistOut != nullptr) *hitDistOut = -1.0f;
         if (symbolMissing != nullptr) *symbolMissing = false;
+        if (hitPointOut != nullptr) *hitPointOut = Vector3::zero();
+        if (!A_FireVectorFinite(camPos)) return nullptr;
         const float len = Vector3::Magnitude(rayDir);
-        if (!(len > 0.0001f)) return nullptr;
+        if (!(len > 0.0001f) || !std::isfinite(len)) return nullptr;
         const Vector3 dir(rayDir.x / len, rayDir.y / len, rayDir.z / len);
 
-        // Cast from the muzzle like the LOS probe. With the camera inside the
-        // cover you are peeking over, an eye-origin ray hits that cover first
-        // and no target is ever found; the muzzle is past it.
-        const Vector3 start = A_FireRayOrigin(localPawn, camPos, dir, A_FireTune::kRayStem);
-        const float reach = A_FireTune::kCrosshairRayMax - A_FireTune::kRayStem;
+        const Vector3 start = camPos;
+        const float reach = A_FireTune::kCrosshairRayMax;
 
         if (fn_PhysicsRaycastHitOut == nullptr) {
             if (symbolMissing != nullptr) *symbolMissing = true;
@@ -1585,20 +1607,26 @@ namespace NewFeatures
         Vector3 origin = start;
         float travelled = 0.0f;   // offset from the muzzle start, like the walk
         float remaining = reach;
-        for (int attempt = 0; attempt < 3 && remaining > 0.01f; attempt++) {
-            unsigned char hitBuf[AF_RAYHIT_SIZE];
+        for (int attempt = 0; attempt < AF_MAX_RAY_HITS && remaining > 0.01f; attempt++) {
+            alignas(void *) unsigned char hitBuf[AF_RAYHIT_SIZE];
             memset(hitBuf, 0, sizeof hitBuf);
             if (!fn_PhysicsRaycastHitOut(origin, dir, hitBuf, remaining))
                 return nullptr;
 
             const float hd = *(const float *)(hitBuf + AF_RAYHIT_DISTOFF);
-            if (hitDistOut != nullptr && hd >= 0.0f) *hitDistOut = travelled + hd;
+            if (!(hd >= 0.0f && hd <= remaining)) return nullptr;
+            if (hitDistOut != nullptr) *hitDistOut = travelled + hd;
 
-            void *hitTransform = A_FireColliderTransform(A_FireHitCollider(hitBuf));
-            if (A_FireObjectAlive(hitTransform) && localPawn != nullptr &&
-                A_FireHitIsTarget(hitTransform, localPawn)) {
-                g_triggerDiag.selfHitsSkipped++;
-                const float step = (hd >= 0.0f ? hd : 0.0f) + A_FireTune::kRayStepPast;
+            void *collider = A_FireHitCollider(hitBuf);
+            void *hitTransform = A_FireColliderTransform(collider);
+            const bool self = A_FireObjectAlive(hitTransform) && localPawn != nullptr &&
+                A_FireHitIsTarget(collider, hitTransform, localPawn);
+            const bool trigger = !self && A_FireObjectAlive(collider) &&
+                fn_ColliderIsTrigger != nullptr && fn_ColliderIsTrigger(collider);
+            if (self || trigger) {
+                if (self) g_triggerDiag.selfHitsSkipped++;
+                else g_triggerDiag.triggerHitsSkipped++;
+                const float step = hd + A_FireTune::kRayStepPast;
                 origin = Vector3(origin.x + dir.x * step,
                                  origin.y + dir.y * step,
                                  origin.z + dir.z * step);
@@ -1606,7 +1634,10 @@ namespace NewFeatures
                 remaining -= step;
                 continue;
             }
-            return A_FirePawnFromHitTransform(hitTransform, items, count);
+            Pawn *pawn = A_FirePawnFromHitTransform(collider, hitTransform, items, count);
+            if (pawn != nullptr && hitPointOut != nullptr)
+                *hitPointOut = origin + dir * hd;
+            return pawn;
         }
         return nullptr;
     }
@@ -1636,9 +1667,11 @@ namespace NewFeatures
         d.dotRayDecided = false;
         d.projKeepFrac = -1.0f;
 
+        A_FireAdsTrace("scan match");
         BaseGame *game = (BaseGame *)fn_GameGetMatchGame();
         if (!Tools::IsPtrValid((void *)game)) return FireBlock::NoMatch;
 
+        A_FireAdsTrace("scan camera");
         Camera *cam = Camera::get_main();
         if (!A_FireObjectAlive((void *)cam)) return FireBlock::NoMatch;
         Transform *camTransform = cam->get_transform();
@@ -1646,11 +1679,10 @@ namespace NewFeatures
         const Vector3 camPos = camTransform->get_position();
 
         auto w2s = [&](const Vector3 &world, Vector3 &sc) -> bool {
-            if (fn_WorldToScreen == nullptr) return false;
-            sc = fn_WorldToScreen(cam, world);
-            return true;
+            return A_FireWorldToScreenSafe(cam, world, sc);
         };
 
+        A_FireAdsTrace("scan weapon aim target");
         void *aimTarget = nullptr;
         if (fn_WeaponGetAimingTarget != nullptr && Tools::IsPtrValid(weapon)) {
             aimTarget = fn_WeaponGetAimingTarget(weapon);
@@ -1662,6 +1694,7 @@ namespace NewFeatures
             d.aimingTargetDis = 0.0f;
         }
 
+        A_FireAdsTrace("scan enemy list");
         List<Pawn *> *enemyPawns = game->EnemyPawns();
         if (!Tools::IsPtrValid((void *)enemyPawns)) return FireBlock::NoEnemyInZone;
         Pawn **items = (Pawn **)enemyPawns->getItems();
@@ -1678,12 +1711,14 @@ namespace NewFeatures
         d.radiusPx = radius;
         d.zonePx   = radius;
 
+        A_FireAdsTrace("scan camera projection");
         const float focalPx = A_FireFocalPx();
         d.focalPx = focalPx;
 
         bool honestDotRay = false;
         Vector3 dotRayDir = Vector3::zero();
         if (fn_TransformGetForward != nullptr) {
+            A_FireAdsTrace("scan crosshair direction");
             bool rayViaGame = false, rayFellBack = false, rayPlain = false;
             Vector3 camForward;
             CrosshairRayDir(cam, camTransform, camPos, camForward,
@@ -1695,91 +1730,62 @@ namespace NewFeatures
             dotRayDir = camForward;
         }
         const bool dotRayGate = Config.NewFeaturesMenu.TriggerbotDotRay;
+        d.dotRayDecided = dotRayGate;
+        FireBlock dotBlock = FireBlock::NoEnemyInZone;
         if (fn_TransformGetForward != nullptr && honestDotRay) {
+            A_FireAdsTrace("scan crosshair ray");
             bool symbolMissing = false;
             float centreHitDist = -1.0f;
+            Vector3 centreHitPoint = Vector3::zero();
             Pawn *centred = A_FireCrosshairRayPawn(camPos, dotRayDir, items, count, localPawn,
-                                                   &centreHitDist, &symbolMissing);
+                &centreHitDist, &symbolMissing, &centreHitPoint);
             d.crosshairHitDist = centreHitDist;
             d.crosshairPawn = (unsigned)(uintptr_t)centred;
-            if (symbolMissing && fn_PhysicsRaycastSegment == nullptr) {
-                d.rayUnknown = true;
-            } else if (centred != nullptr && centred != localPawn &&
-                       !IsSameTeamAcceptBots(localPawn, centred) && A_FirePawnAlive(centred)) {
-                const A_FireAimPoint ap = A_FireAimPointFor(centred);
-                float bestSq = -1.0f;
-                if (ap.valid) {
-                    Vector3 sc = Vector3::zero();
-                    if (w2s(ap.pos, sc) && sc.z > 0.0f) {
-                        const float dx = sc.x - cx;
-                        const float dy = sc.y - cy;
-                        bestSq = dx * dx + dy * dy;
-                    }
-                }
-
-                float limitPx = -1.0f;
-                float testSq  = bestSq;
-                if (ap.valid && ap.headOk && ap.feetOk && focalPx > 0.0f) {
-                    Vector3 scHead = Vector3::zero(), scFeet = Vector3::zero();
-                    if (w2s(ap.head, scHead) && w2s(ap.feet, scFeet) &&
-                        scHead.z > 0.0f && scFeet.z > 0.0f) {
-                        const float axisPx = sqrtf((scHead.x - scFeet.x) * (scHead.x - scFeet.x) +
-                                                   (scHead.y - scFeet.y) * (scHead.y - scFeet.y));
-                        const float axisM  = Vector3::Distance(ap.head, ap.feet);
-                        if (axisPx > 0.5f && axisM > 0.3f) {
-                            limitPx = A_FireTune::kBodyHalfWidthM * (axisPx / axisM) + 2.0f;
-                            testSq  = A_FirePointSegDistSq(cx, cy, scHead.x, scHead.y,
-                                                           scFeet.x, scFeet.y);
-                        }
-                    }
-                }
-                if (limitPx < 0.0f) {
-                    limitPx = radius + 2.0f;
-                    // His body could not be projected (point blank, feet behind
-                    // the near plane, head bone only). The dot's own ray landed
-                    // on him, so bound the dot by his real half width at the hit
-                    // distance instead of the tiny dot radius: that refusal is
-                    // why close-range shots never arrived.
-                    if (centreHitDist > 0.05f && focalPx > 0.0f) {
-                        const float bodyPx =
-                            A_FireTune::kBodyHalfWidthM * focalPx / centreHitDist + 2.0f;
-                        if (bodyPx > limitPx) limitPx = bodyPx;
-                    }
-                    testSq  = bestSq;
-                }
-                // bestSq < 0 means the aim point did not project at all; the ray
-                // hit is the only evidence left, and it says the dot is on him.
-                if (testSq >= 0.0f && testSq > limitPx * limitPx) {
-                    d.dotRayDeclined++;
-                    // Continue with candidate scan if projection disagrees with
-                    // the physics hit rather than suppressing the entire frame.
-                } else {
-                    d.projKeepFrac = sqrtf(testSq) / limitPx;
-                    out.pawn      = centred;
-                    out.aim       = ap;
-                    out.aimPoint  = ap.valid ? ap.pos : camPos;
+            if (symbolMissing) d.rayUnknown = true;
+            if (centred != nullptr && centred != localPawn &&
+                !IsSameTeamAcceptBots(localPawn, centred) && A_FirePawnAlive(centred)) {
+                bool identified = false;
+                float muzzleHitDist = -1.0f;
+                const AF_Ray los = A_FireRayToTarget(camPos, centreHitPoint, centred,
+                    0.0f, localPawn, &identified, &muzzleHitDist);
+                d.lastLosHitDist = muzzleHitDist;
+                if (los == AF_Ray::Clear) {
+                    const A_FireAimPoint ap = A_FireAimPointFor(centred);
+                    out.pawn = centred;
+                    out.aim = ap;
+                    out.aimPoint = centreHitPoint;
                     out.screenPos = Vector3::zero();
-                    if (ap.valid) w2s(ap.pos, out.screenPos);
-                    out.pxOffset  = bestSq >= 0.0f ? sqrtf(bestSq) : -1.0f;
-                    out.worldDist = ap.valid ? Vector3::Distance(camPos, ap.pos) : centreHitDist;
-                    out.path      = 0;
-                    out.visible   = true;
+                    w2s(centreHitPoint, out.screenPos);
+                    out.pxOffset = 0.0f;
+                    out.worldDist = centreHitDist;
+                    out.predicted = centreHitPoint;
+                    out.path = 0;
+                    out.visible = true;
                     out.visibilityIdentified = true;
-                    d.lastAimPx       = out.pxOffset;
-                    d.lastWorldDist   = out.worldDist;
-                    d.aimPath         = 0;
+                    d.lastAimPx = 0.0f;
+                    d.lastWorldDist = centreHitDist;
+                    d.aimPath = 0;
+                    d.projKeepFrac = 0.0f;
                     d.raysIdentified++;
-                    g_afireLosOk      = true;
+                    g_afireLosOk = true;
                     d.targets++;
                     return FireBlock::Fired;
                 }
+                dotBlock = FireBlock::NoLineOfSight;
+                d.dotRayDeclined++;
+                d.rayUnknown = los == AF_Ray::Unknown;
             }
+        }
+        if (dotRayGate) {
+            if (!honestDotRay) d.rayUnknown = true;
+            return dotBlock;
         }
 
         // A centre-ray miss is not proof that the visible body is outside the
         // crosshair. Fall back to projected candidates and LOS validation.
         // This also covers missing raycast symbols and close-range colliders.
 
+        A_FireAdsTrace("scan projected candidates");
         static auto getTeamIdFn = (uint32_t (*)(void *))UnityRva(RVA::Pawn_GetTeamId);
         const uint32_t localTeam = (A_FireObjectAlive((void *)localPawn) && getTeamIdFn != nullptr)
                                  ? getTeamIdFn(localPawn) : 0u;
@@ -1849,14 +1855,20 @@ namespace NewFeatures
             if (d.closestPx < 0.0f || d2 < d.closestPx) d.closestPx = d2;
             if (d2 > allowSq) continue;
             const float pxOffset = sqrtf(d2);
-            if (n >= MAX_CANDIDATES) continue;
-
-            cands[n].pawn      = p;
-            cands[n].aim       = ap;
-            cands[n].pxOffset  = pxOffset;
-            cands[n].worldDist = candDist;
-            cands[n].velocity  = GetPawnVelocity(p);
-            n++;
+            int slot = n;
+            if (n >= MAX_CANDIDATES) {
+                slot = 0;
+                for (int k = 1; k < n; k++)
+                    if (cands[k].pxOffset > cands[slot].pxOffset) slot = k;
+                if (pxOffset >= cands[slot].pxOffset) continue;
+            } else {
+                n++;
+            }
+            cands[slot].pawn      = p;
+            cands[slot].aim       = ap;
+            cands[slot].pxOffset  = pxOffset;
+            cands[slot].worldDist = candDist;
+            cands[slot].velocity  = GetPawnVelocity(p);
         }
         d.candidates = n;
         if (n <= 0) return FireBlock::NoEnemyInZone;
@@ -1890,63 +1902,74 @@ namespace NewFeatures
         bool blockedLos = false, blockedFriend = false;
 
         bool speedKnown = false;
+        A_FireAdsTrace("scan bullet speed");
         const float bulletSpeed = GetWeaponBulletSpeed(weapon, &speedKnown);
 
-        // Full LOS is only worth running for the target(s) closest to the
-        // crosshair - you fire the first clear one. Checking five candidates
-        // multiplied the raycast cost for no benefit.
-        for (int oi = 0; oi < n && oi < 3; oi++) {
+        for (int oi = 0; oi < n; oi++) {
+            A_FireAdsTrace("scan line of sight");
             const A_FireCandidate &c = cands[order[oi]];
 
-            d.losChecked++;
+            Vector3 points[5] = {c.aim.pos, c.aim.head, c.aim.pos, c.aim.pos, c.aim.pos};
+            float radii[5] = {c.aim.radius, A_FireTune::kHeadRadius,
+                             A_FireTune::kHeadRadius, A_FireTune::kBodyRadius,
+                             A_FireTune::kBodyRadius};
+            int pointCount = c.aim.headOk ? 2 : 1;
+            if (c.aim.headOk && c.aim.feetOk) {
+                points[2] = A_FireAlongBody(c.aim.head, c.aim.feet, 0.92f);
+                points[3] = A_FireAlongBody(c.aim.head, c.aim.feet, 0.78f);
+                pointCount = 4;
+                Vector3 screenHead = Vector3::zero(), screenFeet = Vector3::zero();
+                if (w2s(c.aim.head, screenHead) && w2s(c.aim.feet, screenFeet) &&
+                    screenHead.z > 0.0f && screenFeet.z > 0.0f) {
+                    points[4] = A_FireClosestBodyPoint(c.aim, screenHead, screenFeet, cx, cy);
+                    const Vector3 axis = c.aim.head - c.aim.feet;
+                    const float axisSq = Vector3::Dot(axis, axis);
+                    if (axisSq > 0.0001f &&
+                        Vector3::Dot(points[4] - c.aim.feet, axis) / axisSq >= 0.9f)
+                        radii[4] = A_FireTune::kHeadRadius;
+                    pointCount = 5;
+                }
+            }
+            float misses[5];
+            for (int pi = 0; pi < pointCount; pi++) {
+                misses[pi] = -1.0f;
+                Vector3 screen = Vector3::zero();
+                if (!w2s(points[pi], screen) || !(screen.z > 0.0f)) continue;
+                const float dx = screen.x - cx, dy = screen.y - cy;
+                const float miss = sqrtf(dx * dx + dy * dy);
+                const float distance = Vector3::Distance(camPos, points[pi]);
+                const float hitRadius = focalPx > 0.0f && distance > 0.01f
+                    ? radii[pi] * focalPx / distance : 0.0f;
+                if (std::isfinite(miss) && miss <= radius + hitRadius) misses[pi] = miss;
+            }
+            AF_Ray los = AF_Ray::Unknown;
             bool losIdentified = false;
             float losHitDist = -1.0f;
-            AF_Ray los = A_FireRayToTarget(camPos, c.aim.pos, c.pawn, c.aim.radius,
-                                           localPawn, &losIdentified, &losHitDist);
-
-            // A blocked ray on a far target the engine is still drawing is
-            // almost never a real wall: the single-hit walk clipped cover they
-            // are peeking over, or grass/ropes at range. The game's own
-            // occlusion culling is the more honest verdict, so trust it and
-            // skip the extra head/body probes entirely. This is what refused
-            // distant shots and head-glitch picks where only a sliver shows.
-            if (los != AF_Ray::Clear && c.worldDist > 5.0f &&
-                A_FireGameSaysVisible(c.pawn)) {
-                d.occOverrides++;
-                los = AF_Ray::Clear;
-                losIdentified = true;
+            Vector3 probePoint = c.aim.pos;
+            float probeRadius = c.aim.radius;
+            bool aligned = false;
+            for (int attempt = 0; attempt < pointCount; attempt++) {
+                int best = -1;
+                for (int pi = 0; pi < pointCount; pi++)
+                    if (misses[pi] >= 0.0f && (best < 0 || misses[pi] < misses[best])) best = pi;
+                if (best < 0) break;
+                misses[best] = -1.0f;
+                aligned = true;
+                d.losChecked++;
+                bool identified = false;
+                float hitDistance = -1.0f;
+                const AF_Ray result = A_FireRayToTarget(camPos, points[best], c.pawn,
+                    radii[best], localPawn, &identified, &hitDistance);
+                if (result == AF_Ray::Blocked) los = AF_Ray::Blocked;
+                if (result != AF_Ray::Clear) continue;
+                los = result;
+                losIdentified = identified;
+                losHitDist = hitDistance;
+                probePoint = points[best];
+                probeRadius = radii[best];
+                break;
             }
-
-            Vector3 probePoint  = c.aim.pos;
-            float   probeRadius = c.aim.radius;
-            if (los != AF_Ray::Clear && c.aim.headOk) {
-                // Try exposed head first, then the upper body. This handles
-                // ledges where the torso is occluded and the head is visible.
-                // Limit extra LOS checks to three to protect frame time.
-                Vector3 testPoints[3] = {c.aim.head, c.aim.head, c.aim.head};
-                float testRadii[3] = {A_FireTune::kHeadRadius,
-                                      A_FireTune::kHeadRadius,
-                                      A_FireTune::kBodyRadius};
-                int testCount = 1;
-                if (c.aim.feetOk) {
-                    testPoints[1] = A_FireAlongBody(c.aim.head, c.aim.feet, 0.92f);
-                    testPoints[2] = A_FireAlongBody(c.aim.head, c.aim.feet, 0.78f);
-                    testCount = 3;
-                }
-                for (int pi = 0; pi < testCount; ++pi) {
-                    bool pIdentified = false;
-                    float pHitDist = -1.0f;
-                    const AF_Ray result = A_FireRayToTarget(camPos, testPoints[pi],
-                        c.pawn, testRadii[pi], localPawn, &pIdentified, &pHitDist);
-                    if (result != AF_Ray::Clear) continue;
-                    los = result;
-                    losIdentified = pIdentified;
-                    losHitDist = pHitDist;
-                    probePoint = testPoints[pi];
-                    probeRadius = testRadii[pi];
-                    break;
-                }
-            }
+            if (!aligned) continue;
             const float probeDist = Vector3::Distance(camPos, probePoint);
             d.lastLosHitDist = losHitDist;
             if (losIdentified) d.raysIdentified++; else d.raysBlocked++;
@@ -2004,12 +2027,14 @@ namespace NewFeatures
             if (!A_FireShotWouldLand(predPx, radius, hitboxPx, spreadPx))
                 d.spreadWarn = true;
 
-            Vector3 dirToAim(probePoint.x - camPos.x, probePoint.y - camPos.y, probePoint.z - camPos.z);
+            const Vector3 shotOrigin = A_FireRayOrigin(localPawn, camPos,
+                probePoint - camPos, 0.0f);
+            Vector3 dirToAim = probePoint - shotOrigin;
             const float dirLen = Vector3::Magnitude(dirToAim);
             if (dirLen > 0.01f) {
                 dirToAim = Vector3(dirToAim.x / dirLen, dirToAim.y / dirLen, dirToAim.z / dirLen);
                 int friends = 0;
-                if (A_FireFriendlyInLine(friendProbes, friendCount, camPos, dirToAim, probeDist, &friends)) {
+                if (A_FireFriendlyInLine(friendProbes, friendCount, shotOrigin, dirToAim, dirLen, &friends)) {
                     d.friendsInLine += friends;
                     blockedFriend = true;
                     continue;
@@ -2110,7 +2135,12 @@ namespace NewFeatures
                 return FireBlock::ModeNotFiring;
         }
 
-        return A_FireScan(localPawn, held, out);
+        g_afireAdsTraceActive = Config.NewFeaturesMenu.TriggerbotMode == 1 &&
+                               g_afireAdsTracePending;
+        if (g_afireAdsTraceActive) g_afireAdsTracePending = false;
+        const FireBlock result = A_FireScan(localPawn, held, out);
+        A_FireAdsTrace("scan complete");
+        return result;
     }
 
     inline uintptr_t A_FireFindTarget()
@@ -2137,8 +2167,11 @@ namespace NewFeatures
             // trigger of a weapon the local pawn is holding right now.
             if (fn_Weapon_StopFire != nullptr &&
                 A_FireStillHoldsWeapon(g_afireFiringOn) &&
-                A_FireObjectAlive(g_afireFiringOn))
+                A_FireObjectAlive(g_afireFiringOn)) {
+                A_FireAdsTrace("release trigger");
                 fn_Weapon_StopFire(g_afireFiringOn, false);
+                A_FireAdsTrace("release complete");
+            }
             g_afireHoldingFire = false;
             g_afireFiringOn = nullptr;
         }
@@ -2171,7 +2204,12 @@ namespace NewFeatures
 
         if (fn_Weapon_StartFire == nullptr) { d.testFireStatus = 4; return; }
 
-        fn_Weapon_StartFire(held);
+        if (!A_FirePressTrigger(held)) {
+            A_FireReportBlock(A_FireWeaponHasAmmo(held)
+                ? FireBlock::WeaponNotReady : FireBlock::NoAmmo);
+            d.testFireStatus = 3;
+            return;
+        }
         d.fires++;
         d.testFireStatus = 1;
     }
@@ -2207,6 +2245,7 @@ namespace NewFeatures
         g_afireLastEvalTime = now;
         if (g_afireInTick) return;
         g_afireInTick = true;
+        g_afireAdsTraceActive = false;
 
         if (g_testFireRequest) A_FireRunTestFire();
 
@@ -2241,7 +2280,12 @@ namespace NewFeatures
         }
 
         if (block != FireBlock::Fired || !Tools::IsPtrValid((void *)target.pawn)) {
-            A_FireReleaseTriggerDeferred(nullptr);
+            if (block == FireBlock::NoAmmo) {
+                g_afireReleasePending = false;
+                A_FireReleaseTrigger(nullptr);
+            } else {
+                A_FireReleaseTriggerDeferred(nullptr);
+            }
             // The engagement is over; a fresh one rolls a fresh reaction. The
             // grace keeps a target that flickers in and out of the zone from
             // restarting the timer on every tick.
@@ -2302,7 +2346,14 @@ namespace NewFeatures
                 const bool stale = (now - g_afireLastPressTime) >=
                                    (double)A_FireTune::kReassertPress;
                 if (fn_Weapon_StartFire != nullptr && (becameReady || stale)) {
-                    fn_Weapon_StartFire(held);
+                    if (!A_FirePressTrigger(held)) {
+                        A_FireReleaseTrigger(nullptr);
+                        A_FireReportBlock(A_FireWeaponHasAmmo(held)
+                            ? FireBlock::WeaponNotReady : FireBlock::NoAmmo);
+                        s_dbgTriggerState = 0;
+                        g_afireInTick = false;
+                        return;
+                    }
                     g_afireLastPressTime = now;
                     d.reasserts++;
                 }
@@ -2356,13 +2407,20 @@ namespace NewFeatures
             return;
         }
 
+        if (!A_FirePressTrigger(held)) {
+            A_FireReleaseTrigger(nullptr);
+            A_FireReportBlock(A_FireWeaponHasAmmo(held)
+                ? FireBlock::WeaponNotReady : FireBlock::NoAmmo);
+            s_dbgTriggerState = 0;
+            g_afireInTick = false;
+            return;
+        }
         g_afireHoldingFire    = true;
         g_afireFiringOn       = (void *)held;
         g_afireTargetPawn     = (void *)target.pawn;
         g_afireLastPressWeapon = (void *)held;
         g_afireLastPressTime  = now;
         g_afireCanFireLast    = d.canFire;
-        fn_Weapon_StartFire(held);
         d.fires++;
         s_dbgTriggerState = 2;
 
@@ -2399,9 +2457,12 @@ namespace NewFeatures
         g_afireAdsSettleUntil  = -1000.0;
         g_afireAdsSettleMax    = -1000.0;
         g_afireAdsLastState    = -1;
-        g_afireAdsLastComp     = nullptr;
-        g_afireAdsCompSeen     = false;
+        g_afireAdsLastWeapon   = nullptr;
+        g_afireAdsWeaponSeen   = false;
         g_afireAdsSettling     = false;
+        g_afireAdsTracePending = false;
+        g_afireAdsFireTracePending = false;
+        g_afireAdsTraceActive  = false;
         g_afireReleasePending  = false;
 
         g_afireAdsNegCached = AdsRead{};
@@ -2588,6 +2649,10 @@ namespace NewFeatures
         if (Tools::IsPtrValid(trigAddr))
             fn_ColliderIsTrigger = (bool (*)(void *))trigAddr;
 
+        auto instanceIdAddr = UnityRva(RVA::Object_InstanceIDToObject);
+        if (Tools::IsPtrValid(instanceIdAddr))
+            fn_ObjectInstanceIDToObject = (void *(*)(int32_t))instanceIdAddr;
+
         auto fwdAddr = UnityRva(RVA::Transform_get_forward);
         if (Tools::IsPtrValid(fwdAddr))
             fn_TransformGetForward = (Vector3 (*)(void *))fwdAddr;
@@ -2621,7 +2686,7 @@ namespace NewFeatures
             fn_PawnIsAiming = (bool (*)(void *))aimingAddr;
         else
             LOGE("[NewFeatures] triggerbot: Pawn::IsAiming 0x%llX did not resolve -"
-                 " \"ADS only\" falls back to the fire component",
+                 " ADS-only firing waits for a valid pawn ADS getter",
                  (unsigned long long)RVA::Pawn_IsAiming);
 
         auto curFireAddr = UnityRva(RVA::Weapon_get_CurrentFireComponent);
@@ -2777,6 +2842,10 @@ namespace NewFeatures
              (void *)fn_ColliderIsTrigger, (void *)fn_TransformGetForward,
              (void *)fn_TransformGetParent, (void *)fn_PhysicsRaycastLOS,
              (void *)fn_TransformGetRight, (void *)fn_TransformGetUp);
+        LOGI("[NewFeatures] triggerbot: AmmoCanFire=%p ClipAmmoCount=%p PawnIsAiming=%p "
+             "InstanceIDToObject=%p", (void *)fn_WeaponAmmoCanFire,
+             (void *)fn_WeaponGetClipAmmoCount, (void *)fn_PawnIsAiming,
+             (void *)fn_ObjectInstanceIDToObject);
     }
 
     inline bool A_FireHeartbeatAlive()
