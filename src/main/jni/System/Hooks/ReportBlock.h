@@ -1,0 +1,184 @@
+#pragma once
+
+#include <cstdint>
+#include <cstddef>
+#include <cstring>
+
+// Block YOUR client from sending evidence when someone reports you.
+//
+// The four entry points of the report pull, each ended by the hook itself when
+// "Block report evidence" is on: nothing is captured, nothing is filled in,
+// nothing is uploaded. With the checkbox off every hook forwards to the game,
+// so the toggle is the only thing between the two behaviours.
+
+// The hooks below count what they stopped; the counters live here so they can
+// be touched before the namespace body is declared.
+namespace report_block
+{
+    inline int g_pullsSeen = 0;
+    inline int g_payloadsDropped = 0;
+    inline int g_sendsDropped = 0;
+}
+
+inline void (*orig_DoReport)(void *ins) = nullptr;
+inline void hook_DoReport(void *ins) {
+    if (Config.ExtraMenu.BlockReportEvidence) return;
+    if (orig_DoReport) orig_DoReport(ins);
+}
+
+inline int (*orig_DoReportPlayer)(void *ins, void *openids) = nullptr;
+inline int hook_DoReportPlayer(void *ins, void *openids) {
+    if (Config.ExtraMenu.BlockReportEvidence) return 0;
+    if (orig_DoReportPlayer) return orig_DoReportPlayer(ins, openids);
+    return 0;
+}
+
+inline void *(*orig_BeginReport)(int pullType, uint8_t moveState, void *clientPos,
+                                 void *serverPos, int hitCount, uint8_t lineHitCount,
+                                 void *hitPosition) = nullptr;
+inline void *hook_BeginReport(int pullType, uint8_t moveState, void *clientPos,
+                              void *serverPos, int hitCount, uint8_t lineHitCount,
+                              void *hitPosition) {
+    if (Config.ExtraMenu.BlockReportEvidence) { report_block::g_pullsSeen++; return nullptr; }
+    if (orig_BeginReport)
+        return orig_BeginReport(pullType, moveState, clientPos, serverPos, hitCount,
+                                lineHitCount, hitPosition);
+    return nullptr;
+}
+
+inline void (*orig_EndReport)(void *request) = nullptr;
+inline void hook_EndReport(void *request) {
+    if (Config.ExtraMenu.BlockReportEvidence) { report_block::g_sendsDropped++; return; }
+    if (orig_EndReport) orig_EndReport(request);
+}
+
+namespace report_block
+{
+    enum Gate
+    {
+        GateDoReport = 0,
+        GateDoReportPlayer,
+        GateBeginReport,
+        GateFillReportData,
+        GateEndReport,
+        GateAceGetData,
+        GateAceGetData2,
+        GateAceGetData3,
+        GateAceGetData4,
+        GateCount
+    };
+
+    // Which hooks actually landed, so a build that moves an RVA says so
+    // instead of pretending the report path is covered.
+    inline bool g_landed[GateCount] = {};
+
+    inline void NoteLanded(Gate gate, bool landed)
+    {
+        if (landed && gate >= 0 && gate < GateCount) g_landed[gate] = true;
+    }
+
+    // Filling the report payload is a separate call; drop it as well so the
+    // request the game already allocated never receives the evidence.
+    inline void (*orig_FillPlayerFullData)(void *instance, void *request) = nullptr;
+    inline void hook_FillPlayerFullData(void *instance, void *request)
+    {
+        if (!Config.ExtraMenu.BlockReportEvidence)
+        {
+            if (orig_FillPlayerFullData) orig_FillPlayerFullData(instance, request);
+            return;
+        }
+        g_payloadsDropped++;
+    }
+
+    // ---- ACE report payload -------------------------------------------------
+    // Separate from the player-report pull: ACE hands back buffers that are
+    // uploaded on their own, so each getter is scrubbed in place.
+
+    inline int g_aceBlobsScrubbed = 0;
+    inline int g_aceBytesScrubbed = 0;
+
+    struct AceByteArray {
+        void *klass;
+        void *monitor;
+        void *bounds;
+        int max_length;
+        int pad;
+        uint8_t data[];
+    };
+
+    constexpr int MaxAceBlobBytes = 1 << 20;
+
+    inline void *ScrubAceBlob(void *arrayObj)
+    {
+        if (!Config.ExtraMenu.BlockAceReport)
+            return arrayObj;
+        if (arrayObj == nullptr || !Tools::IsPtrValid(arrayObj))
+            return arrayObj;
+
+        g_aceBlobsScrubbed++;
+
+        AceByteArray *blob = (AceByteArray *)arrayObj;
+        int len = blob->max_length;
+        if (len <= 0)
+            return arrayObj;
+        if (len > MaxAceBlobBytes)
+            len = MaxAceBlobBytes;
+
+        memset(blob->data, 0, (size_t)len);
+        g_aceBytesScrubbed += len;
+        return arrayObj;
+    }
+
+    inline void *(*orig_AceGetReportData)(void) = nullptr;
+    inline void *hook_AceGetReportData(void)
+    {
+        void *blob = orig_AceGetReportData ? orig_AceGetReportData() : nullptr;
+        return ScrubAceBlob(blob);
+    }
+
+    inline void *(*orig_AceGetReportData2)(void) = nullptr;
+    inline void *hook_AceGetReportData2(void)
+    {
+        void *blob = orig_AceGetReportData2 ? orig_AceGetReportData2() : nullptr;
+        return ScrubAceBlob(blob);
+    }
+
+    inline void *(*orig_AceGetReportData3)(void) = nullptr;
+    inline void *hook_AceGetReportData3(void)
+    {
+        void *blob = orig_AceGetReportData3 ? orig_AceGetReportData3() : nullptr;
+        return ScrubAceBlob(blob);
+    }
+
+    inline void *(*orig_AceGetReportData4)(uint32_t token) = nullptr;
+    inline void *hook_AceGetReportData4(uint32_t token)
+    {
+        void *blob = orig_AceGetReportData4 ? orig_AceGetReportData4(token) : nullptr;
+        return ScrubAceBlob(blob);
+    }
+
+    inline void InstallReportBlockHooks()
+    {
+        HOOK_LIB("libunity.so", "0xB23D358", hook_DoReport, orig_DoReport);
+        HOOK_LIB("libunity.so", "0x8FB4B60", hook_DoReportPlayer, orig_DoReportPlayer);
+        HOOK_LIB("libunity.so", "0x5620BAC", hook_BeginReport, orig_BeginReport);
+        HOOK_LIB("libunity.so", "0x58EA8E8", hook_FillPlayerFullData, orig_FillPlayerFullData);
+        HOOK_LIB("libunity.so", "0x5620F9C", hook_EndReport, orig_EndReport);
+
+        HOOK_LIB("libunity.so", "0x7F5D8B8", hook_AceGetReportData,  orig_AceGetReportData);
+        HOOK_LIB("libunity.so", "0x7F5DD90", hook_AceGetReportData2, orig_AceGetReportData2);
+        HOOK_LIB("libunity.so", "0x7F5DF98", hook_AceGetReportData3, orig_AceGetReportData3);
+        HOOK_LIB("libunity.so", "0x7F5E45C", hook_AceGetReportData4, orig_AceGetReportData4);
+
+        NoteLanded(GateDoReport,       orig_DoReport       != nullptr);
+        NoteLanded(GateDoReportPlayer, orig_DoReportPlayer != nullptr);
+        NoteLanded(GateBeginReport,    orig_BeginReport    != nullptr);
+        NoteLanded(GateFillReportData, orig_FillPlayerFullData != nullptr);
+        NoteLanded(GateEndReport,      orig_EndReport      != nullptr);
+
+        NoteLanded(GateAceGetData,  orig_AceGetReportData  != nullptr);
+        NoteLanded(GateAceGetData2, orig_AceGetReportData2 != nullptr);
+        NoteLanded(GateAceGetData3, orig_AceGetReportData3 != nullptr);
+        NoteLanded(GateAceGetData4, orig_AceGetReportData4 != nullptr);
+    }
+}
