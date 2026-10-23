@@ -782,6 +782,21 @@ namespace NewFeatures
     }
 
     constexpr double kAdsSettleSeconds    = 0.10;
+
+    // Pawn.IsAiming on a pawn that is mid-respawn walks a torn object the same
+    // way the enemy getters do. Every ADS read goes through here so a fault
+    // reads as "not aiming" - which refuses the shot instead of killing the
+    // process on the look-at-enemy tick.
+    inline bool A_FirePawnIsAimingSafe(Pawn *localPawn)
+    {
+        if (fn_PawnIsAiming == nullptr || !A_FirePawnCallable(localPawn))
+            return false;
+        bool aiming = false;
+        A_FireGuardedRun("ads state", (uintptr_t)localPawn, [&] {
+            aiming = fn_PawnIsAiming((void *)localPawn);
+        });
+        return aiming;
+    }
     constexpr double kAdsSettleMaxSeconds = 0.35;
     inline double    g_afireAdsSettleUntil = -1000.0;
     inline double    g_afireAdsSettleMax   = -1000.0;
@@ -839,7 +854,7 @@ namespace NewFeatures
 
         if (fn_PawnIsAiming != nullptr && A_FirePawnCallable(localPawn)) {
             s.asked  = true;
-            s.aiming = fn_PawnIsAiming((void *)localPawn);
+            s.aiming = A_FirePawnIsAimingSafe(localPawn);
             const int state = s.aiming ? 1 : 0;
             if (state != g_afireAdsLastState) {
                 g_afireAdsTracePending = s.aiming;
@@ -893,7 +908,7 @@ namespace NewFeatures
             r.pawnAim = settle.aiming;
         } else if (fn_PawnIsAiming != nullptr && A_FirePawnCallable(localPawn)) {
             r.pawnOk  = true;
-            r.pawnAim = fn_PawnIsAiming((void *)localPawn);
+            r.pawnAim = A_FirePawnIsAimingSafe(localPawn);
         }
 
         r.unknown = !r.pawnOk;
@@ -1761,9 +1776,15 @@ namespace NewFeatures
         A_FireAdsTrace("scan camera");
         Camera *cam = Camera::get_main();
         if (!A_FireObjectAlive((void *)cam)) return FireBlock::NoMatch;
-        Transform *camTransform = cam->get_transform();
+        Transform *camTransform = nullptr;
+        Vector3 camPos = Vector3::zero();
+        if (!A_FireGuardedRun("camera transform", (uintptr_t)cam, [&] {
+                camTransform = cam->get_transform();
+                if (A_FireObjectAlive((void *)camTransform))
+                    camPos = camTransform->get_position();
+            }))
+            return FireBlock::NoMatch;
         if (!A_FireObjectAlive((void *)camTransform)) return FireBlock::NoMatch;
-        const Vector3 camPos = camTransform->get_position();
 
         auto w2s = [&](const Vector3 &world, Vector3 &sc) -> bool {
             return A_FireWorldToScreenSafe(cam, world, sc);
@@ -1771,23 +1792,33 @@ namespace NewFeatures
 
         A_FireAdsTrace("scan weapon aim target");
         void *aimTarget = nullptr;
+        float aimTargetDis = 0.0f;
         if (fn_WeaponGetAimingTarget != nullptr && Tools::IsPtrValid(weapon)) {
-            aimTarget = fn_WeaponGetAimingTarget(weapon);
+            A_FireGuardedRun("aiming target", (uintptr_t)weapon, [&] {
+                aimTarget = fn_WeaponGetAimingTarget(weapon);
+                if (fn_WeaponGetAimingTargetDis != nullptr && aimTarget != nullptr)
+                    aimTargetDis = fn_WeaponGetAimingTargetDis(weapon);
+            });
             d.aimingTarget = (unsigned)(uintptr_t)aimTarget;
-            d.aimingTargetDis = (fn_WeaponGetAimingTargetDis != nullptr && aimTarget != nullptr)
-                              ? fn_WeaponGetAimingTargetDis(weapon) : 0.0f;
+            d.aimingTargetDis = aimTargetDis;
         } else {
             d.aimingTarget = 0;
             d.aimingTargetDis = 0.0f;
         }
 
         A_FireAdsTrace("scan enemy list");
-        List<Pawn *> *enemyPawns = game->EnemyPawns();
-        if (!Tools::IsPtrValid((void *)enemyPawns)) return FireBlock::NoEnemyInZone;
-        Pawn **items = (Pawn **)enemyPawns->getItems();
-        const int count = enemyPawns->getSize();
+        List<Pawn *> *enemyPawns = nullptr;
+        Pawn **items = nullptr;
+        int count = 0;
+        const bool listSafe = A_FireGuardedRun("enemy list", (uintptr_t)game, [&] {
+            enemyPawns = game->EnemyPawns();
+            if (Tools::IsPtrValid((void *)enemyPawns)) {
+                items = (Pawn **)enemyPawns->getItems();
+                count = enemyPawns->getSize();
+            }
+        });
         d.enemyCount = count;
-        if (!Tools::IsPtrValid((void *)items) || count <= 0 || count > 1024)
+        if (!listSafe || !Tools::IsPtrValid((void *)items) || count <= 0 || count > 1024)
             return FireBlock::NoEnemyInZone;
 
         float cx = 0.0f, cy = 0.0f;
@@ -1896,8 +1927,14 @@ namespace NewFeatures
 
         A_FireAdsTrace("scan projected candidates");
         static auto getTeamIdFn = (uint32_t (*)(void *))UnityRva(RVA::Pawn_GetTeamId);
-        const uint32_t localTeam = (A_FireObjectAlive((void *)localPawn) && getTeamIdFn != nullptr)
-                                 ? getTeamIdFn(localPawn) : 0u;
+        uint32_t localTeam = 0u;
+        if (A_FireObjectAlive((void *)localPawn) && getTeamIdFn != nullptr) {
+            // GetTeamId is a managed call like every other read into a pawn;
+            // it was the one left outside the guard.
+            A_FireGuardedRun("local team", (uintptr_t)localPawn, [&] {
+                localTeam = getTeamIdFn(localPawn);
+            });
+        }
         auto sameTeamGate = [&](Pawn *p) -> bool {
             if (!A_FireObjectAlive((void *)p)) return false;
             if (p == localPawn) return true;
@@ -1911,9 +1948,10 @@ namespace NewFeatures
 
         for (int i = 0; i < count; i++) {
             Pawn *p = items[i];
+            if (p == nullptr) continue;
 
-            if (!A_FireListObjectAlive((void *)p)) continue;
             A_FireGuardedRun("enemy candidate", (uintptr_t)p, [&] {
+            if (!A_FireListObjectAlive((void *)p)) return;
             if (p == localPawn) return;
             if (sameTeamGate(p)) return;
             if (!A_FirePawnAlive(p)) return;
@@ -2156,8 +2194,15 @@ namespace NewFeatures
             if (!A_FireShotWouldLand(predPx, radius, hitboxPx, spreadPx))
                 d.spreadWarn = true;
 
-            const Vector3 shotOrigin = A_FireRayOrigin(localPawn, camPos,
-                probePoint - camPos, 0.0f);
+            // The muzzle read (Pawn.get_FirePosition) is the call the old
+            // triggerbot did not have; it walks the local pawn and was still
+            // outside the guard here. A fault falls back to the eye, which is
+            // exactly what the old triggerbot used.
+            Vector3 shotOrigin = camPos;
+            A_FireGuardedRun("shot origin", (uintptr_t)localPawn, [&] {
+                shotOrigin = A_FireRayOrigin(localPawn, camPos,
+                    probePoint - camPos, 0.0f);
+            });
             Vector3 dirToAim = probePoint - shotOrigin;
             const float dirLen = Vector3::Magnitude(dirToAim);
             if (dirLen > 0.01f) {
@@ -2215,7 +2260,12 @@ namespace NewFeatures
         Pawn *localPawn = GamePlay::get_LocalPawn();
         d.localPawn = (void *)localPawn;
         if (!A_FireObjectAlive((void *)localPawn)) return FireBlock::NoLocalPawn;
-        if (!A_FirePawnAlive(localPawn)) return FireBlock::LocalNotAlive;
+
+        bool localAlive = false;
+        A_FireGuardedRun("local pawn alive", (uintptr_t)localPawn, [&] {
+            localAlive = A_FirePawnAlive(localPawn);
+        });
+        if (!localAlive) return FireBlock::LocalNotAlive;
 
         if (fn_GameGetMatchGame == nullptr) return FireBlock::NoMatch;
         void *game = fn_GameGetMatchGame();

@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string>
 
+#include "../Core/FaultGuard.h"
+
 extern bool SnowB;
 extern float SnowBsize;
 extern bool isSpeedHackEnabled;
@@ -316,16 +318,24 @@ inline bool A_BulletTrackTargetHead(const Vector3 &startPos, const Vector3 &dir,
 inline void A_BulletTrackAimRay(void *fireComponent, const Vector3 &startPos, Vector3 &dir)
 {
     if (!Config.Aim.AimSilent && !Config.Aim.Aimbot360) return;
-    if (!A_BulletTrackTriggerReady()) return;
-    if (!A_BulletTrackIsLocalShot(fireComponent)) return;
 
-    Vector3 head;
-    if (!A_BulletTrackTargetHead(startPos, dir, head)) return;
+    // This runs on the game's own fire path and walks every enemy with
+    // get_HeadPosition - the exact read the triggerbot crash fix guarded in
+    // NewFeatures.h and AimLock.h, which never covered this file. A fault now
+    // leaves the bullet on the game's original line instead of taking the
+    // process down mid-shot.
+    fault_guard::Run([&] {
+        if (!A_BulletTrackTriggerReady()) return;
+        if (!A_BulletTrackIsLocalShot(fireComponent)) return;
 
-    const Vector3 toTarget = head - startPos;
-    if (!(Vector3::SqrMagnitude(toTarget) > 0.0001f)) return;
+        Vector3 head;
+        if (!A_BulletTrackTargetHead(startPos, dir, head)) return;
 
-    dir = toTarget;
+        const Vector3 toTarget = head - startPos;
+        if (!(Vector3::SqrMagnitude(toTarget) > 0.0001f)) return;
+
+        dir = toTarget;
+    });
 }
 
 inline bool (*orig_SingleLineCheckPhysics_Instant)(void* instance, int hitType, void* hitTarget, void* hitCollider, Vector3 startPos, Vector3 dir, void* impactInfo) = nullptr;

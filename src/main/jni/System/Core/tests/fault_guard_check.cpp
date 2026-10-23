@@ -17,6 +17,8 @@ static volatile int *BadPointer()
     return (volatile int *)(uintptr_t)0x10;
 }
 
+static void ForeignHandler(int) {}
+
 int main()
 {
     int ran = 0;
@@ -65,6 +67,30 @@ int main()
     Check("the crash line carries the link register", std::strstr(buf, "lr=0x1234") != nullptr);
     Check("the crash line carries the phase the mod was in",
           std::strstr(buf, "phase=esp walk") != nullptr);
+
+    // Ownership: the game, its anti-cheat and xhook all install SIGSEGV
+    // handlers of their own. Whoever installs last wins, and a guard whose
+    // handler was replaced is a guard that never sees a fault - which is how a
+    // corrected triggerbot can still kill the process on an enemy.
+    Check("the guard owns the SIGSEGV handler", fault_guard::IsInstalled());
+
+    struct sigaction foreign {};
+    foreign.sa_handler = &ForeignHandler;
+    sigemptyset(&foreign.sa_mask);
+    Check("a foreign handler can be installed over ours",
+          sigaction(SIGSEGV, &foreign, nullptr) == 0 && !fault_guard::IsInstalled());
+
+    fault_guard::g_lastCheckMs = 0;
+    fault_guard::EnsureInstalled();
+
+    Check("the next guarded section notices the handler was taken",
+          fault_guard::g_takeBacks >= 1);
+    Check("the guard took the handler back", fault_guard::IsInstalled());
+    Check("the handler that displaced ours is remembered for the log",
+          fault_guard::g_prevSet[0] && fault_guard::g_prev[0].sa_handler == &ForeignHandler);
+
+    bool stillGuarded = fault_guard::Run([] { (void)*BadPointer(); });
+    Check("faults are contained again after the handler came back", !stillGuarded);
 
     if (g_failures)
     {

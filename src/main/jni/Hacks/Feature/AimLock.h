@@ -157,11 +157,21 @@ namespace aim_lock
         switch (Config.Aim.Trigger) {
             case EAimTrigger::Shooting: {
                 auto isFiring = (bool (*)(Pawn *))(Class_Pawn_get_IsFiring);
-                return isFiring != nullptr && isFiring(localPawn);
+                if (isFiring == nullptr) return false;
+                bool firing = false;
+                LockGuardedRun("aim trigger", (uintptr_t)localPawn, [&] {
+                    firing = isFiring(localPawn);
+                });
+                return firing;
             }
             case EAimTrigger::Scoping: {
                 auto isAiming = (bool (*)(Pawn *))(Class_Pawn_IsAiming);
-                return isAiming != nullptr && isAiming(localPawn);
+                if (isAiming == nullptr) return false;
+                bool aiming = false;
+                LockGuardedRun("aim trigger", (uintptr_t)localPawn, [&] {
+                    aiming = isAiming(localPawn);
+                });
+                return aiming;
             }
             default:
                 return true;
@@ -244,11 +254,21 @@ namespace aim_lock
         void *game = ((void *(*)())(Class_Gameplay_get_MatchGame))();
         if (!Tools::IsPtrValid(game)) return nullptr;
 
-        List<Pawn *> *enemies = (List<Pawn *> *)*(void **)((uintptr_t)game + Class_BaseGame_EnemyPawns);
-        if (!Tools::IsPtrValid((void *)enemies)) return nullptr;
-        Pawn **items = (Pawn **)enemies->getItems();
-        const int count = enemies->getSize();
-        if (!Tools::IsPtrValid((void *)items) || count <= 0 || count > 1024) return nullptr;
+        // The list is rebuilt on the game thread while a pawn spawns, so the
+        // walk that finds the enemies is guarded like the triggerbot's: a fault
+        // here means "no target this tick", not a dead process.
+        List<Pawn *> *enemies = nullptr;
+        Pawn **items = nullptr;
+        int count = 0;
+        const bool listSafe = LockGuardedRun("aim enemy list", (uintptr_t)game, [&] {
+            enemies = (List<Pawn *> *)*(void **)((uintptr_t)game + Class_BaseGame_EnemyPawns);
+            if (Tools::IsPtrValid((void *)enemies)) {
+                items = (Pawn **)enemies->getItems();
+                count = enemies->getSize();
+            }
+        });
+        if (!listSafe || !Tools::IsPtrValid((void *)items) || count <= 0 || count > 1024)
+            return nullptr;
 
         Pawn *best = nullptr;
         Vector3 bestPoint;
@@ -337,13 +357,22 @@ namespace aim_lock
 
         Camera *cam = Camera::get_main();
         if (!Tools::IsPtrValid((void *)cam)) return;
-        Transform *camTransform = cam->get_transform();
+        Transform *camTransform = nullptr;
+        Vector3 eye = Vector3::zero();
+        if (!LockGuardedRun("aim camera", (uintptr_t)cam, [&] {
+                camTransform = cam->get_transform();
+                if (Tools::IsPtrValid((void *)camTransform))
+                    eye = camTransform->get_position();
+            }))
+            return;
         if (!Tools::IsPtrValid((void *)camTransform)) return;
-        const Vector3 eye = camTransform->get_position();
 
         // The camera follows the aim, so its forward is the direction the shot
         // would take right now - what the turn has to start from.
-        const Vector3 current = CameraForward((void *)camTransform);
+        Vector3 current = Vector3::zero();
+        LockGuardedRun("aim camera forward", (uintptr_t)camTransform, [&] {
+            current = CameraForward((void *)camTransform);
+        });
         if (!(Vector3::Magnitude(current) > 1e-4f)) return;
 
         // Stay on the pawn that was picked, as long as it is still a legal

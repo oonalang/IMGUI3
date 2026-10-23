@@ -7,6 +7,8 @@
 #include <signal.h>
 #include <ucontext.h>
 
+#include <time.h>
+
 #if defined(__ANDROID__)
 #include <android/log.h>
 #else
@@ -16,6 +18,8 @@ extern "C" int __android_log_print(int prio, const char *tag, const char *fmt, .
 
 namespace fault_guard
 {
+    using HandlerFn = void (*)(int, siginfo_t *, void *);
+
     inline thread_local sigjmp_buf g_jmp;
     inline thread_local volatile sig_atomic_t g_armed = 0;
     inline bool g_installed = false;
@@ -40,6 +44,16 @@ namespace fault_guard
     {
         if (phase != nullptr)
             g_phase = phase;
+    }
+
+    inline void GuardLog(const char *msg)
+    {
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_ERROR, "EthnirCrash", "%s", msg);
+#else
+        if (__android_log_print != nullptr)
+            __android_log_print(6, "EthnirCrash", "%s", msg);
+#endif
     }
 
     inline char *AppendText(char *w, char *end, const char *s)
@@ -125,6 +139,161 @@ namespace fault_guard
         *w = '\0';
     }
 
+    // ------------------------------------------------------------------
+    // Ownership of the signal handler.
+    //
+    // The guard only does anything while its handler is the one the kernel
+    // calls, and this process has other owners: xhook installs its own SIGSEGV
+    // handler around xhook_refresh(), and the game and its anti-cheat install
+    // theirs whenever they like. Whoever installs last wins silently, and the
+    // cost is that Run() keeps setting g_armed while the fault goes straight to
+    // a handler that has never heard of it - the guard looks correct, is
+    // tested, and then every fault kills the process anyway. That is the shape
+    // of "the triggerbot is guarded and it still crashes on an enemy".
+    //
+    // So ownership is checked again before every guarded section (throttled),
+    // taken back when it was lost, and the handler that had taken it is chained
+    // to on an unguarded fault instead of being thrown away.
+    // ------------------------------------------------------------------
+    inline const int kSigs[3] = { SIGSEGV, SIGBUS, SIGILL };
+    inline const char *kSigName[3] = { "SIGSEGV", "SIGBUS", "SIGILL" };
+
+    inline struct sigaction g_prev[3] = {};
+    inline bool g_prevSet[3] = {false, false, false};
+    inline bool g_oursSet[3] = {false, false, false};
+    inline int g_takeBacks = 0;
+    inline uint64_t g_lastCheckMs = 0;
+
+    inline void OnSignal(int sig, siginfo_t *info, void *ctx);
+
+    inline bool IsOurs(const struct sigaction &a)
+    {
+        if (!(a.sa_flags & SA_SIGINFO)) return false;
+        return a.sa_sigaction == reinterpret_cast<HandlerFn>(&OnSignal);
+    }
+
+    inline int SigIndex(int sig)
+    {
+        return sig == SIGSEGV ? 0 : (sig == SIGBUS ? 1 : 2);
+    }
+
+    inline void ReportCrash(int sig, void *infoPtr, void *ctx);
+
+    inline void OnSignal(int sig, siginfo_t *info, void *ctx)
+    {
+        if (g_armed)
+        {
+            g_armed = 0;
+            siglongjmp(g_jmp, 1);
+        }
+
+        ReportCrash(sig, info, ctx);
+
+        // A real crash, outside any guarded section. Re-raise it as the default
+        // action so Android writes its tombstone, the same way it would have
+        // without us. Deliberately NOT delegating to g_prev: a handler that was
+        // displaced only to restore ours and return would spin the two handlers
+        // off each other instead of killing the process.
+        ::signal(sig, SIG_DFL);
+        ::raise(sig);
+    }
+
+    inline bool InstallOne(int idx)
+    {
+        struct sigaction sa {};
+        sa.sa_sigaction = &OnSignal;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_NODEFER | SA_SIGINFO;
+
+        struct sigaction prev {};
+        if (sigaction(kSigs[idx], &sa, &prev) != 0)
+            return false;
+
+        if (IsOurs(prev))
+        {
+            g_oursSet[idx] = true;
+            return true;
+        }
+
+        // Something real was there before us - remembered so a take-back can
+        // name who had it, and so an audit of the handler state is possible.
+        // It is never invoked: see OnSignal.
+        const bool realHandler = (prev.sa_flags & SA_SIGINFO)
+            ? (prev.sa_sigaction != nullptr &&
+               prev.sa_sigaction != reinterpret_cast<HandlerFn>(&OnSignal))
+            : (prev.sa_handler != nullptr && prev.sa_handler != SIG_DFL &&
+               prev.sa_handler != SIG_IGN);
+        if (realHandler)
+        {
+            g_prev[idx] = prev;
+            g_prevSet[idx] = true;
+        }
+        g_oursSet[idx] = true;
+        return true;
+    }
+
+    inline bool Install()
+    {
+        bool ok = true;
+        for (int i = 0; i < 3; i++)
+            if (!InstallOne(i)) ok = false;
+        g_installed = true;
+        return ok;
+    }
+
+    inline uint64_t NowMs()
+    {
+        struct timespec ts {};
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / 1000000ull;
+    }
+
+    // Called before a guarded section: cheap enough to run often, throttled to
+    // every 100 ms because each check is a syscall.
+    inline void EnsureInstalled()
+    {
+        if (!g_installed) { Install(); return; }
+
+        const uint64_t now = NowMs();
+        if (now - g_lastCheckMs < 100) return;
+        g_lastCheckMs = now;
+
+        for (int i = 0; i < 3; i++)
+        {
+            struct sigaction cur {};
+            if (sigaction(kSigs[i], nullptr, &cur) != 0) continue;
+            if (IsOurs(cur)) continue;
+
+            if (InstallOne(i))
+            {
+                g_takeBacks++;
+                char line[176];
+                char *w = line;
+                char *end = line + sizeof(line) - 1;
+                w = AppendText(w, end, "fault_guard: handler for ");
+                w = AppendText(w, end, kSigName[i]);
+                w = AppendText(w, end, " was replaced - took it back from ");
+                w = AppendHex(w, end,
+                    (uintptr_t)(g_prevSet[i]
+                        ? ((g_prev[i].sa_flags & SA_SIGINFO)
+                             ? (uintptr_t)(void *)g_prev[i].sa_sigaction
+                             : (uintptr_t)(void *)g_prev[i].sa_handler)
+                        : 0));
+                w = AppendText(w, end, " - takebacks=");
+                w = AppendDec(w, end, g_takeBacks);
+                *w = '\0';
+                GuardLog(line);
+            }
+        }
+    }
+
+    inline bool IsInstalled()
+    {
+        struct sigaction cur {};
+        if (sigaction(SIGSEGV, nullptr, &cur) != 0) return false;
+        return IsOurs(cur);
+    }
+
     // Only the pieces that are safe inside a signal handler: fixed buffers, no
     // allocation, no libc formatting.
     inline void ReportCrash(int sig, void *infoPtr, void *ctx)
@@ -154,46 +323,7 @@ namespace fault_guard
 
         char line[192];
         DescribeFault(line, sizeof(line), sig, faulty, pc, lr, g_phase);
-
-#if defined(__ANDROID__)
-        __android_log_print(ANDROID_LOG_ERROR, "EthnirCrash", "native crash: %s", line);
-#else
-        if (__android_log_print != nullptr)
-            __android_log_print(6, "EthnirCrash", "native crash: %s", line);
-#endif
-    }
-
-    inline void OnSignal(int sig, siginfo_t *info, void *ctx)
-    {
-        if (g_armed)
-        {
-            g_armed = 0;
-            siglongjmp(g_jmp, 1);
-        }
-
-        ReportCrash(sig, info, ctx);
-
-        ::signal(sig, SIG_DFL);
-        ::raise(sig);
-    }
-
-    inline bool Install()
-    {
-        if (g_installed)
-            return true;
-
-        struct sigaction sa {};
-        sa.sa_sigaction = &OnSignal;
-        sigemptyset(&sa.sa_mask);
-        sa.sa_flags = SA_NODEFER | SA_SIGINFO;
-
-        if (sigaction(SIGSEGV, &sa, nullptr) != 0)
-            return false;
-        sigaction(SIGBUS, &sa, nullptr);
-        sigaction(SIGILL, &sa, nullptr);
-
-        g_installed = true;
-        return true;
+        GuardLog(line);
     }
 
     template <typename Fn>
@@ -201,6 +331,8 @@ namespace fault_guard
     {
         if (!Install())
             return false;
+
+        EnsureInstalled();
 
         if (sigsetjmp(g_jmp, 1) != 0)
         {

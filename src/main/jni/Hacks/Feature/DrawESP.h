@@ -680,6 +680,57 @@ static inline void DrawVehicleESP(ImDrawList *draw, int sWidth, int sHeight) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Fault guard for the per-enemy reads the draw pass makes.
+//
+// A pawn that is spawning or despawning keeps pointers inside mapped pages, so
+// IsPtrValid() answers "fine" and the game's own getter (get_HeadPosition,
+// get_LastPawnPos, get_PlayerName, the aim line's transform walk) then faults
+// on the torn object. The triggerbot and the aim lock were put under
+// fault_guard for exactly this failure - this pass was not, and it is the one
+// that runs the moment an enemy exists, which is what "crash the instant I
+// look at an enemy" is. A fault now costs that one read: the pawn (or walk)
+// is skipped for 1.5 s and the stage is logged so a repeat report names the
+// call that faulted instead of only the phase.
+// ---------------------------------------------------------------------------
+struct EspFaultEntry
+{
+    uintptr_t key;
+    uint64_t  untilMs;
+};
+inline EspFaultEntry g_espFaults[16] = {};
+inline int g_espFaultNext = 0;
+
+// Keys for walks that are not about one pawn. A constant gives the whole walk
+// its own cooldown slot without colliding with a pawn pointer.
+constexpr uintptr_t kEspKeyAimLine    = 1;
+constexpr uintptr_t kEspKeyVehicleEsp = 2;
+
+template <typename Fn>
+inline bool EspGuardedRun(const char *stage, uintptr_t key, Fn &&fn)
+{
+    const uint64_t now = fault_guard::NowMs();
+    for (int i = 0; i < 16; i++) {
+        if (g_espFaults[i].key == key && g_espFaults[i].untilMs != 0 &&
+            now < g_espFaults[i].untilMs)
+            return false;
+    }
+
+    const bool ok = fault_guard::Run([&] { fn(); });
+    if (!ok) {
+        g_espFaults[g_espFaultNext].key     = key;
+        g_espFaults[g_espFaultNext].untilMs = now + 1500;
+        g_espFaultNext = (g_espFaultNext + 1) % 16;
+
+        char line[160];
+        snprintf(line, sizeof(line),
+                 "esp draw: fault during '%s' (key %p) - skipped for 1.5s",
+                 stage, (void *)key);
+        fault_guard::GuardLog(line);
+    }
+    return ok;
+}
+
 void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
     fault_guard::NotePhase("esp draw");
     ApplySpeedhack();
@@ -694,7 +745,12 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
     Vector3 pLocalPawn_rootPos = Vector3::zero();
     Pawn *get_LocalPawn = GamePlay::get_LocalPawn();
     if (Tools::IsPtrValid(get_LocalPawn)) {
-        pLocalPawn_rootPos = get_LocalPawn->get_LastPawnPos();
+        // get_LastPawnPos walks the pawn's transform; the local pawn is torn
+        // exactly when you are on the kill cam, so it gets the same guard as
+        // the enemy reads below.
+        EspGuardedRun("local pawn position", (uintptr_t)get_LocalPawn, [&] {
+            pLocalPawn_rootPos = get_LocalPawn->get_LastPawnPos();
+        });
     }
 
     Camera *espCam = Camera::get_main();
@@ -777,8 +833,13 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
             skeletonThickness = Config.PskelLine;
         }
 
-        Vector3 pEnemyPawn_headPos = pawn->get_HeadPosition();
-        Vector3 pEnemyPawn_rootPos = pawn->get_LastPawnPos();
+        Vector3 pEnemyPawn_headPos = Vector3::zero();
+        Vector3 pEnemyPawn_rootPos = Vector3::zero();
+        if (!EspGuardedRun("enemy position", (uintptr_t)pawn, [&] {
+                pEnemyPawn_headPos = pawn->get_HeadPosition();
+                pEnemyPawn_rootPos = pawn->get_LastPawnPos();
+            }))
+            continue;
 
         Vector3 HeadSc = (espCam != nullptr && espW2s != nullptr)
                        ? espW2s(espCam, pEnemyPawn_headPos) : Vector3::zero();
@@ -890,7 +951,13 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
 
                 if (Config.ESPMenu.Aimline && !aimlineDrawn) {
                     aimlineDrawn = true;
-                    DrawAimLine(draw, sWidth, sHeight);
+                    // DrawAimLine re-walks every enemy with get_position on
+                    // the mesh/head bone; a torn pawn in that walk is the same
+                    // failure as the scan, so the whole walk is one guarded
+                    // unit with its own cooldown slot.
+                    EspGuardedRun("aim line walk", kEspKeyAimLine, [&] {
+                        DrawAimLine(draw, sWidth, sHeight);
+                    });
                 }
 
                 if (Config.ESPMenu.Skeleton) {
@@ -899,7 +966,9 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
 
                 if (Config.ESPMenu.Vehicle && !vehicleEspDrawn) {
                     vehicleEspDrawn = true;
-                    DrawVehicleESP(draw, sWidth, sHeight);
+                    EspGuardedRun("vehicle esp walk", kEspKeyVehicleEsp, [&] {
+                        DrawVehicleESP(draw, sWidth, sHeight);
+                    });
                 }
 
                 if ((Config.ESPMenu.Name || (Config.ESPMenu.Health && Config.ESPMenu.HealthPosition == EspHealthPosition::HealthTop)) && distanceToMe <= 60.0f) {
@@ -931,10 +1000,15 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
                         } else {
                             // A pawn that has just spawned has no replicated name
                             // yet; dereferencing get_PlayerName() unconditionally
-                            // faulted on the first frame of a match.
-                            String *playerName = pawn->get_PlayerName();
-                            if (Tools::IsPtrValid(playerName))
-                                displayText = playerName->CString();
+                            // faulted on the first frame of a match. The getter
+                            // itself walks the torn pawn too, so the call runs
+                            // under the guard - the null check below still
+                            // handles the "not replicated yet" case.
+                            EspGuardedRun("player name", (uintptr_t)pawn, [&] {
+                                String *playerName = pawn->get_PlayerName();
+                                if (Tools::IsPtrValid(playerName))
+                                    displayText = playerName->CString();
+                            });
                         }
                     }
 
