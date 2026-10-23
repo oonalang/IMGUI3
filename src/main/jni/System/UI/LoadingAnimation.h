@@ -335,7 +335,7 @@ static void StatusRow(ImDrawList* dl, ImFont* font, ImVec2 mn, ImVec2 mx, float 
     dl->AddText(font, 11.0f, ImVec2(mx.x - w, mn.y), C::UA(C::PurpleBrt, 0.98f), pct);
 }
 
-inline void Start(float durationSeconds = 9.0f) {
+inline void Start(float durationSeconds = 3.0f) {
     g_Active   = true;
     g_Timer    = 0.0f;
     g_Time     = 0.0f;

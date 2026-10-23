@@ -1,4 +1,14 @@
 std::unordered_map<std::string, bool> sBool;
+
+// The kill-decoration maps are written by the menu's apply path on the render
+// thread and read every frame by the kill-decoration pass, plus on the game
+// thread by the four decoration getters below. An insert that rehashes while
+// another thread walks the buckets is a use-after-free - the "applying a
+// mythic skin crashes" report. Every access to them goes through this mutex.
+// It is only ever held for the map access itself, never across a game native
+// call, so it cannot stall the game thread.
+inline std::mutex g_killDecoMapMutex;
+
 std::unordered_map<int, int> activeKillEffects;
 std::unordered_map<int, int> activeKillIcons;
 
@@ -48,7 +58,7 @@ RoleSkinFields *roleskinFields;
 CharacterModelFields *characterfields;
 RolePackFields *packfields;
 RoleConfFields *roleFields;
-ItemResourceFields *itemFields;
+thread_local ItemResourceFields *itemFields;
 // These are scratch pointers, not state: each loop assigns the object it is
 // about to read. They must NOT be shared, because the loader thread and the
 // render thread both walk config lists, and a cross-thread overwrite made the
@@ -56,15 +66,15 @@ ItemResourceFields *itemFields;
 // (a mythic skin write landing on a different WeaponConf is instant heap
 // corruption, and it is what crashed the game after applying two skins).
 thread_local WeaponConfFields *weaponconfFields;
-WeaponCamosFields *weaponcamosFields;
-WeaponSkinFields *weaponskinFields;
+thread_local WeaponCamosFields *weaponcamosFields;
+thread_local WeaponSkinFields *weaponskinFields;
 thread_local Item2InventoryFields *item2Fields;
-WeaponAssetGroupFields *weaponAssetFields;
-WeaponFireEffectFields *weaponfireFields;
+thread_local WeaponAssetGroupFields *weaponAssetFields;
+thread_local WeaponFireEffectFields *weaponfireFields;
 thread_local WeaponConfExtraFields *weaponextraFields;
-MythicArmorFields *mythicarmorFields;
-MythicSightFields *mythicsightFields;
-KillEffectItemFields *killeffectFields;
+thread_local MythicArmorFields *mythicarmorFields;
+thread_local MythicSightFields *mythicsightFields;
+thread_local KillEffectItemFields *killeffectFields;
 
 struct SPKillIconItemFields
 {
@@ -179,6 +189,28 @@ VehicleSkinConfCtor orig_VehicleSkinConfCtor = nullptr;
 VehicleItemConfCtor orig_VehicleItemConfCtor = nullptr;
 
 std::mutex g_dataMutex;
+
+// itemData is filled by the loader thread while the Skins page may already be
+// drawing it. A push_back that reallocates the vector under an open loop frees
+// the elements the loop is holding - the menu then walks heap that has been
+// reused. The menu therefore never touches itemData directly: it keeps a
+// snapshot that is refreshed under the lock whenever the loader has added
+// something. The copy only happens on a change, not per frame.
+inline size_t ItemDataCount()
+{
+    std::lock_guard<std::mutex> lock(g_dataMutex);
+    return itemData.size();
+}
+
+inline void SnapshotItemData(std::vector<itemInfo> &out, size_t &knownSize)
+{
+    std::lock_guard<std::mutex> lock(g_dataMutex);
+    if (itemData.size() == knownSize)
+        return;
+
+    out = itemData;
+    knownSize = out.size();
+}
 
 struct KillDecorationDiag {
     int killIconConfigs = 0;
@@ -416,6 +448,7 @@ int _GetCurrentWeaponKillEffect(Weapon weapon) {
     Weapon* currentWeapon = localPawn->get_CurrentWeapon();
     if (!currentWeapon) return 0;
     int currentID = currentWeapon->get_WeaponID();
+    std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
     auto it = activeKillEffects.find(currentID);
     if (it != activeKillEffects.end()) {
         return it->second;
@@ -467,18 +500,21 @@ int _GetCurrentWeaponBrocast(Weapon weapon) {
 
 static bool FindInMapExtra(const std::unordered_map<int, int> &m, void *extraInfo, int &outVal) {
     if (!extraInfo || !Tools::IsPtrValid(extraInfo)) return false;
+    // Every native read happens before the lock; only the map is guarded.
     uintptr_t p = (uintptr_t)extraInfo;
-    int itemID = (int)*(uint *)(p + 0x28);
+    const int itemID = (int)*(uint *)(p + 0x28);
+    const int virtID = (int)*(uint *)(p + 0x20);
+    const int bpID   = (int)*(uint *)(p + 0x30);
+
+    std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
     if (itemID != 0) {
         auto it = m.find(itemID);
         if (it != m.end()) { outVal = it->second; return true; }
     }
-    int virtID = (int)*(uint *)(p + 0x20);
     if (virtID != 0) {
         auto it = m.find(virtID);
         if (it != m.end()) { outVal = it->second; return true; }
     }
-    int bpID = (int)*(uint *)(p + 0x30);
     if (bpID != 0) {
         auto it = m.find(bpID);
         if (it != m.end()) { outVal = it->second; return true; }
@@ -491,7 +527,10 @@ static bool FindInMapLocal(const std::unordered_map<int, int> &m, int &outVal) {
     if (!localPawn) return false;
     Weapon *currentWeapon = localPawn->get_CurrentWeapon();
     if (!currentWeapon) return false;
-    auto it = m.find(currentWeapon->get_WeaponID());
+    const int weaponID = currentWeapon->get_WeaponID();
+
+    std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
+    auto it = m.find(weaponID);
     if (it != m.end()) { outVal = it->second; return true; }
     return false;
 }
@@ -550,15 +589,6 @@ uint8_t my_GetWeaponKillEffectLevelDecor(void *decorations) {
 
 static std::unordered_map<int, int> killIconByWeapon;
 static bool loadKillIcons = false;
-
-// killIconByWeapon and killEffectItemByAssetId are built on the skin loader
-// thread and read on the render thread (the Skins page's apply path and the
-// per-frame kill-decoration pass). An unordered_map insert from one thread
-// while the other iterates rehashes under the reader and frees the bucket
-// array it is walking - the "crash after applying a mythic skin" report.
-// Every access goes through this mutex; it is never held while a game native
-// call is made, so it cannot stall the game thread.
-inline std::mutex g_killDecoMapMutex;
 
 inline int KillIconForWeapon(int weaponID) {
     std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
@@ -627,7 +657,10 @@ void LoadKillIcons() {
 
 inline void KillDecoration_ApplyLocalInventoryInfo()
 {
-    if (activeKillIcons.empty()) return;
+    {
+        std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
+        if (activeKillIcons.empty()) return;
+    }
 
     Pawn *localPawn = GamePlay::get_LocalPawn();
     if (!localPawn || !Tools::IsPtrValid((void *)localPawn)) return;
@@ -656,6 +689,7 @@ inline void KillDecoration_ApplyLocalInventoryInfo()
     {
         s_iconWeaponID  = weaponID;
         s_iconForWeapon = 0;
+        std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
         auto iconIt = activeKillIcons.find(weaponID);
         if (iconIt != activeKillIcons.end()) s_iconForWeapon = iconIt->second;
     }
@@ -744,6 +778,7 @@ int my_WeaponKillEffectGroupOverride(void *weapon) {
     if (weapon && Tools::IsPtrValid(weapon)) {
         Weapon *w = (Weapon *)weapon;
         const int weaponID = w->get_WeaponID();
+        std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
         auto it = activeKillEffects.find(weaponID);
         if (it != activeKillEffects.end() && it->second > 0) {
             g_killDecorationDiag.effectGroupHookHits++;
@@ -1447,6 +1482,7 @@ void LoadWeaponSkins() {
                     }
                 }
 
+                std::lock_guard<std::mutex> lock(g_dataMutex);
                 itemData.push_back({displayName,
                     {itemBase, itemIDskin2, itemIDskin3, itemBaseModified},
                     {confBaseSkin, confColor, confID, confBrocastID, confBluePrintID},

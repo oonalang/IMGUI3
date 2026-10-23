@@ -439,7 +439,7 @@ inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = fals
         itemType = "Planes";
         break;
     case 4:
-        itemCount = itemData.size();
+        itemCount = ItemDataCount();
         itemType = "Weapons";
         break;
     case 5:
@@ -621,7 +621,11 @@ case 3:
 
     case 4:
 
-        if (!itemData.empty())
+        static std::vector<itemInfo> items;
+        static size_t itemsKnownSize = 0;
+        SnapshotItemData(items, itemsKnownSize);
+
+        if (!items.empty())
         {
             auto applyWeaponSkin = [&](const auto& getitem) {
                 // The config ctor hooks on the game thread append to these lists
@@ -651,6 +655,8 @@ case 3:
                     if (!item)
                         continue;
                     item2Fields = (Item2InventoryFields *)((uintptr_t)item + 0x20);
+                    if (!Tools::IsPtrValid(item2Fields))
+                        continue;
                     if (item2Fields->ItemID == getitem.Item2Inventory[0] || item2Fields->ItemID == getitem.Item2Inventory[3])
                     {
                         if (getitem.Item2Inventory[1] != 0)
@@ -664,6 +670,8 @@ case 3:
                     if (!conf)
                         continue;
                     weaponconfFields = (WeaponConfFields *)((uintptr_t)conf + 0x20);
+                    if (!Tools::IsPtrValid(weaponconfFields))
+                        continue;
                     if (baseID == weaponconfFields->ID ||
                             extraID == weaponconfFields->ID ||
                             skinID == weaponconfFields->ID ||
@@ -679,6 +687,8 @@ case 3:
                             if (!skinConf)
                                 continue;
                             WeaponConfFields *skinFields = (WeaponConfFields *)((uintptr_t)skinConf + 0x20);
+                            if (!Tools::IsPtrValid(skinFields))
+                                continue;
                             if (skinFields->ID == getitem.WeaponConf[2])
                             {
                                 if (Tools::IsPtrValid(skinFields->LOCID_Name))
@@ -692,11 +702,16 @@ case 3:
                         }
                     }
                 }
+                // The decorators below answer from these maps on the game
+                // thread while this runs, so the inserts are made together
+                // under the map mutex. The lookups happen outside it because
+                // they take it themselves.
+                const int effectKeys[5] = {baseID, extraID, skinID, itemID, lootID};
                 if (getitem.WeaponExtra[4] > 0)
                 {
                     const int effectAssetID = getitem.WeaponExtra[4];
                     const int effectItemID = KillEffectItemForAsset(effectAssetID);
-                    const int effectKeys[5] = {baseID, extraID, skinID, itemID, lootID};
+                    std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
                     for (int key : effectKeys)
                     {
                         activeKillEffects[key] = effectAssetID;
@@ -707,12 +722,15 @@ case 3:
                 }
                 if (DetectSkinTier(getitem.itemName) == SkinTier::Mythic)
                 {
-                    const int mythicKeys[5] = {baseID, extraID, skinID, itemID, lootID};
-                    for (int key : mythicKeys)
+                    int icons[5] = {0, 0, 0, 0, 0};
+                    for (int i = 0; i < 5; ++i)
+                        icons[i] = KillIconForWeapon(effectKeys[i]);
+
+                    std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
+                    for (int i = 0; i < 5; ++i)
                     {
-                        const int icon = KillIconForWeapon(key);
-                        if (icon > 0)
-                            activeKillIcons[key] = icon;
+                        if (icons[i] > 0)
+                            activeKillIcons[effectKeys[i]] = icons[i];
                     }
                 }
                 for (auto extra : extras)
@@ -720,21 +738,38 @@ case 3:
                     if (!extra)
                         continue;
                     weaponextraFields = (WeaponConfExtraFields *)((uintptr_t)extra + 0x10);
+                    if (!Tools::IsPtrValid(weaponextraFields))
+                        continue;
                     if (weaponextraFields->ID == baseID ||
                             weaponextraFields->ID == extraID ||
                             weaponextraFields->ID == skinID ||
                             weaponextraFields->ID == itemID ||
                             weaponextraFields->ID == lootID)
                     {
-                        if (getitem.itemName.find("[MYTHIC]") != std::string::npos)
+                        const bool mythicItem =
+                            getitem.itemName.find("[MYTHIC]") != std::string::npos;
+                        if (mythicItem)
                         {
-                            if (getitem.WeaponExtra[1] != 0)
-                                weaponextraFields->DefaultMythicArmor = getitem.WeaponExtra[1];
-                            if (getitem.itemName.find("[MYTHIC] AK117 - Memento Mori") != std::string::npos &&
-                                    getitem.WeaponExtra[2] != 0)
-                            {
-                                weaponextraFields->DefaultMythicSig = getitem.WeaponExtra[2];
-                            }
+                            // Assign even when the value is zero: the field
+                            // belongs to this weapon's extra config, so a
+                            // mythic without a piece has to clear the piece the
+                            // previous selection left behind.
+                            weaponextraFields->DefaultMythicArmor = getitem.WeaponExtra[1];
+                            weaponextraFields->DefaultMythicSig =
+                                getitem.itemName.find("[MYTHIC] AK117 - Memento Mori") != std::string::npos
+                                    ? getitem.WeaponExtra[2]
+                                    : 0;
+                        }
+                        else
+                        {
+                            // A legendary skin picked after a mythic one used to
+                            // keep the mythic armour asset on the base weapon:
+                            // the game then builds mythic armour pieces for a
+                            // model that has none. That mismatch is the crash
+                            // seen when a mythic and a legendary skin are used
+                            // together.
+                            weaponextraFields->DefaultMythicArmor = 0;
+                            weaponextraFields->DefaultMythicSig = 0;
                         }
 
                         if (getitem.WeaponExtra[3] != 0)
@@ -748,6 +783,8 @@ case 3:
                     if (!asset)
                         continue;
                     weaponAssetFields = (WeaponAssetGroupFields *)((uintptr_t)asset + 0x40);
+                    if (!Tools::IsPtrValid(weaponAssetFields))
+                        continue;
                     if (weaponAssetFields->Id == getitem.WeaponAsset[0])
                     {
                         if (getitem.WeaponAsset[1] / 10 == getitem.WeaponAsset[2] / 10 && getitem.WeaponAsset[1] > 0)
@@ -801,7 +838,7 @@ case 3:
                 {
                     for (auto fireConf : fireEffects)
                     {
-                        if (!fireConf)
+                        if (!fireConf || !Tools::IsPtrValid(fireConf))
                             continue;
                         WeaponFireEffectFields *wfFields = (WeaponFireEffectFields *)((uintptr_t)fireConf + 0x10);
                         if (!Tools::IsPtrValid(wfFields))
@@ -813,7 +850,8 @@ case 3:
                             *(float *)((uintptr_t)fireConf + 0x84) = 0.1f;
                             *(float *)((uintptr_t)fireConf + 0x88) = 0.1f;
                             auto *killCountArray = *(Array<int> **)((uintptr_t)fireConf + 0x118);
-                            if (killCountArray && Tools::IsPtrValid(killCountArray))
+                            if (killCountArray && Tools::IsPtrValid(killCountArray) &&
+                                    killCountArray->getLength() > 0 && killCountArray->getLength() < 512)
                             {
                                 for (int i = 0; i < killCountArray->getLength(); ++i)
                                 {
@@ -821,7 +859,8 @@ case 3:
                                 }
                             }
                             auto *killCountArrayKing = *(Array<int> **)((uintptr_t)fireConf + 0x120);
-                            if (killCountArrayKing && Tools::IsPtrValid(killCountArrayKing))
+                            if (killCountArrayKing && Tools::IsPtrValid(killCountArrayKing) &&
+                                    killCountArrayKing->getLength() > 0 && killCountArrayKing->getLength() < 512)
                             {
                                 for (int i = 0; i < killCountArrayKing->getLength(); ++i)
                                 {
@@ -834,7 +873,7 @@ case 3:
                 }
             };
 
-            for (const auto& getitem : itemData)
+            for (const auto& getitem : items)
             {
                 if (strlen(searchQuery) >= MIN_SEARCH_LENGTH) {
                     std::string nameLower = ToLower(getitem.itemName);
@@ -850,7 +889,7 @@ case 3:
                                        [&, getitem]()
                     {
                         std::string currentBase = GetBaseWeaponName(getitem.itemName);
-                        for (const auto& other : itemData)
+                        for (const auto& other : items)
                         {
                             if (other.itemName != getitem.itemName &&
                                     GetBaseWeaponName(other.itemName) == currentBase)
@@ -864,7 +903,7 @@ case 3:
                 }
             }
 
-            for (const auto& getitem : itemData)
+            for (const auto& getitem : items)
             {
                 if (strlen(searchQuery) >= MIN_SEARCH_LENGTH) {
                     std::string nameLower = ToLower(getitem.itemName);
@@ -880,7 +919,7 @@ case 3:
                                        [&, getitem]()
                     {
                         std::string currentBase = GetBaseWeaponName(getitem.itemName);
-                        for (const auto& other : itemData)
+                        for (const auto& other : items)
                         {
                             if (other.itemName != getitem.itemName &&
                                     GetBaseWeaponName(other.itemName) == currentBase)

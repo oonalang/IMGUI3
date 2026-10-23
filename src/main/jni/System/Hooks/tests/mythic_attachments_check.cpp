@@ -129,12 +129,15 @@ int main()
     }
 
     {
+        // The game asks some of these through a static helper, which passes a
+        // null receiver. That call has to be granted too, or the loadout keeps
+        // showing the attachments locked.
         Config.ExtraMenu.Attachment = true;
         installFake();
-        CHECK(!IsWeaponAttachmentUnlock(nullptr, 607011),
-              "A7 a null object gets the game's answer, never a fabricated yes");
-        CHECK(g_calls == 1,
-              "A7 ... and the game's own function did the deciding");
+        CHECK(IsWeaponAttachmentUnlock(nullptr, 607011),
+              "A7 a static call (null receiver) is granted while the switch is on");
+        CHECK(g_calls == 0,
+              "A7 ... without asking the game first");
     }
 
     {
@@ -142,15 +145,25 @@ int main()
         orig_IsWeaponAttachmentUnlock = nullptr;
         CHECK(IsWeaponAttachmentUnlock(&g_instance, 607011),
               "A8 with no original installed the grant still answers yes");
-        CHECK(!IsWeaponAttachmentUnlock(nullptr, 607011),
-              "A8 ... and a null receiver answers false, not a crash");
+        CHECK(IsWeaponAttachmentUnlock(nullptr, 607011),
+              "A8 ... the static call included");
+    }
+
+    {
+        Config.ExtraMenu.Attachment = false;
+        Config.ExtraMenu.MythicAttachments = true;
+        installFake();
+        CHECK(IsWeaponAttachmentUnlock(nullptr, 607011),
+              "A9 the blueprint switch also unlocks attachments");
+        CHECK(g_calls == 0, "A9 ... without a native call");
+        Config.ExtraMenu.MythicAttachments = false;
     }
 
     {
         Config.ExtraMenu.Attachment = true;
-        CHECK(AttachmentsUnlocked(), "A9 AttachmentsUnlocked() follows the switch");
+        CHECK(AttachmentsUnlocked(), "A10 AttachmentsUnlocked() follows the switch");
         Config.ExtraMenu.Attachment = false;
-        CHECK(!AttachmentsUnlocked(), "A9 ... in both directions");
+        CHECK(!AttachmentsUnlocked(), "A10 ... in both directions");
         Config.ExtraMenu.Attachment = true;
     }
 

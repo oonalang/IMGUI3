@@ -443,7 +443,7 @@ struct ItemResourceFields
     int32_t  ModelAssetIDRaw;
     uint64_t AvatarModelID;
 };
-extern ItemResourceFields *itemFields;
+extern thread_local ItemResourceFields *itemFields;
 
 inline void ResolveTargetIds(const TargetChar &t,
                              int &traitor1p, int &traitor3p,
@@ -620,7 +620,7 @@ struct WeaponCamosFields
     Array<uint> *Personal_mission_id;
     void *SmallIconSpriteName;
 };
-extern WeaponCamosFields *weaponcamosFields;
+extern thread_local WeaponCamosFields *weaponcamosFields;
 
 struct WeaponSkinFields
 {
@@ -640,7 +640,7 @@ struct WeaponSkinFields
     Array<int> *SkinID1P;
     Array<int> *SkinID3P;
 };
-extern WeaponSkinFields *weaponskinFields;
+extern thread_local WeaponSkinFields *weaponskinFields;
 
 struct WeaponSkinCamoOriginal
 {
@@ -717,7 +717,7 @@ struct WeaponAssetGroupFields
     void *ScopeDistancePartIDs;
     void *ScopeDistanceRatios;
 };
-extern WeaponAssetGroupFields *weaponAssetFields;
+extern thread_local WeaponAssetGroupFields *weaponAssetFields;
 
 struct WeaponFireEffectFields
 {
@@ -786,7 +786,7 @@ struct WeaponFireEffectFields
     void *SocketsForShellDrop1P;
     void *SocketsForShellDrop3P;
 };
-extern WeaponFireEffectFields *weaponfireFields;
+extern thread_local WeaponFireEffectFields *weaponfireFields;
 
 struct WeaponConfExtraFields
 {
@@ -824,7 +824,7 @@ struct MythicArmorFields
     void *LOCID_Name;
     void *WeaponCanEquip;
 };
-extern MythicArmorFields *mythicarmorFields;
+extern thread_local MythicArmorFields *mythicarmorFields;
 
 struct MythicSightFields
 {
@@ -839,7 +839,7 @@ struct MythicSightFields
     void *LOCID_Name;
     void *WeaponCanEquip;
 };
-extern MythicSightFields *mythicsightFields;
+extern thread_local MythicSightFields *mythicsightFields;
 
 struct KillEffectItemFields
 {
@@ -868,7 +868,7 @@ struct KillEffectItemFields
     void *LOCID_Name;
     void *WeaponCanEquip;
 };
-extern KillEffectItemFields *killeffectFields;
+extern thread_local KillEffectItemFields *killeffectFields;
 
 struct BRDeadboxSkinFields
 {

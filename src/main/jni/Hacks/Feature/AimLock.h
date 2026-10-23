@@ -14,9 +14,15 @@
 // target, with or without firing or scoping, so the crosshair is already there
 // when you take the shot.
 //
-// Config.Aim.AimLock is the strength: 0 turns it off, 100 is fast enough to read
-// as instant for a flick. The turn is rate limited in degrees per second, so the
-// same number behaves the same at any frame rate.
+// Config.Aim.AimLock is the strength: 0 turns it off, 100 snaps straight to the
+// target on the next tick. Anything in between turns at a rate that rises with
+// the square of the slider, so the low half stays usable for tracking a moving
+// player and the top of the range is instant.
+//
+// It follows the same targeting rules as the assist: Config.Aim.Trigger decides
+// when it may turn, Config.Aim.By chooses the closest target or the one nearest
+// the crosshair, and in that second mode the lock is limited to the FOV circle
+// the ESP draws, in pixels, so the circle on screen is the area it works in.
 namespace aim_lock
 {
     // Same symbols NewFeatures resolves for the triggerbot; duplicated so this
@@ -31,6 +37,7 @@ namespace aim_lock
     inline int   g_turns       = 0;
     inline double g_lastTick   = -1000.0;
     inline void *g_lastTarget  = nullptr;
+    inline void *g_lastLocal   = nullptr;
 
     inline double Now()
     {
@@ -89,7 +96,87 @@ namespace aim_lock
         return true;
     }
 
-    inline Pawn *PickTarget(Pawn *localPawn, const Vector3 &eyePos, const Vector3 &forward)
+    // Only turn while the assist would be allowed to act. The menu says the lock
+    // keeps the aim while firing or scoping; before this gate it turned all the
+    // time, whatever the trigger was set to.
+    inline bool TriggerReady(Pawn *localPawn)
+    {
+        if (m_unity == 0) return false;
+
+        switch (Config.Aim.Trigger) {
+            case EAimTrigger::Shooting: {
+                auto isFiring = (bool (*)(Pawn *))(Class_Pawn_get_IsFiring);
+                return isFiring != nullptr && isFiring(localPawn);
+            }
+            case EAimTrigger::Scoping: {
+                auto isAiming = (bool (*)(Pawn *))(Class_Pawn_IsAiming);
+                return isAiming != nullptr && isAiming(localPawn);
+            }
+            default:
+                return true;
+        }
+    }
+
+    // The FOV circle is drawn with a radius in pixels around the centre of the
+    // screen, so the lock measures against the same circle instead of treating
+    // that number as degrees.
+    inline bool InsideFovCircle(Camera *cam, const Vector3 &point)
+    {
+        const float radius = Config.Aim.Cross;
+        if (!(radius > 0.0f) || cam == nullptr) return true;
+
+        auto toScreen = (Vector3 (*)(Camera *, Vector3))Class_Camera_WorldToScreenPoint;
+        if (toScreen == nullptr) return true;
+
+        const Vector3 screen = toScreen(cam, point);
+        if (!(screen.z > 0.01f)) return false;
+
+        const float centerX = (float)get_width() * 0.5f;
+        const float centerY = (float)get_height() * 0.5f;
+        const float dx = screen.x - centerX;
+        const float dy = ((float)get_height() - screen.y) - centerY;
+        return dx * dx + dy * dy <= radius * radius;
+    }
+
+    inline float Range()
+    {
+        return Config.Aim.size > 0.0f ? Config.Aim.size : 1000.0f;
+    }
+
+    // Everything a pawn has to satisfy to be turn-to material: alive, an enemy,
+    // with a readable head, inside range, and - in crosshair mode - inside both
+    // the aim cone and the circle that is actually drawn.
+    inline bool CandidateOk(Pawn *localPawn, Pawn *pawn, const Vector3 &eye,
+                            const Vector3 &forward, Camera *cam,
+                            Vector3 &point, float &distance)
+    {
+        if (pawn == nullptr || pawn == localPawn) return false;
+        if (!Alive((void *)pawn)) return false;
+        if (!*(bool *)((uintptr_t)pawn + Class_Pawn_m_IsAlive)) return false;
+        if (!IsEnemy(localPawn, pawn)) return false;
+        if (!AimPoint(pawn, point)) return false;
+
+        const Vector3 to(point.x - eye.x, point.y - eye.y, point.z - eye.z);
+        const float dist = Vector3::Magnitude(to);
+        if (!(dist > 0.05f) || dist > Range()) return false;
+
+        if (Config.Aim.By == EAim::Crosshair) {
+            if (Vector3::Magnitude(forward) > 0.01f) {
+                float cosA = (to.x * forward.x + to.y * forward.y + to.z * forward.z) / dist;
+                if (cosA > 1.0f) cosA = 1.0f;
+                if (cosA < -1.0f) cosA = -1.0f;
+                const float fov = Config.Aim.Cross > 0.0f ? Config.Aim.Cross : 180.0f;
+                if (acosf(cosA) * 57.29578f > fov) return false;
+            }
+            if (!InsideFovCircle(cam, point)) return false;
+        }
+
+        distance = dist;
+        return true;
+    }
+
+    inline Pawn *PickTarget(Pawn *localPawn, const Vector3 &eye, const Vector3 &forward,
+                            Camera *cam, Vector3 &outPoint)
     {
         void *game = ((void *(*)())(Class_Gameplay_get_MatchGame))();
         if (!Tools::IsPtrValid(game)) return nullptr;
@@ -100,40 +187,31 @@ namespace aim_lock
         const int count = enemies->getSize();
         if (!Tools::IsPtrValid((void *)items) || count <= 0 || count > 1024) return nullptr;
 
-        const float fov   = Config.Aim.Cross > 0.0f ? Config.Aim.Cross : 180.0f;
-        const float range = Config.Aim.size > 0.0f ? Config.Aim.size : 1000.0f;
-        const bool  byAngle = (Config.Aim.By == EAim::Crosshair) &&
-                              Vector3::Magnitude(forward) > 0.01f;
-
         Pawn *best = nullptr;
+        Vector3 bestPoint;
         float bestScore = 0.0f;
         for (int i = 0; i < count; ++i) {
-            Pawn *pawn = items[i];
-            if (!Alive((void *)pawn) || pawn == localPawn) continue;
-            if (!*(bool *)((uintptr_t)pawn + Class_Pawn_m_IsAlive)) continue;
-            if (!IsEnemy(localPawn, pawn)) continue;
-
             Vector3 point;
-            if (!AimPoint(pawn, point)) continue;
-
-            const Vector3 to(point.x - eyePos.x, point.y - eyePos.y, point.z - eyePos.z);
-            const float dist = Vector3::Magnitude(to);
-            if (!(dist > 0.05f) || dist > range) continue;
+            float dist = 0.0f;
+            Pawn *pawn = items[i];
+            if (!CandidateOk(localPawn, pawn, eye, forward, cam, point, dist)) continue;
 
             float score = dist;
-            if (byAngle) {
+            if (Config.Aim.By == EAim::Crosshair) {
+                const Vector3 to(point.x - eye.x, point.y - eye.y, point.z - eye.z);
                 float cosA = (to.x * forward.x + to.y * forward.y + to.z * forward.z) / dist;
                 if (cosA > 1.0f) cosA = 1.0f;
                 if (cosA < -1.0f) cosA = -1.0f;
-                const float degrees = acosf(cosA) * 57.29578f;
-                if (degrees > fov) continue;
-                score = degrees * 1000.0f + dist * 0.001f;
+                score = acosf(cosA) * 57295.78f + dist * 0.001f;
             }
             if (best == nullptr || score < bestScore) {
                 best = pawn;
+                bestPoint = point;
                 bestScore = score;
             }
         }
+
+        if (best != nullptr) outPoint = bestPoint;
         return best;
     }
 
@@ -168,12 +246,28 @@ namespace aim_lock
     // Called from the local pawn's tick, on the game thread.
     inline void Tick(Pawn *localPawn)
     {
+        // A new local pawn means a new match or a respawn. The held target and
+        // the tick clock describe the old one and must not carry over.
+        if ((void *)localPawn != g_lastLocal) {
+            g_lastLocal = (void *)localPawn;
+            g_lastTarget = nullptr;
+            g_lastTick = Now();
+        }
+
         const float strength = Config.Aim.AimLock;
-        if (!(strength > 0.0f)) return;
-        if (!Alive((void *)localPawn)) return;
+        if (!(strength > 0.0f)) {
+            g_lastTarget = nullptr;
+            return;
+        }
+        if (!Alive((void *)localPawn)) {
+            g_lastTarget = nullptr;
+            return;
+        }
+        if (!TriggerReady(localPawn))
+            return;
 
         const double now = Now();
-        double dt = (g_lastTick < 0.0) ? 0.016 : now - g_lastTick;
+        double dt = now - g_lastTick;
         g_lastTick = now;
         if (dt < 0.001) dt = 0.001;
         if (dt > 0.25)  dt = 0.25;          // a stalled thread must not teleport
@@ -189,20 +283,37 @@ namespace aim_lock
         const Vector3 current = CameraForward((void *)camTransform);
         if (!(Vector3::Magnitude(current) > 1e-4f)) return;
 
-        Pawn *target = PickTarget(localPawn, eye, current);
+        // Stay on the pawn that was picked, as long as it is still a legal
+        // target. Re-picking the closest one every tick made the aim flick
+        // between two enemies standing next to each other.
+        Vector3 point;
+        float dist = 0.0f;
+        Pawn *target = nullptr;
+        if (g_lastTarget != nullptr &&
+            CandidateOk(localPawn, (Pawn *)g_lastTarget, eye, current, cam, point, dist)) {
+            target = (Pawn *)g_lastTarget;
+        }
+        if (target == nullptr)
+            target = PickTarget(localPawn, eye, current, cam, point);
         g_lastTarget = (void *)target;
         if (target == nullptr) return;
 
-        Vector3 point;
-        if (!AimPoint(target, point)) return;
         const Vector3 want(point.x - eye.x, point.y - eye.y, point.z - eye.z);
         if (!(Vector3::Magnitude(want) > 0.05f)) return;
 
-        // 0..100 -> 6..600 degrees per second.
-        const float degPerSecond = 6.0f + strength * 5.94f;
-        const float maxRad = degPerSecond * (float)dt * 0.01745329f;
+        // 100 is a snap: no rate limit at the top of the range. Below it the
+        // speed rises with the square of the slider, 6 deg/s at 1 and ~600 deg/s
+        // at 99.
+        Vector3 stepped;
+        if (strength >= 99.5f) {
+            stepped = want;
+        } else {
+            const float t = strength * 0.01f;
+            const float degPerSecond = 6.0f + 594.0f * t * t;
+            const float maxRad = degPerSecond * (float)dt * 0.01745329f;
+            stepped = StepToward(current, want, maxRad);
+        }
 
-        const Vector3 stepped = StepToward(current, want, maxRad);
         void (*setAim)(uintptr_t, Quaternion) =
             (void (*)(uintptr_t, Quaternion))(Class_Pawn_set_AimRotation);
         if (setAim == nullptr) return;
