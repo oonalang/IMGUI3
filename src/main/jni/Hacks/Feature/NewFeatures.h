@@ -1127,6 +1127,7 @@ namespace NewFeatures
 
     inline Pawn  *g_afireLocalPawnCache     = nullptr;
     inline double g_afireLocalPawnCacheTime = -1000.0;
+    inline void  *g_afireLastLocalPawn      = nullptr;
     inline void  *g_afireHeldWeaponCache    = nullptr;
     inline double g_afireHeldWeaponStamp    = -1000.0;
     inline double g_afireOffDiagStamp       = -1000.0;
@@ -2141,11 +2142,24 @@ namespace NewFeatures
         return target.pawn ? (uintptr_t)target.pawn : 0;
     }
 
+    inline bool A_FireStillHoldsWeapon(void *weapon)
+    {
+        Pawn *localPawn = A_FireLocalPawnFast();
+        if (!A_FireObjectAlive((void *)localPawn)) return false;
+        return (void *)localPawn->get_CurrentWeapon() == weapon;
+    }
+
     inline void A_FireReleaseTrigger(void *instance)
     {
         if (!g_afireHoldingFire) return;
         if (instance == nullptr || instance == g_afireFiringOn) {
-            if (fn_Weapon_StopFire != nullptr && A_FireObjectAlive(g_afireFiringOn))
+            // A weapon pointer outlives its object between matches and on a
+            // respawn: the memory stays mapped, so IsPtrValid still says yes and
+            // StopFire was called into a destroyed weapon. Only release the
+            // trigger of a weapon the local pawn is holding right now.
+            if (fn_Weapon_StopFire != nullptr &&
+                A_FireStillHoldsWeapon(g_afireFiringOn) &&
+                A_FireObjectAlive(g_afireFiringOn))
                 fn_Weapon_StopFire(g_afireFiringOn, false);
             g_afireHoldingFire = false;
             g_afireFiringOn = nullptr;
@@ -2433,6 +2447,16 @@ namespace NewFeatures
         d.pawnTicks++;
 
         if (A_FireLocalPawnFast() == (Pawn *)pawnInstance) {
+            // A new local pawn means a new match or a respawn. The triggerbot's
+            // caches still describe the old pawn and its weapon, so drop them
+            // before anything touches the new scene.
+            if (g_afireLastLocalPawn != nullptr && g_afireLastLocalPawn != pawnInstance) {
+                LOGI("[NewFeatures] triggerbot: local pawn %p replaced %p, per-match state cleared",
+                     pawnInstance, g_afireLastLocalPawn);
+                A_FireResetForNewMatch();
+            }
+            g_afireLastLocalPawn = pawnInstance;
+
             d.localPawn = pawnInstance;
             d.pawnLocalTicks++;
 

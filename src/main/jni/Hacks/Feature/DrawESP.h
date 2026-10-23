@@ -582,12 +582,16 @@ static inline void DrawVehicleESP(ImDrawList *draw, int sWidth, int sHeight) {
     if (!Tools::IsPtrValid(m_AllVehicles_ptr)) return;
 
     List<PhysicsVehicle *> *m_AllVehicles = *m_AllVehicles_ptr;
-    if (!Tools::IsPtrValid(m_AllVehicles) || !m_AllVehicles->getSize()) return;
+    if (!Tools::IsPtrValid(m_AllVehicles)) return;
+
+    if (!Tools::IsPtrValid((void *)m_AllVehicles->items)) return;
+    const int vehicleCount = m_AllVehicles->getSize();
+    if (vehicleCount <= 0 || vehicleCount > 1024) return;
 
     PhysicsVehicle **vehicles = (PhysicsVehicle **)m_AllVehicles->getItems();
     if (!Tools::IsPtrValid(vehicles)) return;
 
-    for (int i = 0; i < m_AllVehicles->getSize(); i++) {
+    for (int i = 0; i < vehicleCount; i++) {
         PhysicsVehicle *vehicle = vehicles[i];
         if (!Tools::IsPtrValid(vehicle)) continue;
 
@@ -702,10 +706,21 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
 
     bool fovCircleDrawn = false, aimlineDrawn = false, vehicleEspDrawn = false;
     List<Pawn *> *EnemyPawns = get_MatchGame->EnemyPawns();
-    if (!Tools::IsPtrValid(EnemyPawns) || !EnemyPawns->getSize()) return;
+    if (!Tools::IsPtrValid(EnemyPawns)) return;
+
+    // getItems() dereferences the list's backing array, and the list is being
+    // rebuilt on the game thread while a match loads, so the array object and
+    // the count have to be checked before either is used. Everything else that
+    // walks this list (A_FireScan, aim lock, bullet track) already caps it at
+    // 1024; this pass did not, so a torn size read walked off the array.
+    if (!Tools::IsPtrValid((void *)EnemyPawns->items)) return;
+    const int enemyCount = EnemyPawns->getSize();
+    if (enemyCount <= 0 || enemyCount > 1024) return;
 
     Pawn **pawns = (Pawn **)EnemyPawns->getItems();
-    for (int i = 0; i < EnemyPawns->getSize(); i++) {
+    if (!Tools::IsPtrValid((void *)pawns)) return;
+
+    for (int i = 0; i < enemyCount; i++) {
         Pawn *pawn = pawns[i];
         if (!Tools::IsPtrValid(pawn)) continue;
 
@@ -908,8 +923,21 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
 
                     draw->AddRectFilled(ImVec2(infoContainerX, infoCurrentY), ImVec2(infoContainerX + infoContainerWidth, infoCurrentY + infoTotalHeight), IM_COL32(0, 0, 0, 120));
 
+                    std::string displayText;
                     if (Config.ESPMenu.Name) {
-                        std::string displayText = pawn->m_IsBot() ? "BOT" : pawn->get_PlayerName()->CString();
+                        if (pawn->m_IsBot()) {
+                            displayText = "BOT";
+                        } else {
+                            // A pawn that has just spawned has no replicated name
+                            // yet; dereferencing get_PlayerName() unconditionally
+                            // faulted on the first frame of a match.
+                            String *playerName = pawn->get_PlayerName();
+                            if (Tools::IsPtrValid(playerName))
+                                displayText = playerName->CString();
+                        }
+                    }
+
+                    if (!displayText.empty()) {
                         ImVec2 infoTextSize = ImGui::CalcTextSize(displayText.c_str());
                         infoTextSize.x *= (fontSize / ImGui::GetFontSize());
                         float infoTextX = infoContainerX + (infoContainerWidth - infoTextSize.x) / 2;
