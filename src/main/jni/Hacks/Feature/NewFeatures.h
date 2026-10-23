@@ -66,6 +66,10 @@ namespace NewFeatures
         constexpr uintptr_t Gameplay_get_LocalPawn          = 0x856AA08;
         constexpr uintptr_t BaseGame_GetEnemyPawns          = 0x9CAFE38;
         constexpr uintptr_t Pawn_get_HeadPosition           = 0x51B86EC;
+        // The muzzle the bullet actually leaves. LOS is checked from here, not
+        // from the eye, so peeking over cover (a head glitch) no longer reads
+        // your own ledge as blocking the shot.
+        constexpr uintptr_t Pawn_get_FirePosition           = 0x51B8900;
         constexpr uintptr_t Pawn_get_LastPawnPos            = 0x51B8D30;
         constexpr uintptr_t Camera_get_main                 = 0x5024010;
         constexpr uintptr_t Camera_WorldToScreenPoint       = 0x5023B54;
@@ -299,8 +303,9 @@ namespace NewFeatures
     }
     inline void *(*fn_GameGetMatchGame)() = nullptr;
     inline bool (*fn_PawnRecentlyRendered)(void *) = nullptr;
-    inline bool (*fn_PawnLastOccVisible)(void *) = nullptr;
-    inline bool (*fn_PawnGetIsFiring)(void *) = nullptr;
+    inline bool (*fn_PawnLastOccVisible)(void *) = nullptr;    inline bool   (*fn_PawnGetIsFiring)(void *) = nullptr;
+    inline Vector3 (*fn_PawnGetFirePosition)(void *) = nullptr;
+
 
     inline bool  (*fn_WeaponIsAutoFire)(void *) = nullptr;
     inline bool  (*fn_WeaponIsBurstFire)(void *) = nullptr;
@@ -1154,6 +1159,33 @@ namespace NewFeatures
         return p;
     }
 
+    // LOS is cast from the muzzle, because that is what the bullet uses. When
+    // you peek over cover (a head glitch) your eye is still inside the ledge but
+    // the muzzle is past it, so an eye-origin ray reads your own cover as
+    // blocking and refuses every shot. Falls back to a short stem along the aim
+    // from the eye when the muzzle is unavailable or implausible (stale read).
+    inline Vector3 A_FireRayOrigin(Pawn *localPawn, const Vector3 &eye,
+                                   const Vector3 &aimDir, float fallbackStem)
+    {
+        if (fn_PawnGetFirePosition != nullptr && A_FireObjectAlive((void *)localPawn)) {
+            const Vector3 muzzle = fn_PawnGetFirePosition(localPawn);
+            if (muzzle.x != 0.0f || muzzle.y != 0.0f || muzzle.z != 0.0f) {
+                const float dx = muzzle.x - eye.x;
+                const float dy = muzzle.y - eye.y;
+                const float dz = muzzle.z - eye.z;
+                if (dx * dx + dy * dy + dz * dz <= 4.0f)   // within 2 m of the eye
+                    return muzzle;
+            }
+        }
+        const float alen = Vector3::Magnitude(aimDir);
+        if (alen > 1.0e-4f) {
+            const float s = fallbackStem / alen;
+            return Vector3(eye.x + aimDir.x * s,
+                           eye.y + aimDir.y * s,
+                           eye.z + aimDir.z * s);
+        }
+        return eye;
+    }
     inline void CrosshairCentrePx(float &cx, float &cy)
     {
         cx = (float)get_width()  * 0.5f + Config.Crosshair.OffsetX;
@@ -1344,7 +1376,11 @@ namespace NewFeatures
         return false;
     }
 
-    constexpr int AF_MAX_RAY_HITS = 64;
+    // How many self/trigger colliders a single LOS ray may step past before it
+    // gives up. 64 was pure worst-case waste - a real line rarely clips more
+    // than a handful - and every extra step is another managed raycast on the
+    // tick. Capped low to keep the per-tick cost down.
+    constexpr int AF_MAX_RAY_HITS = 12;
 
     inline AF_Ray A_FireRayToTargetSingleHit(const Vector3 &start, const Vector3 &dir,
                                              float reach, Pawn *target, Pawn *localPawn,
@@ -1406,17 +1442,25 @@ namespace NewFeatures
         if (identified != nullptr) *identified = false;
         if (hitDistance != nullptr) *hitDistance = -1.0f;
 
-        Vector3 d(to.x - from.x, to.y - from.y, to.z - from.z);
+        // Cast from the muzzle when we have one: the bullet leaves the barrel,
+        // so this is the honest occlusion line and it clears cover you peek over.
+        // Fallback stem is 0: with no muzzle the origin stays the eye and this
+        // function's own stem below applies once, as before.
+        const Vector3 from2 = A_FireRayOrigin(localPawn, from,
+            Vector3((to.x - from.x), (to.y - from.y), (to.z - from.z)),
+            0.0f);
+
+        Vector3 d(to.x - from2.x, to.y - from2.y, to.z - from2.z);
         const float dist = Vector3::Magnitude(d);
         if (!(dist >= 0.01f)) return AF_Ray::Clear;
         const Vector3 dir(d.x / dist, d.y / dist, d.z / dist);
 
-        // Muzzle stem: skip what the eye is already inside of. A target closer
-        // than the stem is point blank - nothing can block that line.
+        // Muzzle stem: skip what the muzzle is already inside of. A target
+        // closer than the stem is point blank - nothing can block that line.
         const float stem = (dist > 4.0f * A_FireTune::kRayStem) ? A_FireTune::kRayStem : 0.0f;
-        const Vector3 start(from.x + dir.x * stem,
-                            from.y + dir.y * stem,
-                            from.z + dir.z * stem);
+        const Vector3 start(from2.x + dir.x * stem,
+                            from2.y + dir.y * stem,
+                            from2.z + dir.z * stem);
         const float span = dist - stem;
         if (!(span >= 0.01f)) return AF_Ray::Clear;
 
@@ -1524,11 +1568,10 @@ namespace NewFeatures
         if (!(len > 0.0001f)) return nullptr;
         const Vector3 dir(rayDir.x / len, rayDir.y / len, rayDir.z / len);
 
-        // Same muzzle stem as the LOS probe: with the camera in the cover you
-        // are peeking over, the first thing the eye ray hits is that cover.
-        const Vector3 start(camPos.x + dir.x * A_FireTune::kRayStem,
-                            camPos.y + dir.y * A_FireTune::kRayStem,
-                            camPos.z + dir.z * A_FireTune::kRayStem);
+        // Cast from the muzzle like the LOS probe. With the camera inside the
+        // cover you are peeking over, an eye-origin ray hits that cover first
+        // and no target is ever found; the muzzle is past it.
+        const Vector3 start = A_FireRayOrigin(localPawn, camPos, dir, A_FireTune::kRayStem);
         const float reach = A_FireTune::kCrosshairRayMax - A_FireTune::kRayStem;
 
         if (fn_PhysicsRaycastHitOut == nullptr) {
@@ -1849,7 +1892,10 @@ namespace NewFeatures
         bool speedKnown = false;
         const float bulletSpeed = GetWeaponBulletSpeed(weapon, &speedKnown);
 
-        for (int oi = 0; oi < n && oi < 5; oi++) {
+        // Full LOS is only worth running for the target(s) closest to the
+        // crosshair - you fire the first clear one. Checking five candidates
+        // multiplied the raycast cost for no benefit.
+        for (int oi = 0; oi < n && oi < 3; oi++) {
             const A_FireCandidate &c = cands[order[oi]];
 
             d.losChecked++;
@@ -1857,6 +1903,19 @@ namespace NewFeatures
             float losHitDist = -1.0f;
             AF_Ray los = A_FireRayToTarget(camPos, c.aim.pos, c.pawn, c.aim.radius,
                                            localPawn, &losIdentified, &losHitDist);
+
+            // A blocked ray on a far target the engine is still drawing is
+            // almost never a real wall: the single-hit walk clipped cover they
+            // are peeking over, or grass/ropes at range. The game's own
+            // occlusion culling is the more honest verdict, so trust it and
+            // skip the extra head/body probes entirely. This is what refused
+            // distant shots and head-glitch picks where only a sliver shows.
+            if (los != AF_Ray::Clear && c.worldDist > 5.0f &&
+                A_FireGameSaysVisible(c.pawn)) {
+                d.occOverrides++;
+                los = AF_Ray::Clear;
+                losIdentified = true;
+            }
 
             Vector3 probePoint  = c.aim.pos;
             float   probeRadius = c.aim.radius;
@@ -2576,6 +2635,10 @@ namespace NewFeatures
         auto firingAddr = UnityRva(RVA::Pawn_get_IsFiring);
         if (Tools::IsPtrValid(firingAddr))
             fn_PawnGetIsFiring = (bool (*)(void *))firingAddr;
+
+        auto firePosAddr = UnityRva(RVA::Pawn_get_FirePosition);
+        if (Tools::IsPtrValid(firePosAddr))
+            fn_PawnGetFirePosition = (Vector3 (*)(void *))firePosAddr;
 
         auto ggmAddr = UnityRva(RVA::Gameplay_get_MatchGame);
         if (Tools::IsPtrValid(ggmAddr))
