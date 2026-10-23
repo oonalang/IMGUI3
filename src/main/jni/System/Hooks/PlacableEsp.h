@@ -111,6 +111,33 @@ inline bool PlacableEspOn()
     return Config.ESPMenu.Placables;
 }
 
+inline bool PlacableReadBool(uintptr_t base, uintptr_t offset, bool &out)
+{
+    const uintptr_t address = base + offset;
+    if (address < base || !Tools::IsPtrValid((void *)address))
+        return false;
+    out = *(const bool *)address;
+    return true;
+}
+
+inline bool PlacableReadInt(uintptr_t base, uintptr_t offset, int &out)
+{
+    const uintptr_t address = base + offset;
+    if (address < base || !Tools::IsPtrValid((void *)address))
+        return false;
+    out = *(const int *)address;
+    return true;
+}
+
+inline bool PlacableReadPtr(uintptr_t base, uintptr_t offset, uintptr_t &out)
+{
+    const uintptr_t address = base + offset;
+    if (address < base || !Tools::IsPtrValid((void *)address))
+        return false;
+    out = *(const uintptr_t *)address;
+    return true;
+}
+
 inline bool PlacableClassName(void *proj, char *out, size_t outSize)
 {
     if (!Tools::IsPtrValid(proj) || outSize < 2)
@@ -208,7 +235,12 @@ inline void TrackPlacable(void *proj, PlacableRoute route = PlcRouteTick)
     }
 
     const uintptr_t base = (uintptr_t)proj;
-    if (*(bool *)(base + PlacableCfg::ExplodedOff) || *(bool *)(base + PlacableCfg::DestroyedOff)) {
+    bool exploded = false;
+    bool destroyed = false;
+    if (!PlacableReadBool(base, PlacableCfg::ExplodedOff, exploded) ||
+        !PlacableReadBool(base, PlacableCfg::DestroyedOff, destroyed))
+        return;
+    if (exploded || destroyed) {
         std::lock_guard<std::mutex> lock(g_PlacableMutex);
         g_Placables.erase(base);
         return;
@@ -227,7 +259,9 @@ inline void TrackPlacable(void *proj, PlacableRoute route = PlcRouteTick)
     g_placableDiag.classified++;
     PlacableRememberClass(className);
 
-    const int camp = *(int *)(base + PlacableCfg::OwnerCampOff);
+    int camp = 0;
+    if (!PlacableReadInt(base, PlacableCfg::OwnerCampOff, camp))
+        return;
 
     std::lock_guard<std::mutex> lock(g_PlacableMutex);
     PlacableInfo &info = g_Placables[base];
@@ -257,12 +291,14 @@ inline Vector3 PlacablePosFromCollider(void *proj)
     if (!Tools::IsPtrValid(proj))
         return Vector3::zero();
 
-    uintptr_t actor = *(uintptr_t *)((uintptr_t)proj + PlacableCfg::GrenadeActorOff);
-    if (!Tools::IsPtrValid((void *)actor))
+    uintptr_t actor = 0;
+    if (!PlacableReadPtr((uintptr_t)proj, PlacableCfg::GrenadeActorOff, actor) ||
+        !Tools::IsPtrValid((void *)actor))
         return Vector3::zero();
 
-    uintptr_t collider = *(uintptr_t *)(actor + PlacableCfg::HitColliderOff);
-    if (!Tools::IsPtrValid((void *)collider))
+    uintptr_t collider = 0;
+    if (!PlacableReadPtr(actor, PlacableCfg::HitColliderOff, collider) ||
+        !Tools::IsPtrValid((void *)collider))
         return Vector3::zero();
 
     using GetTransformFn = void *(*)(void *);
@@ -340,11 +376,13 @@ inline int PlacableLocalCamp()
     if (!Tools::IsPtrValid(local))
         return -1;
 
-    auto info = *(uintptr_t *)((uintptr_t)local + Class_AttackableTarget_m_AttackableInfo);
-    if (!Tools::IsPtrValid((void *)info))
+    uintptr_t info = 0;
+    if (!PlacableReadPtr((uintptr_t)local, Class_AttackableTarget_m_AttackableInfo, info) ||
+        !Tools::IsPtrValid((void *)info))
         return -1;
 
-    return *(int *)(info + 0x58);
+    int camp = 0;
+    return PlacableReadInt(info, 0x58, camp) ? camp : -1;
 }
 
 inline void DrawPlacableESP(ImDrawList *draw, int width, int height, const Vector3 &localPos)
@@ -376,7 +414,11 @@ inline void DrawPlacableESP(ImDrawList *draw, int width, int height, const Vecto
                 continue;
             }
 
-            if (*(bool *)(key + PlacableCfg::ExplodedOff) || *(bool *)(key + PlacableCfg::DestroyedOff)) {
+            bool exploded = false;
+            bool destroyed = false;
+            if (!PlacableReadBool(key, PlacableCfg::ExplodedOff, exploded) ||
+                !PlacableReadBool(key, PlacableCfg::DestroyedOff, destroyed) ||
+                exploded || destroyed) {
                 it = g_Placables.erase(it);
                 continue;
             }
@@ -495,7 +537,7 @@ inline bool hook_RemoveWeaponProjectile(void *game, void *projectile)
     const bool removed = orig_RemoveWeaponProjectile
                              ? orig_RemoveWeaponProjectile(game, projectile)
                              : false;
-    if (removed && projectile != nullptr) {
+    if (removed && projectile != nullptr && Tools::IsPtrValid(projectile)) {
         std::lock_guard<std::mutex> lock(g_PlacableMutex);
         g_Placables.erase((uintptr_t)projectile);
     }
