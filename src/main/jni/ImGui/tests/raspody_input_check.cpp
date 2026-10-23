@@ -117,9 +117,16 @@ int main()
         Check(false, "the floating preview card exists");
 
     const MenuWindow menuWin = ComputeMenuWindow(io.DisplaySize);
-    // The preview card sits 12 px shorter than the menu.
-    Check(espWin && std::fabs(espWin->Size.y - (menuWin.size.y - 12.0f)) < 1.0f,
-          "the preview card is 12 px shorter than the menu");
+    const float cardH = ImMin(ImMax(raspody::S(250), menuWin.size.y * 0.56f),
+                              menuWin.size.y - 12.0f);
+    Check(espWin && std::fabs(espWin->Size.y - cardH) < 1.0f,
+          "the preview card retains its compact height");
+    Check(espWin && espWin->Size.x <= raspody::S(400) + 1.0f &&
+          espWin->Size.x < espWin->Size.y,
+          "the preview card is narrower than its height");
+    Check(espWin && std::fabs(espWin->Pos.y + espWin->Size.y * 0.5f -
+                             (menuWin.pos.y + menuWin.size.y * 0.5f)) < 1.0f,
+          "the preview card is vertically centered with the menu");
 
     ImVec2 modelMin(0.0f, 0.0f), modelSize(0.0f, 0.0f);
     if (espWin)

@@ -1334,74 +1334,59 @@ namespace NewFeatures
         return false;
     }
 
-    constexpr size_t AF_ARRAY_LEN_OFF  = 0x18;
-    constexpr size_t AF_ARRAY_DATA_OFF = 0x20;
-    constexpr int    AF_MAX_RAY_HITS   = 64;
+    constexpr int AF_MAX_RAY_HITS = 64;
 
-    struct AF_NamedHit
+    inline AF_Ray A_FireRayToTargetSingleHit(const Vector3 &start, const Vector3 &dir,
+                                             float reach, Pawn *target, Pawn *localPawn,
+                                             bool *identified, float *hitDistance)
     {
-        void *transform = nullptr;
-        float distance  = -1.0f;
-        bool  isTarget  = false;
-    };
+        if (fn_PhysicsRaycastHitOut == nullptr) return AF_Ray::Unknown;
 
-    inline bool A_FireRaycastAllNearest(void *hitArray, float maxDist,
-                                        Pawn *target, Pawn *self,
-                                        AF_NamedHit &out,
-                                        int *selfSkipped = nullptr,
-                                        int *triggerSkipped = nullptr)
-    {
-        out = AF_NamedHit{};
-        if (!Tools::IsPtrValid(hitArray)) return false;
+        Vector3 origin = start;
+        float travelled = 0.0f;
+        float remaining = reach;
+        for (int attempt = 0; attempt < AF_MAX_RAY_HITS && remaining > 0.0f; attempt++) {
+            alignas(void *) unsigned char hitBuf[AF_RAYHIT_SIZE] = {};
+            if (!fn_PhysicsRaycastHitOut(origin, dir, hitBuf, remaining))
+                return AF_Ray::Clear;
 
-        const size_t len = *(const size_t *)((const unsigned char *)hitArray + AF_ARRAY_LEN_OFF);
-        if (len > (size_t)AF_MAX_RAY_HITS) return false;
+            const float hd = *(const float *)(hitBuf + AF_RAYHIT_DISTOFF);
+            if (!(hd >= 0.0f && hd <= remaining)) return AF_Ray::Unknown;
+            const float totalDistance = travelled + hd;
+            if (hitDistance != nullptr) *hitDistance = totalDistance;
 
-        const unsigned char *data = (const unsigned char *)hitArray + AF_ARRAY_DATA_OFF;
-        bool taken[AF_MAX_RAY_HITS] = {};
-        const float distCeiling = maxDist + A_FireTune::kRayReach + 0.01f;
-
-        for (size_t n = 0; n < len; n++) {
-            int best = -1;
-            float bestDist = 0.0f;
-            for (size_t i = 0; i < len; i++) {
-                if (taken[i]) continue;
-                const float hd = *(const float *)(data + i * AF_RAYHIT_SIZE + AF_RAYHIT_DISTOFF);
-                if (!(hd >= 0.0f) || hd > distCeiling) {
-                    return false;
-                }
-                if (best < 0 || hd < bestDist) { best = (int)i; bestDist = hd; }
+            void *collider = A_FireHitCollider(hitBuf);
+            void *hitTransform = A_FireColliderTransform(collider);
+            if (hitTransform != nullptr && A_FireHitIsTarget(hitTransform, target)) {
+                if (identified != nullptr) *identified = true;
+                return AF_Ray::Clear;
             }
-            if (best < 0) break;
 
-            taken[best] = true;
-            const unsigned char *elem = data + (size_t)best * AF_RAYHIT_SIZE;
-            void *collider = A_FireHitCollider(elem);
-            void *hitT     = A_FireColliderTransform(collider);
-
-            if (hitT != nullptr && target != nullptr && A_FireHitIsTarget(hitT, target)) {
-                out.transform = hitT;
-                out.distance  = bestDist;
-                out.isTarget  = true;
-                return true;
-            }
-            if (hitT != nullptr && self != nullptr && A_FireHitIsTarget(hitT, self)) {
-                if (selfSkipped != nullptr) (*selfSkipped)++;
-                out = AF_NamedHit{};
-                continue;
-            }
-            if (collider != nullptr && fn_ColliderIsTrigger != nullptr && fn_ColliderIsTrigger(collider)) {
-                if (triggerSkipped != nullptr) (*triggerSkipped)++;
-                out = AF_NamedHit{};
+            const bool self = hitTransform != nullptr && localPawn != nullptr &&
+                              A_FireHitIsTarget(hitTransform, localPawn);
+            const bool trigger = !self && collider != nullptr &&
+                                 fn_ColliderIsTrigger != nullptr && fn_ColliderIsTrigger(collider);
+            if (self || trigger) {
+                if (self) g_triggerDiag.selfHitsSkipped++;
+                else g_triggerDiag.triggerHitsSkipped++;
+                const float step = hd + A_FireTune::kRayStepPast;
+                travelled += step;
+                remaining -= step;
+                origin = Vector3(start.x + dir.x * travelled,
+                                 start.y + dir.y * travelled,
+                                 start.z + dir.z * travelled);
+                if (hitDistance != nullptr) *hitDistance = -1.0f;
                 continue;
             }
 
-            out.transform = hitT;
-            out.distance  = bestDist;
-            return true;
+            if (hitTransform == nullptr) return AF_Ray::Unknown;
+            if (totalDistance <= A_FireTune::kSelfExclusion && A_FireGameSaysVisible(target)) {
+                g_triggerDiag.occOverrides++;
+                return AF_Ray::Clear;
+            }
+            return AF_Ray::Blocked;
         }
-        out = AF_NamedHit{};
-        return true;
+        return remaining <= 0.0f ? AF_Ray::Clear : AF_Ray::Unknown;
     }
 
     inline AF_Ray A_FireRayToTarget(const Vector3 &from, const Vector3 &to, Pawn *target,
@@ -1425,71 +1410,9 @@ namespace NewFeatures
         const float span = dist - stem;
         if (!(span >= 0.01f)) return AF_Ray::Clear;
 
-        if (fn_PhysicsRaycastAll != nullptr) {
-            const float reach = span + A_FireTune::kRayReach;
-            void *arr = fn_PhysicsRaycastAll(start, dir, reach);
-            AF_NamedHit h;
-            if (A_FireRaycastAllNearest(arr, reach, target, localPawn, h,
-                                        &g_triggerDiag.selfHitsSkipped,
-                                        &g_triggerDiag.triggerHitsSkipped)) {
-                if (h.distance < 0.0f) return AF_Ray::Clear;
-                if (hitDistance != nullptr) *hitDistance = h.distance;
-                if (h.isTarget) {
-                    if (identified != nullptr) *identified = true;
-                    return AF_Ray::Clear;
-                }
-                if (h.transform != nullptr) {
-                    if (h.distance <= A_FireTune::kSelfExclusion) {
-                        if (A_FireGameSaysVisible(target)) {
-                            g_triggerDiag.occOverrides++;
-                            return AF_Ray::Clear;
-                        }
-                    }
-                    return AF_Ray::Blocked;
-                }
-            }
-        }
-
-        if (fn_PhysicsRaycastHitOut != nullptr) {
-            unsigned char hitBuf[AF_RAYHIT_SIZE];
-            memset(hitBuf, 0, sizeof hitBuf);
-            const bool got = fn_PhysicsRaycastHitOut(start, dir, hitBuf, span + A_FireTune::kRayReach);
-            if (!got) return AF_Ray::Clear;
-
-            const float hd = *(const float *)(hitBuf + AF_RAYHIT_DISTOFF);
-            if (hitDistance != nullptr && hd >= 0.0f && hd <= 100000.0f) *hitDistance = hd;
-
-            void *collider   = A_FireHitCollider(hitBuf);
-            void *hitTransform = A_FireColliderTransform(collider);
-            if (Tools::IsPtrValid(hitTransform)) {
-                if (A_FireHitIsTarget(hitTransform, target)) {
-                    if (identified != nullptr) *identified = true;
-                    return AF_Ray::Clear;
-                }
-                if (localPawn != nullptr && A_FireHitIsTarget(hitTransform, localPawn)) {
-                    g_triggerDiag.selfHitsSkipped++;
-                    if (A_FireGameSaysVisible(target)) {
-                        g_triggerDiag.occOverrides++;
-                        return AF_Ray::Clear;
-                    }
-                    return AF_Ray::Blocked;
-                }
-                if (collider != nullptr && fn_ColliderIsTrigger != nullptr && fn_ColliderIsTrigger(collider)) {
-                    g_triggerDiag.triggerHitsSkipped++;
-                    if (A_FireGameSaysVisible(target)) {
-                        g_triggerDiag.occOverrides++;
-                        return AF_Ray::Clear;
-                    }
-                    return AF_Ray::Blocked;
-                }
-                if (hd >= 0.0f && hd <= A_FireTune::kSelfExclusion &&
-                    A_FireGameSaysVisible(target)) {
-                    g_triggerDiag.occOverrides++;
-                    return AF_Ray::Clear;
-                }
-                return AF_Ray::Blocked;
-            }
-        }
+        const AF_Ray singleHit = A_FireRayToTargetSingleHit(start, dir,
+            span + A_FireTune::kRayReach, target, localPawn, identified, hitDistance);
+        if (singleHit != AF_Ray::Unknown) return singleHit;
 
         if (fn_PhysicsRaycastSegment != nullptr) {
             float tail = probeRadius * A_FireTune::kSurfaceFrac;
@@ -1597,20 +1520,6 @@ namespace NewFeatures
                             camPos.y + dir.y * A_FireTune::kRayStem,
                             camPos.z + dir.z * A_FireTune::kRayStem);
         const float reach = A_FireTune::kCrosshairRayMax - A_FireTune::kRayStem;
-
-        if (fn_PhysicsRaycastAll != nullptr) {
-            void *arr = fn_PhysicsRaycastAll(start, dir, reach);
-            AF_NamedHit h;
-            if (A_FireRaycastAllNearest(arr, reach,
-                                        nullptr, localPawn, h,
-                                        &g_triggerDiag.selfHitsSkipped,
-                                        &g_triggerDiag.triggerHitsSkipped)) {
-                if (h.distance < 0.0f) return nullptr;
-                if (hitDistOut != nullptr) *hitDistOut = h.distance;
-                if (h.transform == nullptr) return nullptr;
-                return A_FirePawnFromHitTransform(h.transform, items, count);
-            }
-        }
 
         if (fn_PhysicsRaycastHitOut == nullptr) {
             if (symbolMissing != nullptr) *symbolMissing = true;

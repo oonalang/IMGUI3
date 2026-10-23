@@ -17,7 +17,7 @@ namespace ui_loading {
 
 static bool  g_Active   = false;
 static float g_Timer    = 0.0f;
-static float g_Duration = 9.0f;
+static float g_Duration = 3.0f;
 static float g_Time     = 0.0f;
 
 // Same card as the menu and the login screen.
