@@ -1363,7 +1363,7 @@ namespace raspody
 
             const float cardH = ImMin(ImMax(S(250), size.y * 0.56f), size.y - 12.0f);
 
-            float cardW = ImClamp(cardH * 1.30f, S(340), S(620));
+            float cardW = ImClamp(cardH * 0.85f, S(240), S(400));
 
             const float roomW = display.x - (pos.x + size.x) - S(16) - S(6);
             if (roomW >= S(150))
@@ -1378,7 +1378,7 @@ namespace raspody
                 const float sideX = pos.x + size.x + S(16);
                 if (sideX + cardW <= display.x - S(6))
                 {
-                    cardPos = ImVec2(sideX, pos.y);
+                    cardPos = ImVec2(sideX, pos.y + (size.y - cardH) * 0.5f);
                 }
                 else
                 {

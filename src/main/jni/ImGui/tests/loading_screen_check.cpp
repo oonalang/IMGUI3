@@ -109,8 +109,9 @@ int main()
     io.Fonts->AddFontDefault();
     io.Fonts->Build();
 
-    ui_loading::Start(12.0f);
+    ui_loading::Start();
     Check("the loader is active", ui_loading::IsActive());
+    Check("the loading duration is three seconds", ui_loading::g_Duration == 3.0f);
 
     const MenuWindow win = ComputeMenuWindow(io.DisplaySize);
     std::vector<Cmd> cmds;
@@ -183,9 +184,12 @@ int main()
           win.pos.y + win.size.y <= io.DisplaySize.y + 0.5f);
 
     // 6. The loader ends on its own and releases the media.
-    ui_loading::g_Timer = ui_loading::g_Duration;
+    ui_loading::Start();
+    for (int i = 0; i < 179; ++i) Frame(kStill);
+    Check("the loader remains active before three seconds", ui_loading::IsActive());
     Frame(kStill);
-    Check("the loader finishes", !ui_loading::IsActive());
+    Frame(kStill);
+    Check("the loader finishes at three seconds within one frame", !ui_loading::IsActive());
 
     ImGui::DestroyContext();
 
