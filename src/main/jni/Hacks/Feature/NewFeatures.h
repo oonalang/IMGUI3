@@ -739,7 +739,13 @@ namespace NewFeatures
             g_afireAdsLastComp = comp;
         }
 
-        if (moved) {
+        // Start a settle window the first time a transition is seen, but never
+        // extend one that is already running. A fire component that is rebuilt
+        // every tick (round transition, some weapon swaps) used to push the
+        // deadline out on every tick, so the triggerbot settled forever on the
+        // 2nd round: it never fired, and the per-tick component lookups kept the
+        // frame hitching before the game gave out.
+        if (moved && !g_afireAdsSettling) {
             g_afireAdsSettleUntil = now + kAdsSettleSeconds;
             g_afireAdsSettleMax   = now + kAdsSettleMaxSeconds;
         }
@@ -755,8 +761,11 @@ namespace NewFeatures
             return s;
         }
 
-        const bool compStable = (comp != nullptr && !moved);
-        if (!compStable || !A_FireWeaponCanFire(weapon)) {
+        // Past the settle window the weapon has settled. Only keep waiting when
+        // it genuinely cannot fire yet (mid-reload); a component pointer that
+        // merely wiggled is a rebuilt wrapper, not a scope transition, so it no
+        // longer counts against stability.
+        if (!A_FireWeaponCanFire(weapon)) {
             s.settling = true;
             g_afireAdsSettling = true;
             return s;
@@ -1128,6 +1137,7 @@ namespace NewFeatures
     inline Pawn  *g_afireLocalPawnCache     = nullptr;
     inline double g_afireLocalPawnCacheTime = -1000.0;
     inline void  *g_afireLastLocalPawn      = nullptr;
+    inline void  *g_afireLastMatchGame      = nullptr;
     inline void  *g_afireHeldWeaponCache    = nullptr;
     inline double g_afireHeldWeaponStamp    = -1000.0;
     inline double g_afireOffDiagStamp       = -1000.0;
@@ -2325,6 +2335,7 @@ namespace NewFeatures
         g_afireLocalPawnCacheTime = -1000.0;
         g_afireHeldWeaponCache    = nullptr;
         g_afireHeldWeaponStamp    = -1000.0;
+        g_afireLastMatchGame      = nullptr;
 
         g_afireAdsSettleUntil  = -1000.0;
         g_afireAdsSettleMax    = -1000.0;
@@ -2365,6 +2376,21 @@ namespace NewFeatures
                 A_FireResetForNewMatch();
             }
             g_afireLastLocalPawn = pawnInstance;
+
+            // A new match game means a new round even when the game reuses the
+            // same pawn address across rounds. The weapon and fire-component
+            // caches would still point into the torn-down round, and the next
+            // managed call would dereference a freed object - that is the crash
+            // seen entering the 2nd round. Clear them on the match change too.
+            if (fn_GameGetMatchGame != nullptr) {
+                void *mg = fn_GameGetMatchGame();
+                if (g_afireLastMatchGame != nullptr && g_afireLastMatchGame != mg) {
+                    LOGI("[NewFeatures] triggerbot: match game %p replaced %p, per-match state cleared",
+                         mg, g_afireLastMatchGame);
+                    A_FireResetForNewMatch();
+                }
+                g_afireLastMatchGame = mg;
+            }
 
             d.localPawn = pawnInstance;
             d.pawnLocalTicks++;

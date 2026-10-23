@@ -550,7 +550,11 @@ inline float DisperseBase(void * instance) {
 
 inline bool (*orig_IsUnlocked)(void *instance) = nullptr;
 inline bool IsUnlocked(void *instance) {
-    if (instance != NULL && Config.ExtraMenu.MythicAttachments)
+    // The blueprint toggle means "this player owns everything". The game asks
+    // some of these questions through a static helper that passes a null
+    // receiver; requiring an instance made those calls answer "locked", so the
+    // switch did nothing in part of the loadout.
+    if (Config.ExtraMenu.MythicAttachments)
         return true;
     return orig_IsUnlocked != nullptr ? orig_IsUnlocked(instance) : false;
 }

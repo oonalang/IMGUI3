@@ -871,15 +871,11 @@ namespace raspody
                          &Config.ExtraMenu.OutfitTintBypass);
             });
 
-            AddPageCard(p, 0, "Weapon blueprints", [&] {
-                Checkbox("Blueprints", "Show blueprint skins on weapons.",
-                         &Config.ExtraMenu.MythicAttachments);
-            });
-
-            AddPageCard(p, 1, "Attach unlock", [&] {
-                Checkbox("Attachment unlock", "Treat every attachment as owned so blueprints preview freely.",
-                         &Config.ExtraMenu.Attachment);
-                ParagraphRow("This only unlocks the preview grid. It does not grant anything in the game store.");
+            // Blueprint and Attachment unlock live on the Weapons page only;
+            // repeating them here was two extra toggles for the same two
+            // settings. The preview grid reads the same config either way.
+            AddPageCard(p, 0, "Blueprints", [&] {
+                ParagraphRow("Blueprint and attachment-unlock toggles are on the Weapons page.");
             });
         }
     }
