@@ -44,6 +44,41 @@ int main()
     fault_guard::Run([&] { ran++; });
     Check("recovery is repeatable", ran == 1);
 
+    // Nesting. A guarded section that calls another guarded section must still
+    // be guarded after the inner one returns: the inner call used to clear
+    // g_armed on the way out, so the rest of the outer section ran with the
+    // handler installed but disarmed. That is how a feature can be guarded
+    // everywhere and still crash the game when it reads an enemy.
+    int innerRan = 0;
+    const bool nestedClean = fault_guard::Run([&] {
+        fault_guard::Run([&] { innerRan++; });
+    });
+    Check("a nested guarded section runs", nestedClean && innerRan == 1);
+
+    int afterNested = 0;
+    const bool nestedFault = fault_guard::Run([&] {
+        fault_guard::Run([] {});                 // inner guard, clean
+        (void)*BadPointer();                     // fault in the OUTER section
+        afterNested++;
+    });
+    Check("the outer section stays armed after a nested one returns", !nestedFault);
+    Check("nothing after that fault ran", afterNested == 0);
+
+    int deepAfter = 0;
+    const bool deepFault = fault_guard::Run([&] {
+        fault_guard::Run([&] {
+            fault_guard::Run([] {});
+            (void)*BadPointer();
+            deepAfter++;
+        });
+        deepAfter++;
+    });
+    Check("a fault two guards deep is caught", !deepFault && deepAfter == 0);
+
+    ran = 0;
+    fault_guard::Run([&] { ran++; });
+    Check("the guard still works after nested sections", ran == 1);
+
     const uintptr_t unityBase = (uintptr_t)0x7000000000ull;
     fault_guard::SetModuleBase((void *)unityBase);
 

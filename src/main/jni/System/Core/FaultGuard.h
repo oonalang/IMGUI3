@@ -329,6 +329,23 @@ namespace fault_guard
     template <typename Fn>
     inline bool Run(Fn&& fn)
     {
+        // A guard nested inside another one inherits the outer section instead
+        // of arming a second jump buffer.
+        //
+        // Re-entering used to be harmless-looking and was not: the inner call
+        // overwrote g_jmp with its own buffer and cleared g_armed on the way
+        // out, so every line of the outer section AFTER the first inner call ran
+        // with the handler installed but disarmed - a fault there went straight
+        // to the tombstone, exactly like no guard at all. The triggerbot is full
+        // of such nests (the LOS ray calls the muzzle read, which is guarded,
+        // and the collider walk that follows is not), which is how a "guarded"
+        // feature can still kill the process the moment it looks at an enemy.
+        if (g_armed)
+        {
+            fn();
+            return true;
+        }
+
         if (!Install())
             return false;
 

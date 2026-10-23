@@ -766,6 +766,9 @@ namespace NewFeatures
     inline bool A_FireGuardedRun(const char *stage, uintptr_t key, Fn &&fn)
     {
         if (A_FireFaultCooldownActive(key)) return false;
+        // Names the triggerbot stage for a fault that is NOT contained, so a
+        // tombstone still says what the mod was doing.
+        fault_guard::NotePhase(stage);
         const bool ok = fault_guard::Run([&] { fn(); });
         if (!ok) {
             A_FireFaultStartCooldown(key);
@@ -779,6 +782,17 @@ namespace NewFeatures
             }
         }
         return ok;
+    }
+
+    // Reporting a rejected press reads ammo again; that read is as faultable as
+    // any other managed call, and it used to run bare on the tick.
+    inline bool A_FireWeaponHasAmmoSafe(void *weapon)
+    {
+        bool has = false;
+        A_FireGuardedRun("ammo check", (uintptr_t)weapon, [&] {
+            has = A_FireWeaponHasAmmo(weapon);
+        });
+        return has;
     }
 
     constexpr double kAdsSettleSeconds    = 0.10;
@@ -2271,8 +2285,13 @@ namespace NewFeatures
         void *game = fn_GameGetMatchGame();
         d.matchGame = game;
         if (!Tools::IsPtrValid(game)) return FireBlock::NoMatch;
-        if (fn_BaseGameIsPaused != nullptr && fn_BaseGameIsPaused(game))
-            return FireBlock::MatchPaused;
+        if (fn_BaseGameIsPaused != nullptr) {
+            bool paused = false;
+            A_FireGuardedRun("match paused", (uintptr_t)game, [&] {
+                paused = fn_BaseGameIsPaused(game);
+            });
+            if (paused) return FireBlock::MatchPaused;
+        }
 
         Weapon *held = nullptr;
         if (!A_FireGuardedRun("held weapon", (uintptr_t)localPawn, [&] {
@@ -2324,7 +2343,13 @@ namespace NewFeatures
             if (!ads.aiming)
                 return FireBlock::ModeNotAds;
         } else if (Config.NewFeaturesMenu.TriggerbotMode == 2) {
-            if (fn_PawnGetIsFiring == nullptr || !fn_PawnGetIsFiring(localPawn))
+            bool firing = false;
+            if (fn_PawnGetIsFiring != nullptr) {
+                A_FireGuardedRun("is firing", (uintptr_t)localPawn, [&] {
+                    firing = fn_PawnGetIsFiring(localPawn);
+                });
+            }
+            if (!firing)
                 return FireBlock::ModeNotFiring;
         }
 
@@ -2405,7 +2430,7 @@ namespace NewFeatures
         if (fn_Weapon_StartFire == nullptr) { d.testFireStatus = 4; return; }
 
         if (!A_FirePressTrigger(held)) {
-            A_FireReportBlock(A_FireWeaponHasAmmo(held)
+            A_FireReportBlock(A_FireWeaponHasAmmoSafe(held)
                 ? FireBlock::WeaponNotReady : FireBlock::NoAmmo);
             d.testFireStatus = 3;
             return;
@@ -2433,7 +2458,12 @@ namespace NewFeatures
             if (now - g_afireHeldWeaponStamp < 0.05 &&
                 tickInstance != g_afireHeldWeaponCache)
                 return;
-            Weapon *held = A_FireObjectAlive((void *)localPawn) ? localPawn->get_CurrentWeapon() : nullptr;
+            Weapon *held = nullptr;
+            if (A_FireObjectAlive((void *)localPawn)) {
+                A_FireGuardedRun("held weapon", (uintptr_t)localPawn, [&] {
+                    held = localPawn->get_CurrentWeapon();
+                });
+            }
             if (!A_FireObjectAlive((void *)held) || tickInstance != (void *)held)
                 return;
             g_afireHeldWeaponCache = (void *)held;
@@ -2511,7 +2541,12 @@ namespace NewFeatures
         if (g_afireHoldingFire && g_afireFiringOn != (void *)held)
             A_FireReleaseTriggerDeferred(nullptr);
 
-        const WeaponTraits traits   = A_FireWeaponTraits((void *)held);
+        // Same reads A_FireShouldFire already guarded, done again on the way to
+        // the press - they were bare here.
+        WeaponTraits traits{ WeaponClass::Unknown, FireMode::Unknown, false };
+        A_FireGuardedRun("weapon class", (uintptr_t)held, [&] {
+            traits = A_FireWeaponTraits((void *)held);
+        });
         const float        interval = A_FireWeaponInterval(held);
         d.lastFireInterval = interval;
         d.weaponClass      = (int)traits.cls;
@@ -2549,7 +2584,7 @@ namespace NewFeatures
                 if (fn_Weapon_StartFire != nullptr && (becameReady || stale)) {
                     if (!A_FirePressTrigger(held)) {
                         A_FireReleaseTrigger(nullptr);
-                        A_FireReportBlock(A_FireWeaponHasAmmo(held)
+                        A_FireReportBlock(A_FireWeaponHasAmmoSafe(held)
                             ? FireBlock::WeaponNotReady : FireBlock::NoAmmo);
                         s_dbgTriggerState = 0;
                         g_afireInTick = false;
@@ -2610,7 +2645,7 @@ namespace NewFeatures
 
         if (!A_FirePressTrigger(held)) {
             A_FireReleaseTrigger(nullptr);
-            A_FireReportBlock(A_FireWeaponHasAmmo(held)
+            A_FireReportBlock(A_FireWeaponHasAmmoSafe(held)
                 ? FireBlock::WeaponNotReady : FireBlock::NoAmmo);
             s_dbgTriggerState = 0;
             g_afireInTick = false;

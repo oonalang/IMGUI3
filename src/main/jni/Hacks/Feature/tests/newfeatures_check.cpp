@@ -68,6 +68,23 @@ int main()
     Check(NewFeatures::A_FireGuardedRun("clean", 3, [&] { ran++; }),
           "other keys are unaffected by the cooldown");
 
+    // The LOS ray guards its muzzle read, and the collider walk after it runs
+    // inside the caller's guard. The inner call used to disarm the outer one,
+    // so that walk was unprotected - the shape of "guarded everywhere and the
+    // game still dies when it looks at a bot".
+    int afterNested = 0;
+    Check(!NewFeatures::A_FireGuardedRun("outer", 4, [&] {
+              NewFeatures::A_FireGuardedRun("muzzle position", 5, [&] { ran++; });
+              (void)*(volatile int *)0;      // fault in the outer section
+              afterNested++;
+          }),
+          "the outer guard still catches a fault after a nested one returns");
+    Check(afterNested == 0, "the outer section stopped at the fault");
+    int nestedRetried = 0;
+    Check(!NewFeatures::A_FireGuardedRun("outer", 4, [&] { nestedRetried++; }) &&
+              nestedRetried == 0,
+          "the outer key cools down after a nested-section fault");
+
     Check(aim_lock::LockGuardedRun("lock clean", 10, [&] { ran++; }),
           "aim lock guard runs clean bodies");
     Check(!aim_lock::LockGuardedRun("lock fault", 11, [&] {
