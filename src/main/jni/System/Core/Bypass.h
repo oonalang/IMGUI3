@@ -43,6 +43,17 @@ namespace bypass_raven
         0x470A04,
         0x4AFC1C,
         0x4F9DDC,
+        0x1,
+        0x10B,
+        0x1F3078,
+        0x2BE47C,
+        0x2D7B5C,
+        0x2E8964,
+        0x404444,
+        0x448E68,
+        0x4987A8,
+        0x4A9A00,
+        0x4EDAD8,
     };
 
     // Redirected to hook_bypass().
