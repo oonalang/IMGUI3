@@ -15,6 +15,7 @@
 #include "../../foxcheats/include/ScanEngine.hpp"
 #include "../../Includes/Utils.h"
 #include "../../Includes/Macros.h"
+#include "../../System/Core/FaultGuard.h"
 #include "../StructGame/StructGame.h"
 #include "AimLock.h"
 
@@ -720,6 +721,66 @@ namespace NewFeatures
             std::chrono::steady_clock::now().time_since_epoch()).count();
     }
 
+    // ------------------------------------------------------------------
+    // Fault guard for the reads the triggerbot makes into enemy state.
+    //
+    // A pawn that is spawning or despawning leaves pointers that are still
+    // inside mapped pages, so IsPtrValid() answers "fine" and the game's own
+    // getter then walks the torn object and faults. That is what killed the
+    // process the moment an enemy appeared: the scan touched one bad pawn -
+    // or one bad collider on the way to it - and the fault took the game with
+    // it. Every read into a target now runs under fault_guard, the pattern the
+    // skeleton ESP already uses for the same failure: a fault costs that one
+    // call, the pawn or weapon is skipped for 1.5 s, and the stage is logged
+    // so a repeat report names the call that faulted instead of "POOF".
+    // ------------------------------------------------------------------
+    struct A_FireFaultEntry
+    {
+        uintptr_t key;
+        double    until;
+    };
+    inline A_FireFaultEntry g_afireFaults[16] = {};
+    inline int              g_afireFaultNext = 0;
+    inline std::atomic<int> g_afireFaultCount{0};
+    inline const char *g_afireLastFaultStage = "idle";
+    inline double      g_afireLastFaultTime  = -1000.0;
+
+    inline bool A_FireFaultCooldownActive(uintptr_t key)
+    {
+        if (key == 0) return false;
+        const double now = A_FireNow();
+        for (int i = 0; i < 16; i++)
+            if (g_afireFaults[i].key == key && now < g_afireFaults[i].until)
+                return true;
+        return false;
+    }
+
+    inline void A_FireFaultStartCooldown(uintptr_t key)
+    {
+        g_afireFaults[g_afireFaultNext].key   = key;
+        g_afireFaults[g_afireFaultNext].until = A_FireNow() + 1.5;
+        g_afireFaultNext = (g_afireFaultNext + 1) % 16;
+    }
+
+    template <typename Fn>
+    inline bool A_FireGuardedRun(const char *stage, uintptr_t key, Fn &&fn)
+    {
+        if (A_FireFaultCooldownActive(key)) return false;
+        const bool ok = fault_guard::Run([&] { fn(); });
+        if (!ok) {
+            A_FireFaultStartCooldown(key);
+            g_afireFaultCount.fetch_add(1, std::memory_order_relaxed);
+            const double now = A_FireNow();
+            if (stage != g_afireLastFaultStage || now - g_afireLastFaultTime >= 5.0) {
+                LOGE("[NewFeatures] triggerbot: native fault during '%s' (key %p) - skipped for 1.5s",
+                     stage, (void *)key);
+                g_afireLastFaultStage = stage;
+                g_afireLastFaultTime  = now;
+            }
+        }
+        return ok;
+    }
+
     constexpr double kAdsSettleSeconds    = 0.10;
     constexpr double kAdsSettleMaxSeconds = 0.35;
     inline double    g_afireAdsSettleUntil = -1000.0;
@@ -746,7 +807,10 @@ namespace NewFeatures
         const bool trace = g_afireAdsTraceActive ||
             (Config.NewFeaturesMenu.TriggerbotMode == 1 && g_afireAdsFireTracePending);
         if (trace) LOGI("[NewFeatures][ADS] start trigger weapon=%p", weapon);
-        fn_Weapon_StartFire(weapon);
+        const bool started = A_FireGuardedRun("start fire", (uintptr_t)weapon, [&] {
+            fn_Weapon_StartFire(weapon);
+        });
+        if (!started) return false;
         if (trace) {
             LOGI("[NewFeatures][ADS] start complete");
             g_afireAdsFireTracePending = false;
@@ -1013,6 +1077,7 @@ namespace NewFeatures
         int    scans;
         int    enemyCount;
         int    targets;
+        int    faults;
         int    fires;
         int    losBlocked;
         int    losBlockedScan;
@@ -1737,43 +1802,62 @@ namespace NewFeatures
             bool symbolMissing = false;
             float centreHitDist = -1.0f;
             Vector3 centreHitPoint = Vector3::zero();
-            Pawn *centred = A_FireCrosshairRayPawn(camPos, dotRayDir, items, count, localPawn,
-                &centreHitDist, &symbolMissing, &centreHitPoint);
+            Pawn *centred = nullptr;
+            const bool raySafe = A_FireGuardedRun("crosshair ray", (uintptr_t)cam, [&] {
+                centred = A_FireCrosshairRayPawn(camPos, dotRayDir, items, count, localPawn,
+                    &centreHitDist, &symbolMissing, &centreHitPoint);
+            });
+            if (!raySafe) {
+                d.rayUnknown = true;
+                d.dotRayDeclined++;
+            }
             d.crosshairHitDist = centreHitDist;
             d.crosshairPawn = (unsigned)(uintptr_t)centred;
             if (symbolMissing) d.rayUnknown = true;
-            if (centred != nullptr && centred != localPawn &&
-                !IsSameTeamAcceptBots(localPawn, centred) && A_FirePawnAlive(centred)) {
-                bool identified = false;
-                float muzzleHitDist = -1.0f;
-                const AF_Ray los = A_FireRayToTarget(camPos, centreHitPoint, centred,
-                    0.0f, localPawn, &identified, &muzzleHitDist);
-                d.lastLosHitDist = muzzleHitDist;
-                if (los == AF_Ray::Clear) {
-                    const A_FireAimPoint ap = A_FireAimPointFor(centred);
-                    out.pawn = centred;
-                    out.aim = ap;
-                    out.aimPoint = centreHitPoint;
-                    out.screenPos = Vector3::zero();
-                    w2s(centreHitPoint, out.screenPos);
-                    out.pxOffset = 0.0f;
-                    out.worldDist = centreHitDist;
-                    out.predicted = centreHitPoint;
-                    out.path = 0;
-                    out.visible = true;
-                    out.visibilityIdentified = true;
-                    d.lastAimPx = 0.0f;
-                    d.lastWorldDist = centreHitDist;
-                    d.aimPath = 0;
-                    d.projKeepFrac = 0.0f;
-                    d.raysIdentified++;
-                    g_afireLosOk = true;
-                    d.targets++;
+            if (centred != nullptr && centred != localPawn) {
+                bool confirmed = false;
+                const bool targetSafe = A_FireGuardedRun("crosshair target",
+                    (uintptr_t)centred, [&] {
+                    if (IsSameTeamAcceptBots(localPawn, centred) || !A_FirePawnAlive(centred))
+                        return;
+                    bool identified = false;
+                    float muzzleHitDist = -1.0f;
+                    const AF_Ray los = A_FireRayToTarget(camPos, centreHitPoint, centred,
+                        0.0f, localPawn, &identified, &muzzleHitDist);
+                    d.lastLosHitDist = muzzleHitDist;
+                    if (los == AF_Ray::Clear) {
+                        const A_FireAimPoint ap = A_FireAimPointFor(centred);
+                        out.pawn = centred;
+                        out.aim = ap;
+                        out.aimPoint = centreHitPoint;
+                        out.screenPos = Vector3::zero();
+                        w2s(centreHitPoint, out.screenPos);
+                        out.pxOffset = 0.0f;
+                        out.worldDist = centreHitDist;
+                        out.predicted = centreHitPoint;
+                        out.path = 0;
+                        out.visible = true;
+                        out.visibilityIdentified = true;
+                        d.lastAimPx = 0.0f;
+                        d.lastWorldDist = centreHitDist;
+                        d.aimPath = 0;
+                        d.projKeepFrac = 0.0f;
+                        d.raysIdentified++;
+                        g_afireLosOk = true;
+                        d.targets++;
+                        confirmed = true;
+                        return;
+                    }
+                    dotBlock = FireBlock::NoLineOfSight;
+                    d.dotRayDeclined++;
+                    d.rayUnknown = los == AF_Ray::Unknown;
+                });
+                if (!targetSafe) {
+                    dotBlock = FireBlock::NoLineOfSight;
+                    d.rayUnknown = true;
+                } else if (confirmed) {
                     return FireBlock::Fired;
                 }
-                dotBlock = FireBlock::NoLineOfSight;
-                d.dotRayDeclined++;
-                d.rayUnknown = los == AF_Ray::Unknown;
             }
         }
         if (dotRayGate) {
@@ -1804,11 +1888,12 @@ namespace NewFeatures
             Pawn *p = items[i];
 
             if (!A_FireListObjectAlive((void *)p)) continue;
-            if (p == localPawn) continue;
-            if (sameTeamGate(p)) continue;
-            if (!A_FirePawnAlive(p)) continue;
+            A_FireGuardedRun("enemy candidate", (uintptr_t)p, [&] {
+            if (p == localPawn) return;
+            if (sameTeamGate(p)) return;
+            if (!A_FirePawnAlive(p)) return;
             const A_FireAimPoint ap = A_FireAimPointFor(p);
-            if (!ap.valid) continue;
+            if (!ap.valid) return;
 
             float d2 = -1.0f;
             Vector3 scChest = Vector3::zero();
@@ -1851,16 +1936,16 @@ namespace NewFeatures
                     if (d2 < 0.0f || headSq < d2) d2 = headSq;
                 }
             }
-            if (d2 < 0.0f) continue;
+            if (d2 < 0.0f) return;
             if (d.closestPx < 0.0f || d2 < d.closestPx) d.closestPx = d2;
-            if (d2 > allowSq) continue;
+            if (d2 > allowSq) return;
             const float pxOffset = sqrtf(d2);
             int slot = n;
             if (n >= MAX_CANDIDATES) {
                 slot = 0;
                 for (int k = 1; k < n; k++)
                     if (cands[k].pxOffset > cands[slot].pxOffset) slot = k;
-                if (pxOffset >= cands[slot].pxOffset) continue;
+                if (pxOffset >= cands[slot].pxOffset) return;
             } else {
                 n++;
             }
@@ -1869,12 +1954,16 @@ namespace NewFeatures
             cands[slot].pxOffset  = pxOffset;
             cands[slot].worldDist = candDist;
             cands[slot].velocity  = GetPawnVelocity(p);
+            });
         }
         d.candidates = n;
         if (n <= 0) return FireBlock::NoEnemyInZone;
 
         AF_FriendProbe friendProbes[64];
-        const int friendCount = A_FireCollectFriendProbes(localPawn, friendProbes, 64);
+        int friendCount = 0;
+        A_FireGuardedRun("team probe", (uintptr_t)localPawn, [&] {
+            friendCount = A_FireCollectFriendProbes(localPawn, friendProbes, 64);
+        });
 
         int order[MAX_CANDIDATES];
         for (int i = 0; i < n; i++) order[i] = i;
@@ -1896,14 +1985,20 @@ namespace NewFeatures
 
         constexpr bool checkSpread = true;
         constexpr bool wantLead    = true;
-        const float spreadPx   = A_FireSpreadPx(weapon, focalPx, checkSpread);
+        float spreadPx = 0.0f;
+        A_FireGuardedRun("weapon spread", (uintptr_t)weapon, [&] {
+            spreadPx = A_FireSpreadPx(weapon, focalPx, checkSpread);
+        });
         d.lastSpreadPx = spreadPx;
 
         bool blockedLos = false, blockedFriend = false;
 
         bool speedKnown = false;
         A_FireAdsTrace("scan bullet speed");
-        const float bulletSpeed = GetWeaponBulletSpeed(weapon, &speedKnown);
+        float bulletSpeed = A_FireTune::kAssumedSpeed;
+        A_FireGuardedRun("bullet speed", (uintptr_t)weapon, [&] {
+            bulletSpeed = GetWeaponBulletSpeed(weapon, &speedKnown);
+        });
 
         for (int oi = 0; oi < n; oi++) {
             A_FireAdsTrace("scan line of sight");
@@ -1958,8 +2053,11 @@ namespace NewFeatures
                 d.losChecked++;
                 bool identified = false;
                 float hitDistance = -1.0f;
-                const AF_Ray result = A_FireRayToTarget(camPos, points[best], c.pawn,
-                    radii[best], localPawn, &identified, &hitDistance);
+                AF_Ray result = AF_Ray::Unknown;
+                A_FireGuardedRun("line of sight", (uintptr_t)c.pawn, [&] {
+                    result = A_FireRayToTarget(camPos, points[best], c.pawn,
+                        radii[best], localPawn, &identified, &hitDistance);
+                });
                 if (result == AF_Ray::Blocked) los = AF_Ray::Blocked;
                 if (result != AF_Ray::Clear) continue;
                 los = result;
@@ -1993,11 +2091,17 @@ namespace NewFeatures
                     lead = true;
                 }
 
-                if (lead && A_FireRayToTarget(camPos, predicted, c.pawn, probeRadius,
-                                              localPawn) != AF_Ray::Clear) {
-                    d.leadPathBlocked = true;
-                    lead = false;
-                    predicted = probePoint;
+                if (lead) {
+                    bool leadClear = false;
+                    A_FireGuardedRun("lead path", (uintptr_t)c.pawn, [&] {
+                        leadClear = A_FireRayToTarget(camPos, predicted, c.pawn,
+                                                      probeRadius, localPawn) == AF_Ray::Clear;
+                    });
+                    if (!leadClear) {
+                        d.leadPathBlocked = true;
+                        lead = false;
+                        predicted = probePoint;
+                    }
                 }
             }
 
@@ -2169,7 +2273,9 @@ namespace NewFeatures
                 A_FireStillHoldsWeapon(g_afireFiringOn) &&
                 A_FireObjectAlive(g_afireFiringOn)) {
                 A_FireAdsTrace("release trigger");
-                fn_Weapon_StopFire(g_afireFiringOn, false);
+                A_FireGuardedRun("stop fire", (uintptr_t)g_afireFiringOn, [&] {
+                    fn_Weapon_StopFire(g_afireFiringOn, false);
+                });
                 A_FireAdsTrace("release complete");
             }
             g_afireHoldingFire = false;
@@ -2251,6 +2357,7 @@ namespace NewFeatures
 
         d.hookCalls++;
         d.scans++;
+        d.faults = g_afireFaultCount.load(std::memory_order_relaxed);
 
         d.aimPath = 1;
         d.crosshairPawn = 0;

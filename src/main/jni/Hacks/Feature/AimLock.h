@@ -5,6 +5,7 @@
 
 #include "Init_Hacks.h"
 #include "../../IL2CppSDKGenerator/BasicStructs/Quaternion.h"
+#include "../../System/Core/FaultGuard.h"
 
 // Aim Lock.
 //
@@ -43,6 +44,56 @@ namespace aim_lock
     {
         return std::chrono::duration<double>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    // Same failure the triggerbot guards against: a spawning or despawning
+    // pawn leaves a head-bone / aim-rotation pointer inside a mapped page, so
+    // IsPtrValid() passes and the game's own get_position() then walks the torn
+    // object - which is a crash the moment an enemy appears. Each target is
+    // read under fault_guard and a pawn that faulted is skipped for 1.5 s.
+    struct LockFaultEntry
+    {
+        uintptr_t key;
+        double    until;
+    };
+    inline LockFaultEntry g_lockFaults[16] = {};
+    inline int            g_lockFaultNext = 0;
+    inline const char *   g_lockLastFaultStage = "idle";
+    inline double         g_lockLastFaultTime  = -1000.0;
+
+    inline bool LockFaultCooldownActive(uintptr_t key)
+    {
+        if (key == 0) return false;
+        const double now = Now();
+        for (int i = 0; i < 16; i++)
+            if (g_lockFaults[i].key == key && now < g_lockFaults[i].until)
+                return true;
+        return false;
+    }
+
+    inline void LockFaultStartCooldown(uintptr_t key)
+    {
+        g_lockFaults[g_lockFaultNext].key   = key;
+        g_lockFaults[g_lockFaultNext].until = Now() + 1.5;
+        g_lockFaultNext = (g_lockFaultNext + 1) % 16;
+    }
+
+    template <typename Fn>
+    inline bool LockGuardedRun(const char *stage, uintptr_t key, Fn &&fn)
+    {
+        if (LockFaultCooldownActive(key)) return false;
+        const bool ok = fault_guard::Run([&] { fn(); });
+        if (!ok) {
+            LockFaultStartCooldown(key);
+            const double now = Now();
+            if (stage != g_lockLastFaultStage || now - g_lockLastFaultTime >= 5.0) {
+                LOGE("[AimLock] native fault during '%s' (key %p) - skipped for 1.5s",
+                     stage, (void *)key);
+                g_lockLastFaultStage = stage;
+                g_lockLastFaultTime  = now;
+            }
+        }
+        return ok;
     }
 
     inline Vector3 CameraForward(void *camTransform)
@@ -146,7 +197,7 @@ namespace aim_lock
     // Everything a pawn has to satisfy to be turn-to material: alive, an enemy,
     // with a readable head, inside range, and - in crosshair mode - inside both
     // the aim cone and the circle that is actually drawn.
-    inline bool CandidateOk(Pawn *localPawn, Pawn *pawn, const Vector3 &eye,
+    inline bool CandidateOkInner(Pawn *localPawn, Pawn *pawn, const Vector3 &eye,
                             const Vector3 &forward, Camera *cam,
                             Vector3 &point, float &distance)
     {
@@ -173,6 +224,18 @@ namespace aim_lock
 
         distance = dist;
         return true;
+    }
+
+    inline bool CandidateOk(Pawn *localPawn, Pawn *pawn, const Vector3 &eye,
+                            const Vector3 &forward, Camera *cam,
+                            Vector3 &point, float &distance)
+    {
+        if (pawn == nullptr || pawn == localPawn) return false;
+        bool ok = false;
+        const bool safe = LockGuardedRun("aim candidate", (uintptr_t)pawn, [&] {
+            ok = CandidateOkInner(localPawn, pawn, eye, forward, cam, point, distance);
+        });
+        return safe && ok;
     }
 
     inline Pawn *PickTarget(Pawn *localPawn, const Vector3 &eye, const Vector3 &forward,
@@ -318,7 +381,10 @@ namespace aim_lock
             (void (*)(uintptr_t, Quaternion))(Class_Pawn_set_AimRotation);
         if (setAim == nullptr) return;
 
-        setAim((uintptr_t)localPawn, Quaternion::LookRotation(stepped, Vector3::Up()));
+        const bool turned = LockGuardedRun("set aim rotation", (uintptr_t)localPawn, [&] {
+            setAim((uintptr_t)localPawn, Quaternion::LookRotation(stepped, Vector3::Up()));
+        });
+        if (!turned) return;
         g_turns++;
     }
 }

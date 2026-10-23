@@ -160,6 +160,23 @@ f4734ee Licence keys carry a device list, and the signing key is rotated
 
 ## Open work
 
+* **Crash the moment an enemy appeared (triggerbot).** Reported on training grounds:
+  empty range, no crash; spawn one target, instant death. Diagnosed against the 1.6.57
+  dump (every RVA and field offset the triggerbot uses was checked against
+  `dump 1.6.57.cs` and all match), so the offsets were not the cause. The scan's
+  per-enemy reads - `get_HeadPosition`, `Transform.get_position` on the head bone,
+  `getTeamId`, the crosshair raycast's collider resolution, `Weapon.StartFire` - walked
+  pawns that are mid-spawn/despawn: their pointers still sit inside mapped pages, so
+  `IsPtrValid()` says "fine" and the game's own getter faults on the torn object. The
+  skeleton ESP already guards this exact failure with `fault_guard`; the triggerbot
+  (rewritten in `a3ec950`, never device-tested) did not. Fixed in the working tree:
+  every read into a target in `NewFeatures.h` and `AimLock.h` (head-bone walk) now runs
+  under `fault_guard::Run` with a per-pawn/per-weapon 1.5 s cooldown and a logged stage
+  (`native fault during '<stage>'`), and `TriggerbotDiag` gained a `faults` counter.
+  Host check: `src/main/jni/Hacks/Feature/tests/newfeatures_check.cpp` (12 checks, all
+  passing). **Not verified on device yet**; if it ever faults again, one logcat line
+  names the exact stage.
+
 * **Startup crash at roughly 50 seconds.** A native crash that arrives about the time the
   game's guest/login buttons appear, before the panel sign-in. Not diagnosed: a native
   tombstone is required and nothing in the tree identifies the faulting offset. From a PC:
