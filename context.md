@@ -212,6 +212,26 @@ f4734ee Licence keys carry a device list, and the signing key is rotated
 * **Crash while scoping back to back with ADS only.** Reported in the mission, not
   reproduced or traced.
 
+* **Triggerbot never fired in ADS-only mode; crashed once it did.** Reported after the
+  `e84f09e` build: `TriggerbotMode = 1`, scoped on an enemy, nothing. The dot-ray gate was
+  a hard veto - when the centre ray did not confirm a pawn the scan returned before the
+  projected-candidate path ever ran, so a ray that missed the collider (or could not be
+  cast, `honestDotRay == false`) meant no shot at all. It is now a fast path: the ray still
+  fires immediately when it confirms, and otherwise the candidates are evaluated as they
+  are with the gate off. The second half of the report - a crash when the gate was turned
+  off and the triggerbot finally fired - points at the paths that only run on a shot, so
+  `WeaponHandlerByAstral` (the aim assist inside the bullet hooks) and the per-tick weapon
+  reads (`held weapon`, `weapon state`, `weapon class`, `fire interval`, `muzzle position`,
+  `camera forward`, `crosshair projection`, `camera axes`) now run under `fault_guard`
+  too. Not verified on device.
+
+* **A character turning invisible.** Not explained. Nothing in the mod hides a pawn: the
+  only `GameObject.SetActive` interference is the no-smoke hook, which is gated on names
+  containing `smoke`/`smog`/`smk`, and the armour and BR-class ESP only draw. The skin
+  system is the remaining suspect - it rewrites config asset ids, and a skin whose asset
+  the client does not have can render as nothing. Needs the user to say whose model
+  vanishes (own or enemy) and whether it still happens with skins off.
+
 * **Placed ESP does not draw. Fixed, not yet verified on device.** Root cause found against
   the 1.6.57 dump: the tracking code read the bool at `WeaponProjectile + 0xA1` as "this
   projectile has already exploded". 0xA1 is `bHasExplode`, the config flag that says the

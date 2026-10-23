@@ -1125,6 +1125,11 @@ template<typename ThisType, typename... Args>
 void WeaponHandlerByAstral(ThisType thiz, Vector3 startPos, Vector3& dir, Args... args) {
     if (!Config.Aim.Aimbot360 && !Config.Aim.AimSilent) return;
 
+    // This runs on a bullet that is already leaving, reached from the game's
+    // own fire path. A torn pawn read here faulted the process the instant the
+    // triggerbot actually fired; a fault now leaves the bullet exactly as the
+    // game aimed it.
+    fault_guard::Run([&] {
     auto get_MatchGame = ((uintptr_t(*)())(Class_Gameplay_get_MatchGame))();
     if (!Tools::IsPtrValid((void*)get_MatchGame)) return;
 
@@ -1167,6 +1172,7 @@ void WeaponHandlerByAstral(ThisType thiz, Vector3 startPos, Vector3& dir, Args..
             }
         }
     }
+    });
 }
 
 void WeaponFireComponent_Instant_CreateBulletLine(uintptr_t thiz, Vector3 startPos, Vector3 dir, bool isDualFire) {

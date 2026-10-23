@@ -936,14 +936,18 @@ namespace NewFeatures
     {
         float interval = 0.0f;
         if (fn_WeaponRealFireInterval != nullptr && Tools::IsPtrValid(weapon)) {
-            const float v = fn_WeaponRealFireInterval(weapon);
-            if (v > 0.0f && v < 10.0f) interval = v;
+            A_FireGuardedRun("fire interval", (uintptr_t)weapon, [&] {
+                const float v = fn_WeaponRealFireInterval(weapon);
+                if (v > 0.0f && v < 10.0f) interval = v;
+            });
         }
         if (interval <= 0.0f) {
             static auto getFireInterval = (float (*)(void *))UnityRva(RVA::Weapon_get_FireInterval);
             if (getFireInterval != nullptr && Tools::IsPtrValid(weapon)) {
-                const float v = getFireInterval(weapon);
-                if (v > 0.0f && v < 10.0f) interval = v;
+                A_FireGuardedRun("fire interval", (uintptr_t)weapon, [&] {
+                    const float v = getFireInterval(weapon);
+                    if (v > 0.0f && v < 10.0f) interval = v;
+                });
             }
         }
         if (!(interval > 0.0f)) interval = A_FireTune::kMinFireInterval;
@@ -1247,8 +1251,11 @@ namespace NewFeatures
                                    const Vector3 &aimDir, float fallbackStem)
     {
         if (fn_PawnGetFirePosition != nullptr && A_FireObjectAlive((void *)localPawn)) {
-            const Vector3 muzzle = fn_PawnGetFirePosition(localPawn);
-            if (muzzle.x != 0.0f || muzzle.y != 0.0f || muzzle.z != 0.0f) {
+            Vector3 muzzle = Vector3::zero();
+            const bool muzzleSafe = A_FireGuardedRun("muzzle position", (uintptr_t)localPawn, [&] {
+                muzzle = fn_PawnGetFirePosition(localPawn);
+            });
+            if (muzzleSafe && (muzzle.x != 0.0f || muzzle.y != 0.0f || muzzle.z != 0.0f)) {
                 const float dx = muzzle.x - eye.x;
                 const float dy = muzzle.y - eye.y;
                 const float dz = muzzle.z - eye.z;
@@ -1283,14 +1290,25 @@ namespace NewFeatures
             plainCentre = true;
             return;
         }
-        out = fn_TransformGetForward(camTransform);
+        if (!A_FireGuardedRun("camera forward", (uintptr_t)camTransform, [&] {
+                out = fn_TransformGetForward(camTransform);
+            })) {
+            out = Vector3::zero();
+            plainCentre = true;
+            return;
+        }
 
         float cx = 0.0f, cy = 0.0f;
         CrosshairCentrePx(cx, cy);
 
         if (fn_ScreenToWorldPoint != nullptr && A_FireObjectAlive(cam)) {
-            const Vector3 world =
-                fn_ScreenToWorldPoint(cam, Vector3(cx, cy, A_FireTune::kCrosshairRayMax));
+            Vector3 world = Vector3::zero();
+            if (!A_FireGuardedRun("crosshair projection", (uintptr_t)cam, [&] {
+                    world = fn_ScreenToWorldPoint(cam, Vector3(cx, cy, A_FireTune::kCrosshairRayMax));
+                })) {
+                plainCentre = true;
+                return;
+            }
             const Vector3 dir(world.x - camPos.x,
                               world.y - camPos.y,
                               world.z - camPos.z);
@@ -1311,8 +1329,12 @@ namespace NewFeatures
         if (fn_TransformGetRight != nullptr && fn_TransformGetUp != nullptr) {
             const float focalPx = A_FireFocalPx();
             if (focalPx > 1.0f) {
-                const Vector3 right = fn_TransformGetRight(camTransform);
-                const Vector3 up    = fn_TransformGetUp(camTransform);
+                Vector3 right = Vector3::zero(), up = Vector3::zero();
+                if (!A_FireGuardedRun("camera axes", (uintptr_t)camTransform, [&] {
+                        right = fn_TransformGetRight(camTransform);
+                        up    = fn_TransformGetUp(camTransform);
+                    }))
+                    return;
                 const Vector3 dir = out + right * (dxPx / focalPx) - up * (dyPx / focalPx);
                 if (Vector3::Magnitude(dir) > 1.0e-6f) {
                     out = Vector3::Normalized(dir);
@@ -1860,10 +1882,13 @@ namespace NewFeatures
                 }
             }
         }
-        if (dotRayGate) {
-            if (!honestDotRay) d.rayUnknown = true;
-            return dotBlock;
-        }
+        // The centre ray is a fast path, not a veto. It used to return here,
+        // so a ray that missed the collider - or that could not be cast at all
+        // - meant the triggerbot never fired even with an enemy filling the
+        // crosshair. The projected candidates below still have to pass their
+        // own zone and line-of-sight checks, so falling through only adds the
+        // shots the ray could not prove.
+        if (dotRayGate && !honestDotRay) d.rayUnknown = true;
 
         // A centre-ray miss is not proof that the visible body is outside the
         // crosshair. Fall back to projected candidates and LOS validation.
@@ -2178,6 +2203,7 @@ namespace NewFeatures
 
         if (blockedFriend)   return FireBlock::FriendlyInLine;
         if (blockedLos)      return FireBlock::NoLineOfSight;
+        if (dotRayGate && dotBlock == FireBlock::NoLineOfSight) return dotBlock;
         return FireBlock::NoEnemyInZone;
     }
 
@@ -2198,7 +2224,11 @@ namespace NewFeatures
         if (fn_BaseGameIsPaused != nullptr && fn_BaseGameIsPaused(game))
             return FireBlock::MatchPaused;
 
-        Weapon *held = localPawn->get_CurrentWeapon();
+        Weapon *held = nullptr;
+        if (!A_FireGuardedRun("held weapon", (uintptr_t)localPawn, [&] {
+                held = localPawn->get_CurrentWeapon();
+            }))
+            return FireBlock::NoWeapon;
         d.heldWeapon = (void *)held;
         if (!A_FireObjectAlive((void *)held)) return FireBlock::NoWeapon;
 
@@ -2207,10 +2237,19 @@ namespace NewFeatures
             if (!A_FireWeaponSwitching(held))
                 d.switching = false;
         }
-        d.ammoOk    = A_FireWeaponHasAmmo(held);
-        d.canFire   = A_FireWeaponCanFire(held);
 
-        const WeaponTraits traits = A_FireWeaponTraits((void *)held);
+        bool ammoOk = false, canFire = false;
+        A_FireGuardedRun("weapon state", (uintptr_t)held, [&] {
+            ammoOk  = A_FireWeaponHasAmmo(held);
+            canFire = A_FireWeaponCanFire(held);
+        });
+        d.ammoOk  = ammoOk;
+        d.canFire = canFire;
+
+        WeaponTraits traits{ WeaponClass::Unknown, FireMode::Unknown, false };
+        A_FireGuardedRun("weapon class", (uintptr_t)held, [&] {
+            traits = A_FireWeaponTraits((void *)held);
+        });
         d.weaponClass = (int)traits.cls;
         d.holdTrigger = traits.holds;
 
@@ -2258,7 +2297,12 @@ namespace NewFeatures
     {
         Pawn *localPawn = A_FireLocalPawnFast();
         if (!A_FireObjectAlive((void *)localPawn)) return false;
-        return (void *)localPawn->get_CurrentWeapon() == weapon;
+        bool holds = false;
+        if (!A_FireGuardedRun("held weapon", (uintptr_t)localPawn, [&] {
+                holds = (void *)localPawn->get_CurrentWeapon() == weapon;
+            }))
+            return false;
+        return holds;
     }
 
     inline void A_FireReleaseTrigger(void *instance)
