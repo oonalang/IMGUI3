@@ -888,7 +888,14 @@ inline void InitializeAllHooks() {
     HOOK_LIB("libunity.so", "0xA61AA00", IsWeaponAttachmentUnlock, orig_IsWeaponAttachmentUnlock);
     HOOK_LIB("libunity.so", "0xA61AD54", IsWeaponSkinUnlock, orig_IsWeaponSkinUnlock);
 
-    mythic_attachment_system::InstallMythicAttachmentHooksFresh(m_unity);
+    // NOT installed here. Taking sixteen hooks on the game's own config and
+    // loadout constructors at init put them on the launch path for no gain: the
+    // runtime's tables are only filled by ApplyMythicAttachments, and the two
+    // collectors were not even gated on the switch, so they ran for everyone on
+    // the config-construction path from the first second of the process.
+    // EnsureRuntimeInstalled() now takes them on the first apply.
+    LOGI("[Mythic] attachment runtime is lazy (toggle=%d)",
+         (int)Config.ExtraMenu.MythicAttachments);
 
     report_block::InstallReportBlockHooks();
 
