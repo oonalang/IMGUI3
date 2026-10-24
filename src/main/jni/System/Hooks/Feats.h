@@ -904,6 +904,7 @@ inline void InitializeAllHooks() {
     anti_login::NoteLanded(anti_login::GateAutoRetry,      anti_login::orig_CanRetryAutoLogin != nullptr);
     anti_login::NoteLanded(anti_login::GateAutoStart,      anti_login::orig_CanStartAutoLogin != nullptr);
     anti_login::NoteLanded(anti_login::GateAutoMax,        anti_login::orig_GetMaxAutoLoginNum != nullptr);
+    anti_login::NoteLanded(anti_login::GateKickOut,        anti_login::orig_EnterKickOutState != nullptr);
 
     // The mythic attachment runtime (AttachmentGroupNew, AttachItem,
     // Weapon.InitOneWeaponPart and their data objects) is NOT installed here.

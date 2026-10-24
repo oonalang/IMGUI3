@@ -40,7 +40,10 @@ static int  g_retryAsked = 0;
 static int  g_startAsked = 0;
 static int  g_maxAsked = 0;
 
+static int  g_kickOuts = 0;
+
 static void *fakeExecuteRelogin(void *) { g_reloginCoroutines++; return (void *)0x99; }
+static void fakeEnterKickOut(void *) { g_kickOuts++; }
 static void fakeCheckReloginState(void *, int) { g_checkStates++; }
 static void fakeLogout(void *, bool) { g_logouts++; }
 static void fakeLobbyLogout(void *) { g_lobbyLogouts++; }
@@ -59,6 +62,7 @@ static void armOriginals()
     anti_login::orig_CanRetryAutoLogin          = fakeCanRetry;
     anti_login::orig_CanStartAutoLogin          = fakeCanStart;
     anti_login::orig_GetMaxAutoLoginNum         = fakeMaxNum;
+    anti_login::orig_EnterKickOutState          = fakeEnterKickOut;
 }
 
 static void resetCounters()
@@ -69,6 +73,10 @@ static void resetCounters()
     anti_login::g_windowUntil  = -1000.0;
     anti_login::g_windowCount  = 0;
     anti_login::g_forcedStarts = 0;
+    anti_login::g_kickOutsSuppressed = 0;
+    anti_login::g_lastKickOutAt = -1000.0;
+    anti_login::g_lobbyLogoutsSwallowed = 0;
+    g_kickOuts = 0;
 }
 
 static void CloseWindowNow()
@@ -180,9 +188,55 @@ int main()
     CHECK(g_logouts == 2);
     CHECK(anti_login::WindowOpen());
 
+    // The kick-out gate. This is the call that turns a duplicate sign-in into
+    // the client-side kick and the "Account accessed from another location"
+    // dialog, so dropping it is what keeps the account.
+    Config.ExtraMenu.AntiLogin = true;
+    resetCounters();
+    anti_login::hook_EnterKickOutState((void *)0x30);
+    CHECK(g_kickOuts == 0);                       // original NOT called
+    CHECK(anti_login::g_kickOutsSuppressed == 1);
+    CHECK(anti_login::WindowOpen());              // reclaim armed immediately
+    CHECK(anti_login::hook_CanStartAutoLogin(0, false) == true);
+
+    // The same conflict unwinding: the lobby logout is held instead of bouncing
+    // the client to the login screen.
+    anti_login::hook_OnReceiveLobbyLogout((void *)0x10);
+    CHECK(g_lobbyLogouts == 0);
+    CHECK(anti_login::g_lobbyLogoutsSwallowed == 1);
+
+    // Time-bounded, not permanent: a real logout later still goes through.
+    anti_login::g_lastKickOutAt = anti_login::Now() - (anti_login::kConflictSwallowSeconds + 1.0);
+    anti_login::hook_OnReceiveLobbyLogout((void *)0x10);
+    CHECK(g_lobbyLogouts == 1);
+
+    // The budget ends: the original runs again rather than leaving the client on
+    // a dead socket with no way out.
+    for (int i = 0; i < anti_login::kMaxKickOutSuppressions + 3; i++)
+        anti_login::hook_EnterKickOutState((void *)0x30);
+    CHECK(g_kickOuts > 0);
+    CHECK(anti_login::g_kickOutsSuppressed == anti_login::kMaxKickOutSuppressions);
+
+    // With the toggle off the gate always forwards.
+    Config.ExtraMenu.AntiLogin = false;
+    resetCounters();
+    anti_login::hook_EnterKickOutState((void *)0x30);
+    CHECK(g_kickOuts == 1);
+    CHECK(anti_login::g_kickOutsSuppressed == 0);
+    CHECK(!anti_login::WindowOpen());
+
+    // A missing original is a no-op, never a jump through null.
+    Config.ExtraMenu.AntiLogin = true;
+    anti_login::orig_EnterKickOutState = nullptr;
+    for (int i = 0; i < anti_login::kMaxKickOutSuppressions + 1; i++)
+        anti_login::hook_EnterKickOutState((void *)0x30);
+    CHECK(true);                                  // reaching here is the check
+    Config.ExtraMenu.AntiLogin = true;
+
     // Missing originals never crash and never invent a value.
     anti_login::orig_CanRetryAutoLogin  = nullptr;
     anti_login::orig_CanStartAutoLogin  = nullptr;
+    anti_login::orig_EnterKickOutState  = nullptr;
     anti_login::orig_GetMaxAutoLoginNum = nullptr;
     anti_login::orig_ExecuteReloginByRandomDelay = nullptr;
     CloseWindowNow();

@@ -274,6 +274,34 @@ f4734ee Licence keys carry a device list, and the signing key is rotated
   adb shell ls /data/tombstones/ && adb pull /data/tombstones/tombstone_00
   ```
 
+* **Anti-login: the account is still lost when a second device signs in.** Reported with
+  the game's own dialog, "Account accessed from another location. Please secure your
+  account. (0E100004)", offering only QUIT GAME. The previous version forwarded every
+  gate, so the client ran the kick it was told to run and only started reclaiming
+  afterwards - by then the session was already torn down and the dialog was up.
+
+  The missing piece was one method. `BrokerSocket.EnterKickOutState()` (RVA `0x41CA2A4`)
+  is the call that turns a duplicate sign-in into the client-side kick and that dialog;
+  nothing else in the flow does. It is now the one gate that does **not** forward while
+  the switch is on: the kick is dropped, the reclaim window opens on that same instant,
+  and the game's own relogin - delay zeroed, auto-login gates forced - re-signs in and
+  takes the session back, so the other device is the one that loses. A lobby logout
+  arriving within three seconds of a dropped kick is held too, otherwise it bounces the
+  client to the login screen and undoes the reclaim.
+
+  Bounded on purpose: after `kMaxKickOutSuppressions = 20` the original runs again, so a
+  server that keeps refusing cannot leave the client sitting on a dead socket with no way
+  out. `_reloginDelayTime` at `0x28` was confirmed against the dump, and so was the thing
+  that nearly made this a corruption bug: `EnterKickOutState` belongs to `BrokerSocket`,
+  while `0x28` and `ExecuteReloginByRandomDelay` belong to the separate
+  `BrokerSocketManager`, so the kick hook must never write through that layout. It does
+  not.
+
+  Host check: `System/Hooks/tests/anti_login_check.cpp` (kick dropped while on, forwarded
+  while off, budget cap, three-second lobby-logout hold, null original is a no-op).
+  **Not verified on device** - the remaining question is whether the client's heartbeat
+  reconnects by itself once the kick is dropped, which one two-device run answers.
+
 * **Crash while scoping back to back with ADS only.** Reported in the mission, not
   reproduced or traced.
 
