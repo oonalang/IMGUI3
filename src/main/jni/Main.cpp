@@ -1366,18 +1366,28 @@ size_t hook_strlen(const char *thread) {
     return strlen(thread);
 }
 
-void Init_Thread2() { InstallStealth(); InitializeProtection(); }
+void Init_Thread2() {
+    fault_guard::Mark("init2: stealth");
+    InstallStealth();
+    fault_guard::Mark("init2: protection");
+    InitializeProtection();
+    fault_guard::Mark("init2: done");
+}
 void Init_SwapHook() {}
 
 void Init_Thread() {
+    fault_guard::Mark("init: waiting for libunity");
     while (!m_unity) { m_unity = Tools::GetBaseAddress("libunity.so"); sleep(1); }
     LOGI("libunity.so: %p", m_unity);
+    fault_guard::Mark("init: libunity mapped");
     UpdateAllOffset();
+    fault_guard::Mark("init: offsets updated");
 
     // Armed from the first second rather than at the first guarded feature
     // read, so a crash during startup still names its offset inside libunity.so.
     fault_guard::SetModuleBase((void *)m_unity);
     fault_guard::Install();
+    fault_guard::Mark("init: fault guard installed");
 
     Patches.A1 = MemoryPatch::createWithHex("libunity.so", 0x8D781DC, "1F 20 03 D5 E0 03 13 AA");
     Patches.NoCrouch = MemoryPatch::createWithHex("libunity.so", 0x511F50C, "00 00 80 D2 C0 03 5F D6");
@@ -1422,20 +1432,26 @@ void Init_Thread() {
         LOGE("BulletTrack: CreateBulletProjectile RVA 0xC9C33A4 did not resolve");
     }
 
+    fault_guard::Mark("init: memory patches applied");
+
     NewFeatures::InstallHooks();
+    fault_guard::Mark("init: newfeatures hooks installed");
 
     InstallBRClassEspConfigHook();
     InitializeAllHooks();
+    fault_guard::Mark("init: all hooks installed");
 
     // The libanogs set lives in System/Core/Bypass.h (once-guarded), so both
     // init threads can ask for it without installing any hook twice.
     InitializeProtection();
+    fault_guard::Mark("init: protection installed");
 
     auto swapBuffers = ((uintptr_t)DobbySymbolResolver(OBFUSCATE("libunity.so"), OBFUSCATE("eglSwapBuffers")));
     KittyMemory::ProtectAddr((void *)swapBuffers, sizeof(swapBuffers), PROT_READ | PROT_WRITE | PROT_EXEC);
     xhook_enable_debug(0);
     xhook_register(OBFUSCATE(".*libunity\\.so$"), OBFUSCATE("eglSwapBuffers"), (void*)hook_eglSwapBuffers, (void**)&old_eglSwapBuffers);
     if (xhook_refresh(0) == 0) xhook_clear();
+    fault_guard::Mark("init: swap hook ready");
 }
 
 __attribute__((constructor))
@@ -1443,11 +1459,16 @@ __attribute__((constructor))
 	}
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+    // First line written by the library. If this line is absent after a run,
+    // the .so never executed and the crash is a load problem, not a fault in
+    // any of the code below.
+    fault_guard::Mark("jni: onload");
     jvm = vm; VM = vm;
     ZEL_SetVM(vm);
     std::thread(Init_Thread).detach();
     std::thread(Init_Thread2).detach();
     std::thread(Skins_Thread).detach();
+    fault_guard::Mark("jni: init threads started");
     return JNI_VERSION_1_6;
 }
 

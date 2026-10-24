@@ -11,6 +11,8 @@
 
 #if defined(__ANDROID__)
 #include <android/log.h>
+#include <fcntl.h>
+#include <unistd.h>
 #else
 extern "C" int __android_log_print(int prio, const char *tag, const char *fmt, ...)
     __attribute__((weak));
@@ -54,6 +56,94 @@ namespace fault_guard
         if (__android_log_print != nullptr)
             __android_log_print(6, "EthnirCrash", "%s", msg);
 #endif
+    }
+
+    // ------------------------------------------------------------------
+    // File-backed trace, because logcat is not always reachable.
+    //
+    // A crash that kills the process within seconds of launch leaves nothing in
+    // the UI and needs adb to read from logcat. This writes the same information
+    // into the process's own private files directory instead, so the last line
+    // in the file names the stage the process died in and the fault line names
+    // the offending offset inside libunity.so. Both are readable from a file
+    // manager or through the app's own storage without a debugger attached.
+    //
+    // Only open/write/close are used, which are async-signal-safe, so the same
+    // writer is called from the signal handler.
+    // ------------------------------------------------------------------
+#if defined(__ANDROID__)
+    inline char *TraceDir()
+    {
+        static char dir[160] = {0};
+        if (dir[0] != '\0') return dir;
+
+        // The package name is the first NUL-terminated field of cmdline.
+        char pkg[96] = {0};
+        const int fd = ::open("/proc/self/cmdline", O_RDONLY);
+        if (fd >= 0) {
+            const ssize_t n = ::read(fd, pkg, sizeof(pkg) - 1);
+            ::close(fd);
+            if (n <= 0) return nullptr;
+        } else {
+            return nullptr;
+        }
+
+        // Reject anything that is not a plausible package name so a weird
+        // cmdline cannot steer the write somewhere else.
+        int i = 0;
+        for (; pkg[i] != '\0' && i < (int)sizeof(pkg) - 1; i++) {
+            const char c = pkg[i];
+            const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                            (c >= '0' && c <= '9') || c == '.' || c == '_';
+            if (!ok) break;
+        }
+        if (i < 3) return nullptr;
+        pkg[i] = '\0';
+
+        // Built by hand rather than with AppendText: this block sits above the
+        // formatting helpers further down the header, and a forward use would
+        // only compile on the host branch.
+        size_t w = 0;
+        const char *pre = "/data/data/";
+        while (*pre != '\0' && w < sizeof(dir) - 32) dir[w++] = *pre++;
+        for (int k = 0; pkg[k] != '\0' && w < sizeof(dir) - 32; k++)
+            dir[w++] = pkg[k];
+        const char *post = "/files/startup_trace.log";
+        while (*post != '\0' && w < sizeof(dir) - 1) dir[w++] = *post++;
+        dir[w] = '\0';
+        return dir;
+    }
+
+    // One line per call, appended and flushed by the close. Deliberately not
+    // buffered: the point is that the file survives the process dying.
+    inline void TraceWrite(const char *text)
+    {
+        if (text == nullptr) return;
+        const char *path = TraceDir();
+        if (path == nullptr) return;
+
+        const int fd = ::open(path, O_WRONLY | O_CREAT | O_APPEND, 0600);
+        if (fd < 0) return;
+
+        size_t len = 0;
+        while (text[len] != '\0') len++;
+        if (len > 0) (void)!::write(fd, text, len);
+
+        const char nl = '\n';
+        (void)!::write(fd, &nl, 1);
+        ::close(fd);
+    }
+#else
+    inline char *TraceDir() { return nullptr; }
+    inline void TraceWrite(const char *text) { (void)text; }
+#endif
+
+    // Milestone marker for the startup sequence. Called before the signal
+    // handler is installed so the file exists even if the first hook crashes.
+    inline void Mark(const char *stage)
+    {
+        TraceWrite(stage);
+        if (stage != nullptr) g_phase = stage;
     }
 
     inline char *AppendText(char *w, char *end, const char *s)
@@ -155,12 +245,18 @@ namespace fault_guard
     // taken back when it was lost, and the handler that had taken it is chained
     // to on an unguarded fault instead of being thrown away.
     // ------------------------------------------------------------------
-    inline const int kSigs[3] = { SIGSEGV, SIGBUS, SIGILL };
-    inline const char *kSigName[3] = { "SIGSEGV", "SIGBUS", "SIGILL" };
+    // SIGABRT is in the set because a fault is not the only way this process
+    // dies. An unhandled managed exception inside il2cpp calls abort(), and a
+    // std::terminate, a failed assertion or an allocation failure does the
+    // same; all of them arrive here as SIGABRT and none of them were covered
+    // before, so a whole class of startup death produced no record at all.
+    inline const int kSigs[4] = { SIGSEGV, SIGBUS, SIGILL, SIGABRT };
+    inline const char *kSigName[4] = { "SIGSEGV", "SIGBUS", "SIGILL", "SIGABRT" };
+    constexpr int kSigCount = 4;
 
-    inline struct sigaction g_prev[3] = {};
-    inline bool g_prevSet[3] = {false, false, false};
-    inline bool g_oursSet[3] = {false, false, false};
+    inline struct sigaction g_prev[4] = {};
+    inline bool g_prevSet[4] = {false, false, false, false};
+    inline bool g_oursSet[4] = {false, false, false, false};
     inline int g_takeBacks = 0;
     inline uint64_t g_lastCheckMs = 0;
 
@@ -174,7 +270,11 @@ namespace fault_guard
 
     inline int SigIndex(int sig)
     {
-        return sig == SIGSEGV ? 0 : (sig == SIGBUS ? 1 : 2);
+        if (sig == SIGSEGV) return 0;
+        if (sig == SIGBUS)  return 1;
+        if (sig == SIGILL)  return 2;
+        if (sig == SIGABRT) return 3;
+        return 3;
     }
 
     inline void ReportCrash(int sig, void *infoPtr, void *ctx);
@@ -235,7 +335,7 @@ namespace fault_guard
     inline bool Install()
     {
         bool ok = true;
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < kSigCount; i++)
             if (!InstallOne(i)) ok = false;
         g_installed = true;
         return ok;
@@ -258,7 +358,7 @@ namespace fault_guard
         if (now - g_lastCheckMs < 100) return;
         g_lastCheckMs = now;
 
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < kSigCount; i++)
         {
             struct sigaction cur {};
             if (sigaction(kSigs[i], nullptr, &cur) != 0) continue;
@@ -324,6 +424,10 @@ namespace fault_guard
         char line[192];
         DescribeFault(line, sizeof(line), sig, faulty, pc, lr, g_phase);
         GuardLog(line);
+        // The same line goes to the file, because this is the only record that
+        // survives when logcat cannot be reached. The last breadcrumb above it
+        // names the stage that did not complete.
+        TraceWrite(line);
     }
 
     template <typename Fn>

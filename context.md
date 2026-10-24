@@ -177,37 +177,102 @@ f4734ee Licence keys carry a device list, and the signing key is rotated
   passing). **Not verified on device yet**; if it ever faults again, one logcat line
   names the exact stage.
 
-* **Startup crash at roughly 50 seconds.** A native crash that arrives about the time the
-  game's guest/login buttons appear, before the panel sign-in. Still not diagnosed. The
-  mod's own patches and hooks were checked against the 1.6.57 dump and match their intended
-  functions (`CanCrouch`, `IsAutoOpenWingsuit`, `ChangePunchAngleByGetHit`,
-  `UpdateBreatheTrembling`, `get_UseSlideTackleLimit`, `get_IsInEM3Eye`,
-  `get_IsKineticArmor`, `get_UseGetReadyTime`, `get_SpringFireGetReady`), and the anti-login
-  gates forward to the originals with the signatures the dump gives, so no wrong-address
-  write has been found by inspection.
+* **Startup crash on the login screen (was "at roughly 50 seconds").** Reported as "the
+  login loads but crashes after 4s", and earlier as a crash about the time the game's
+  guest/login buttons appear. **Root cause found by differential analysis against the last
+  build that opens.**
 
-  What was added instead is a report, because the next run has to answer this. The fault
-  guard in `System/Core/FaultGuard.h` installs its SIGSEGV/SIGBUS/SIGILL handler from
-  `Init_Thread` (with the libunity base recorded) and, when a fault arrives outside any
-  guard, logs one line before re-raising for the tombstone:
+  *The two identities.* Last-known-good is `0aee16f` ("Fix triggerbot 2nd-round/ADS-only
+  crash, blueprint unlock, and remove duplicated skin-page toggles"), the last commit before
+  the A_Fire rework, and the build the user reported as working. Current is `98874d9`. There
+  are no tags in this repository, so they are identified from the commit order in `git log`
+  plus this document's own record of which tree is current.
+
+  *Packaging is ruled out with file evidence.* `git diff 0aee16f..HEAD` touches no
+  `AndroidManifest.xml`, no `build.gradle`, no `AIDE`/`jniLibs` path, no `abiFilters` and no
+  ProGuard rule. The manifest still declares `minSdkVersion 21` / `targetSdkVersion 29`, the
+  single `arm64-v8a` filter is unchanged, and the AIDE loader Java
+  (`MainActivity`/`LogcatSaver`/`BrowserHelper`) is byte-identical. So the library is still
+  packaged, downloaded and `System.load`ed exactly as before: this is not an ABI or
+  extraction failure, and `.so`-never-loaded is not what changed.
+
+  *What did change on the startup path* - the only unconditional addition in the whole
+  range, at `System/Hooks/Feats.h` in the tail of `InitializeAllHooks()`:
 
   ```
-  [EthnirCrash] native crash: signal=11 fault=0x0 pc=libunity.so+0x9b5b850 lr=libunity.so+0x... phase=esp draw
+  const uintptr_t unityBase = (uintptr_t)getAbsoluteAddress("libunity.so", 0);
+  const bool mythicInstalled =
+      mythic_attachment_system::InstallMythicAttachmentHooksFresh(unityBase);
   ```
 
-  `pc` is an offset into libunity.so, so it can be looked up in a dump directly; `phase`
-  names the mod feature that was running (`esp draw`, `placable draw`, `local pawn tick`,
-  `aim lock`, `weapon tick`, `init`). `System/Core/tests/fault_guard_check.cpp` covers the
-  offset and phase formatting. What is needed now is that line plus the tombstone:
+  That call installed **fifteen hooks** on the game's own constructors and loadout methods
+  (`WeaponPartAsset..ctor` 0xAF85628, `AttachmentConf..ctor` 0x6FE9168,
+  `AttachmentGroupNew..ctor` 0x8719E4C, `AttachmentGroupNew..ctor(AttachItem,...)`
+  0x871A270, `AttachItem..ctor` 0x8449500, `AttachSkinData..ctor` 0x75D7DE4,
+  `Weapon.InitOneWeaponPart` 0x517C4D0, and eight more) at init, in every build, in every
+  process. Two of them (`hook_WeaponPartAsset_Ctor`, `hook_AttachmentConf_Ctor`) run on the
+  game's config-construction path, which is live from the first second of the process, and
+  they were **not** gated on the switch even though the commit message claimed every
+  resolution path was: each one retained every constructed config object in an unbounded
+  `std::vector` and did an O(n) `std::find` under a global mutex, so startup config load
+  became an O(n^2) scan handing the render thread a mutex it can block on. `AttachPtr()`,
+  the only check in those bodies, is `(uintptr_t)ptr >= 0x10000` - it validates nothing.
+
+  The runtime they serve was also inert: its tables are only filled by
+  `ApplyMythicAttachments`, and nothing outside `MythicAttachmentSystem.h` calls it. So the
+  fifteen hooks could not change any attachment's appearance while still costing every
+  launch their hook surface - which is exactly the asymmetry reported (old build opens, new
+  build dies on login).
+
+  *Fixed* by making the install lazy: `EnsureRuntimeInstalled()` runs from
+  `ApplyMythicAttachments`, i.e. the first time the menu actually applies a mythic loadout,
+  and only when the switch is on. The collectors are inert while the switch is off, dedupe
+  through an `unordered_set`, and are capped at `kMaxCollectedConfigs = 4096`. With the
+  switch off - the default - the startup hook surface is now identical to `0aee16f`.
+
+  *Remaining unproven link.* Fifteen wrong hooks were removed, but which of them faulted
+  first cannot be observed without one device run. The other new startup-path change is the
+  fault guard installing SIGSEGV/SIGBUS/SIGILL/SIGABRT handlers process-wide from
+  `Init_Thread` (`Main.cpp`), before any game code runs; that is worth naming because the
+  game ships `libanogs`, which installs its own crash handlers. Both are covered by the
+  trace below.
+
+  *Logcat-free verification.* The guard now writes the same record to a file in the app's
+  own storage, so a crash on launch can be read without adb. Path:
+  `/data/data/<package>/files/startup_trace.log`, where `<package>` is the first field of
+  `/proc/self/cmdline`, resolved once at the first breadcrumb. Every milestone in
+  `Init_Thread`/`Init_Thread2`/`JNI_OnLoad` appends a line:
+
+  ```
+  jni: onload
+  jni: init threads started
+  init: waiting for libunity
+  init: libunity mapped
+  init: offsets updated
+  init: fault guard installed
+  init: memory patches applied
+  init: newfeatures hooks installed
+  init: all hooks installed
+  init: protection installed
+  init: swap hook ready
+  ```
+
+  A crash leaves a final line of the form
+  `signal=6 fault=0x0 pc=libunity.so+0x... lr=libunity.so+0x... phase=<last milestone>`.
+  Reading it answers the two questions that matter: **if `jni: onload` is absent the .so never
+  executed** and the fault is upstream in loading; **if the last line is a milestone** the
+  fault is after that stage, and `pc` names the function in a dump. SIGABRT is now covered
+  too, because an unhandled managed exception in il2cpp aborts - and that class produced no
+  record at all before, which is the same blind spot that made the triggerbot crash look
+  like a memory fault for four commits.
+
+  If the file is unreadable, the same record is still in logcat under `EthnirCrash`, and the
+  tombstone is still written by the re-raise:
 
   ```
   adb logcat -b crash -d | grep -i ethnircrash
-  adb logcat -d | grep -iE 'EthnirCrash|DEBUG|backtrace'
   adb shell ls /data/tombstones/ && adb pull /data/tombstones/tombstone_00
   ```
-
-  The old lead still stands as the first thing to look at once `pc` names a function: the
-  pawn tick hooks scan the scene about ten times a second even with the triggerbot off.
 
 * **Crash while scoping back to back with ADS only.** Reported in the mission, not
   reproduced or traced.

@@ -127,6 +127,33 @@ int main()
     bool stillGuarded = fault_guard::Run([] { (void)*BadPointer(); });
     Check("faults are contained again after the handler came back", !stillGuarded);
 
+    // SIGABRT coverage. An unhandled managed exception inside il2cpp aborts the
+    // process; so does std::terminate and a failed assertion. None of those are
+    // faults, so before this the whole class produced no record at all.
+    bool hasAbort = false;
+    for (int i = 0; i < fault_guard::kSigCount; i++)
+        if (fault_guard::kSigs[i] == SIGABRT) hasAbort = true;
+    Check("the handler set covers SIGABRT", hasAbort);
+    Check("SIGABRT maps to its own slot",
+          fault_guard::SigIndex(SIGABRT) < fault_guard::kSigCount &&
+          fault_guard::kSigs[fault_guard::SigIndex(SIGABRT)] == SIGABRT);
+    Check("every signal in the set has a name",
+          fault_guard::kSigName[fault_guard::SigIndex(SIGABRT)][0] == 'S');
+
+    // Breadcrumb. It is the only record that survives when logcat is
+    // unreachable, so it has to at least move the phase that a later fault
+    // line reports.
+    fault_guard::Mark("init: breadcrumb probe");
+    Check("a breadcrumb updates the phase a fault line reports",
+          std::strstr(fault_guard::g_phase, "breadcrumb probe") != nullptr);
+
+    char crumb[192];
+    fault_guard::DescribeFault(crumb, sizeof(crumb), SIGABRT, 0, 0, 0,
+                               fault_guard::g_phase);
+    Check("an abort line names the signal", std::strstr(crumb, "signal=6") != nullptr);
+    Check("an abort line carries the breadcrumb",
+          std::strstr(crumb, "breadcrumb probe") != nullptr);
+
     if (g_failures)
     {
         std::printf("FAIL: %d check(s)\n", g_failures);

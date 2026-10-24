@@ -906,15 +906,20 @@ inline void InitializeAllHooks() {
     anti_login::NoteLanded(anti_login::GateAutoMax,        anti_login::orig_GetMaxAutoLoginNum != nullptr);
 
     // The mythic attachment runtime (AttachmentGroupNew, AttachItem,
-    // Weapon.InitOneWeaponPart and their data objects) was written but never
-    // installed, so the menu switch only ever unlocked the attachment items: a
-    // mythic attachment could be equipped and still render stock. Installed
-    // here; every resolution path inside is gated on the same switch, so with
-    // it off the hooks are inert.
-    const uintptr_t unityBase = (uintptr_t)getAbsoluteAddress("libunity.so", 0);
-    const bool mythicInstalled =
-        mythic_attachment_system::InstallMythicAttachmentHooksFresh(unityBase);
-    LOGI("[Mythic] attachment runtime %s (base=%p toggle=%d)",
-         mythicInstalled ? "installed" : "not installed", (void *)unityBase,
+    // Weapon.InitOneWeaponPart and their data objects) is NOT installed here.
+    //
+    // It used to be, unconditionally, which was wrong twice over. The claim that
+    // "every resolution path inside is gated on the same switch" did not hold:
+    // the two config collectors and the sixteen hook bodies ran regardless of
+    // the switch, on the game's own config-construction path, from the first
+    // second of the process. And the runtime cannot do anything at that point
+    // anyway - its tables are only filled by ApplyMythicAttachments, which the
+    // menu does not call yet - so the sixteen hooks were pure startup surface
+    // with no user-visible effect. This is the change between the build that
+    // opened and the build that dies on the login screen.
+    //
+    // mythic_attachment_system::EnsureRuntimeInstalled() now takes them on the
+    // first apply, when the switch is actually on.
+    LOGI("[Mythic] attachment runtime is lazy (toggle=%d)",
          (int)Config.ExtraMenu.MythicAttachments);
 }

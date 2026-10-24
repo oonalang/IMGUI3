@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "Hacks/Feature/Init_Hacks.h"
@@ -38,6 +39,8 @@ uint runtimeAttachSkinId = 0;
 std::vector<void*> weaponPartAssetInstance;
 std::vector<void*> weaponSkinConfigInstance;
 std::vector<void*> attachmentConfInstance;
+inline std::unordered_set<void*> weaponPartAssetSeen;
+inline std::unordered_set<void*> attachmentConfSeen;
 inline std::mutex mythicCollectorMutex;
 
 inline void CollectWeaponSkinConfig(void* instance) {
@@ -917,6 +920,10 @@ struct AttachWeaponIds {
     int lootId;
 };
 
+// Defined with the installers at the bottom of this header; declared here
+// because applying a loadout is what triggers the install.
+inline bool EnsureRuntimeInstalled();
+
 inline void ApplyMythicAttachments(
     const AttachWeaponIds& ids,
     const std::array<int, 31>& mythicAttach)
@@ -930,6 +937,8 @@ inline void ApplyMythicAttachments(
         runtimeAttachWeaponId = 0;
         return;
     }
+
+    EnsureRuntimeInstalled();
 
     activeWeaponSkins.clear();
     activeMythicAttachments.clear();
@@ -1007,21 +1016,42 @@ inline void ClearMythicAttachments(const AttachWeaponIds& ids)
 inline void (*orig_WeaponPartAsset_Ctor)(void*) = nullptr;
 inline void (*orig_AttachmentConf_Ctor)(void*) = nullptr;
 
+// The collectors run on the game's own config-construction path, which starts in
+// the first second of the process and builds these objects by the thousand.
+// Three things keep that path from being a launch hazard:
+//   * they are inert while the switch is off (see MythicAttachmentsEnabled),
+//     because equipping a mythic attachment is the only thing that needs them;
+//   * the retained set is capped, so a long data load cannot grow it without
+//     bound and turn construction into an O(n^2) scan under a global mutex;
+//   * membership is O(1) because the set of pointers is kept alongside it.
+// Previously they were installed and active unconditionally, which put thirteen
+// extra hooks into startup for a runtime whose data is only ever filled by
+// ApplyMythicAttachments - a path the menu does not call yet, so the whole
+// feature was inert while still costing every launch its hook surface.
+constexpr size_t kMaxCollectedConfigs = 4096;
+
+inline void RetainOnce(std::vector<void*>& vec, std::unordered_set<void*>& seen, void* instance)
+{
+    if (vec.size() >= kMaxCollectedConfigs) return;
+    if (!seen.insert(instance).second) return;
+    vec.push_back(instance);
+}
+
 inline void hook_WeaponPartAsset_Ctor(void* instance) {
     if (orig_WeaponPartAsset_Ctor) orig_WeaponPartAsset_Ctor(instance);
+    if (!MythicAttachmentsEnabled()) return;
     if (AttachPtr(instance)) {
         std::lock_guard<std::mutex> lock(mythicCollectorMutex);
-        if (std::find(weaponPartAssetInstance.begin(), weaponPartAssetInstance.end(), instance) == weaponPartAssetInstance.end())
-            weaponPartAssetInstance.push_back(instance);
+        RetainOnce(weaponPartAssetInstance, weaponPartAssetSeen, instance);
     }
 }
 
 inline void hook_AttachmentConf_Ctor(void* instance) {
     if (orig_AttachmentConf_Ctor) orig_AttachmentConf_Ctor(instance);
+    if (!MythicAttachmentsEnabled()) return;
     if (AttachPtr(instance)) {
         std::lock_guard<std::mutex> lock(mythicCollectorMutex);
-        if (std::find(attachmentConfInstance.begin(), attachmentConfInstance.end(), instance) == attachmentConfInstance.end())
-            attachmentConfInstance.push_back(instance);
+        RetainOnce(attachmentConfInstance, attachmentConfSeen, instance);
     }
 }
 
@@ -1091,6 +1121,22 @@ inline bool InstallMythicAttachmentRuntimeFresh(uintptr_t unityBase) {
 inline bool InstallMythicAttachmentHooksFresh(uintptr_t unityBase) {
     return InstallMythicAttachmentCollectorsFresh(unityBase) &&
            InstallMythicAttachmentRuntimeFresh(unityBase);
+}
+
+// Installed on first use rather than during startup.
+//
+// Sixteen hooks on game constructors and loadout methods is a lot of surface to
+// take before the client has shown its login screen, and the runtime they serve
+// cannot do anything until ApplyMythicAttachments has filled its tables. Taking
+// them when the menu actually applies a mythic loadout keeps the launch path
+// identical to the build that did not install them at all.
+inline bool EnsureRuntimeInstalled() {
+    if (!MythicAttachmentsEnabled()) return false;
+    if (mythicRuntimeInstalled.load(std::memory_order_acquire)) return true;
+
+    const uintptr_t base = (uintptr_t)getAbsoluteAddress("libunity.so", 0);
+    if (base == 0) return false;
+    return InstallMythicAttachmentHooksFresh(base);
 }
 }
 
