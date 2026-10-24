@@ -882,9 +882,4 @@ inline void InitializeAllHooks() {
     report_block::InstallReportBlockHooks();
 
     anti_login::InstallAntiLoginHooks();
-    anti_login::NoteLanded(anti_login::GateHeartbeatExec,  anti_login::orig_ExecuteReloginByRandomDelay != nullptr);
-    anti_login::NoteLanded(anti_login::GateCheckState,     anti_login::orig_CheckReloginState != nullptr);
-    anti_login::NoteLanded(anti_login::GateReloginCallback, anti_login::orig_ReloginCallback != nullptr);
-    anti_login::NoteLanded(anti_login::GateLogout,         anti_login::orig_Logout != nullptr);
-    anti_login::NoteLanded(anti_login::GateLoadCallback,   anti_login::orig_OnNotifyNeedReloginCallback != nullptr);
 }

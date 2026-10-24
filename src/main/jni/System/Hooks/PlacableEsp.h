@@ -20,10 +20,9 @@ namespace PlacableCfg {
     constexpr uintptr_t RemoveProjectileRva = 0x9CBDAC4;
     constexpr int       MaxListScan         = 128;
 
-    constexpr uintptr_t GrenadeActorOff          = 0x1C8;
-    constexpr uintptr_t HitColliderOff           = 0x110;
-    constexpr uintptr_t ComponentGetTransformRva = 0x50291B0;
-    constexpr uintptr_t TransformGetPositionRva  = 0x507C19C;
+    constexpr uintptr_t GrenadeActorOff  = 0x1C8;
+    constexpr uintptr_t ActorPositionRva = 0x9193690;
+    constexpr uintptr_t CachedPtrOff     = 0x10;
 
     constexpr uintptr_t ExplodedOff  = 0xA1;
     constexpr uintptr_t DestroyedOff = 0x18D;
@@ -31,6 +30,7 @@ namespace PlacableCfg {
     constexpr float MaxDist  = 250.0f;
     constexpr float WarnDist = 12.0f;
     constexpr uint64_t ExpireFrames = 3600;
+    constexpr uint64_t DetachedExpireFrames = 216000;
 }
 
 enum PlacableHook
@@ -84,12 +84,16 @@ struct PlacableInfo {
     int camp;
     uint64_t seen;
     uint64_t frame;
+    uintptr_t projectile;
+    uintptr_t actor;
+    bool detached;
 };
 
 struct PlacableDrawItem {
     uintptr_t key;
     const char *label;
     int camp;
+    bool detached;
 };
 
 inline std::unordered_map<uintptr_t, PlacableInfo> g_Placables;
@@ -137,6 +141,15 @@ inline bool PlacableReadPtr(uintptr_t base, uintptr_t offset, uintptr_t &out)
         return false;
     out = *(const uintptr_t *)address;
     return true;
+}
+
+inline bool PlacableObjectAlive(uintptr_t obj)
+{
+    if (!Tools::IsPtrValid((void *)obj))
+        return false;
+
+    const void *cached = *(const void **)(obj + PlacableCfg::CachedPtrOff);
+    return Tools::IsPtrValid((void *)cached);
 }
 
 inline bool PlacableClassName(void *proj, char *out, size_t outSize)
@@ -257,6 +270,10 @@ inline void TrackPlacable(void *proj, PlacableRoute route = PlcRouteTick)
     if (removed) {
         std::lock_guard<std::mutex> lock(g_PlacableMutex);
         g_Placables.erase(base);
+        for (auto it = g_Placables.begin(); it != g_Placables.end();) {
+            if (it->second.projectile == base) it = g_Placables.erase(it);
+            else ++it;
+        }
         return;
     }
 
@@ -267,12 +284,36 @@ inline void TrackPlacable(void *proj, PlacableRoute route = PlcRouteTick)
     int camp = -1;
     PlacableReadInt(base, PlacableCfg::OwnerCampOff, camp);
 
+    // The placed actor outlives the projectile for mines, so an entry that was
+    // already re-keyed to its actor is refreshed in place instead of adding a
+    // second entry for the same object.
+    uintptr_t actor = 0;
+    if (!PlacableReadPtr(base, PlacableCfg::GrenadeActorOff, actor) ||
+        !PlacableObjectAlive(actor))
+        actor = 0;
+
     std::lock_guard<std::mutex> lock(g_PlacableMutex);
+
+    if (actor != 0) {
+        auto owner = g_Placables.find(actor);
+        if (owner != g_Placables.end() && owner->second.detached) {
+            owner->second.label = label;
+            owner->second.camp = camp;
+            owner->second.seen = ++g_PlacableSeen;
+            owner->second.frame = g_PlacableFrame;
+            g_placableDiag.tracked++;
+            return;
+        }
+    }
+
     PlacableInfo &info = g_Placables[base];
     info.label = label;
     info.camp = camp;
     info.seen = ++g_PlacableSeen;
     info.frame = g_PlacableFrame;
+    info.projectile = base;
+    info.actor = actor;
+    info.detached = false;
     g_placableDiag.tracked++;
 }
 
@@ -290,38 +331,21 @@ inline bool PlacablePosUsable(const Vector3 &p)
     return !(p.x == 0.0f && p.y == 0.0f && p.z == 0.0f);
 }
 
-inline Vector3 PlacablePosFromCollider(void *proj)
+inline Vector3 PlacableActorPos(uintptr_t actor)
 {
-    if (!Tools::IsPtrValid(proj))
+    if (!PlacableObjectAlive(actor))
         return Vector3::zero();
 
-    uintptr_t actor = 0;
-    if (!PlacableReadPtr((uintptr_t)proj, PlacableCfg::GrenadeActorOff, actor) ||
-        !Tools::IsPtrValid((void *)actor))
-        return Vector3::zero();
+    using PositionFn = Vector3 (*)(void *);
+    static PositionFn getPosition = nullptr;
 
-    uintptr_t collider = 0;
-    if (!PlacableReadPtr(actor, PlacableCfg::HitColliderOff, collider) ||
-        !Tools::IsPtrValid((void *)collider))
-        return Vector3::zero();
-
-    using GetTransformFn = void *(*)(void *);
-    using GetPositionFn  = Vector3 (*)(void *);
-    static GetTransformFn getTransform = nullptr;
-    static GetPositionFn  getPosition  = nullptr;
-
-    if (getTransform == nullptr)
-        getTransform = (GetTransformFn)getAbsoluteAddress("libunity.so", PlacableCfg::ComponentGetTransformRva);
     if (getPosition == nullptr)
-        getPosition = (GetPositionFn)getAbsoluteAddress("libunity.so", PlacableCfg::TransformGetPositionRva);
-    if (getTransform == nullptr || getPosition == nullptr)
+        getPosition = (PositionFn)getAbsoluteAddress("libunity.so", PlacableCfg::ActorPositionRva);
+    if (getPosition == nullptr)
         return Vector3::zero();
 
-    void *transform = getTransform((void *)collider);
-    if (!Tools::IsPtrValid(transform))
-        return Vector3::zero();
-
-    return getPosition(transform);
+    const Vector3 pos = getPosition((void *)actor);
+    return PlacablePosUsable(pos) ? pos : Vector3::zero();
 }
 
 inline Vector3 PlacableResolvePos(void *proj)
@@ -333,8 +357,14 @@ inline Vector3 PlacableResolvePos(void *proj)
     if (PlacablePosUsable(pos))
         return pos;
 
-    pos = PlacablePosFromCollider(proj);
-    return PlacablePosUsable(pos) ? pos : Vector3::zero();
+    uintptr_t actor = 0;
+    if (PlacableReadPtr((uintptr_t)proj, PlacableCfg::GrenadeActorOff, actor)) {
+        pos = PlacableActorPos(actor);
+        if (PlacablePosUsable(pos))
+            return pos;
+    }
+
+    return Vector3::zero();
 }
 
 inline int PlacableScanLiveList()
@@ -372,6 +402,35 @@ inline int PlacableScanLiveList()
         ++seen;
     }
     return seen;
+}
+
+inline void PlacableDetach(void *proj)
+{
+    if (!Tools::IsPtrValid(proj))
+        return;
+
+    const uintptr_t key = (uintptr_t)proj;
+    uintptr_t actor = 0;
+    const bool haveActor =
+        PlacableReadPtr(key, PlacableCfg::GrenadeActorOff, actor) && PlacableObjectAlive(actor);
+
+    std::lock_guard<std::mutex> lock(g_PlacableMutex);
+    auto it = g_Placables.find(key);
+    if (it == g_Placables.end())
+        return;
+
+    if (!haveActor) {
+        g_Placables.erase(it);
+        return;
+    }
+
+    PlacableInfo info = it->second;
+    info.actor = actor;
+    info.detached = true;
+    info.seen = ++g_PlacableSeen;
+    info.frame = g_PlacableFrame;
+    g_Placables.erase(it);
+    g_Placables[actor] = info;
 }
 
 inline int PlacableLocalCamp()
@@ -417,6 +476,18 @@ inline void DrawPlacableESP(ImDrawList *draw, int width, int height, const Vecto
                 continue;
             }
 
+            if (info.detached) {
+                if (!PlacableObjectAlive(key) ||
+                    g_PlacableFrame > info.frame + PlacableCfg::DetachedExpireFrames) {
+                    it = g_Placables.erase(it);
+                    continue;
+                }
+
+                items.push_back(PlacableDrawItem{key, info.label, info.camp, true});
+                ++it;
+                continue;
+            }
+
             bool exploded = false;
             bool destroyed = false;
             if (!Tools::IsPtrValid((void *)key) ||
@@ -426,7 +497,7 @@ inline void DrawPlacableESP(ImDrawList *draw, int width, int height, const Vecto
                 continue;
             }
 
-            items.push_back(PlacableDrawItem{key, info.label, info.camp});
+            items.push_back(PlacableDrawItem{key, info.label, info.camp, false});
             ++it;
         }
     }
@@ -441,8 +512,9 @@ inline void DrawPlacableESP(ImDrawList *draw, int width, int height, const Vecto
     float warnDist = 0.0f;
 
     for (const PlacableDrawItem &item : items) {
-        const Vector3 pos = PlacableResolvePos((void *)item.key);
-        if (pos == Vector3::zero()) {
+        const Vector3 pos = item.detached ? PlacableActorPos(item.key)
+                                          : PlacableResolvePos((void *)item.key);
+        if (!PlacablePosUsable(pos)) {
             g_placableDiag.posFailed++;
             continue;
         }
@@ -541,9 +613,10 @@ inline bool hook_RemoveWeaponProjectile(void *game, void *projectile)
     const bool removed = orig_RemoveWeaponProjectile
                              ? orig_RemoveWeaponProjectile(game, projectile)
                              : false;
-    if (removed && projectile != nullptr && Tools::IsPtrValid(projectile)) {
-        std::lock_guard<std::mutex> lock(g_PlacableMutex);
-        g_Placables.erase((uintptr_t)projectile);
+    if (removed) {
+        // A placed mine leaves the live projectile list while its actor stays
+        // in the world; re-key the entry to the actor instead of dropping it.
+        PlacableDetach(projectile);
     }
     return removed;
 }

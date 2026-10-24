@@ -177,8 +177,26 @@ f4734ee Licence keys carry a device list, and the signing key is rotated
 * **Crash while scoping back to back with ADS only.** Reported in the mission, not
   reproduced or traced.
 
-* **Placed ESP does not draw.** `System/Hooks/PlacableEsp.h` and `DrawESP.h` are the places
-  to start; the user reports dying to a tripmine that should have been visible.
+* **Placed ESP: needs a device pass.** The position for a placed item is now resolved from
+  the projectile, then from `WeaponProjectile.mGrenadeActor` (`BaseComponent.get_Position`,
+  `0x9193690`); the old collider walk (`mGrenadeActor + 0x110`) read a field the dump does
+  not describe and silently produced no position. `RemoveWeaponProjectile` no longer
+  deletes the entry either: a mine leaves the live projectile list while its actor stays in
+  the world, so the entry is re-keyed to the actor and kept until the actor reads dead
+  (`m_CachedPtr` at `0x10`). If it still draws nothing, `PlacableDiag`
+  (`tickCalls`, `pushed`, `scanned`, `classified`, `tracked`, `drawn`, `posFailed`,
+  `lastClass`) says which step stops.
+
+* **Anti-login: unverified against the real kick flow.** The feature used to block the
+  broker relogin coroutine, `Logout(isRelogin)`, `Pandora.CheckReloginState` and
+  `LoadingFlowCheckPayTokenController.OnNotifyNeedReloginCallback`; the last one is the tail
+  of a loading flow, so blocking it left the client stuck before the lobby. It now
+  (a) suppresses the kick dialog (`GameUIScene.OnKickOff`, `0x6F52BB0`) and (b) drives
+  `ApolloWrapper.ReLogin()` (`0x9812F88`) once per 1.2 s for 15 attempts after a kick, so the
+  client re-authenticates and takes the session back. `GameEventChannel.OnKickOff`
+  (`0x53F47E8`) is still forwarded, so the match teardown stays the game's own. The dialog
+  the login stage itself shows, if the kick lands while the lobby is loading, is not
+  intercepted; the relogin loop is what has to beat it.
 
 * **The signing key is public.** It is inside `licence-panel.zip` in this repository and,
   as of the last commit, as `tools/licence/private/licence_private.pem`. Anyone with the

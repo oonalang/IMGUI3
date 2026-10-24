@@ -1012,6 +1012,9 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 {
     if (!old_eglSwapBuffers) return EGL_FALSE;
     if (dpy == EGL_NO_DISPLAY || surface == EGL_NO_SURFACE) return old_eglSwapBuffers(dpy, surface);
+
+    anti_login::Pump();
+
     EGLContext currentContext = eglGetCurrentContext();
     if (currentContext == EGL_NO_CONTEXT) return old_eglSwapBuffers(dpy, surface);
     EGLint qw = 0, qh = 0;
