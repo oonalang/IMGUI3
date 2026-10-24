@@ -1,0 +1,489 @@
+#include <android/log.h>
+#include <libgen.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <time.h>
+#include <jni.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/rsa.h>
+#include <openssl/err.h>
+#include <openssl/md5.h>
+#include <string>
+#include <vector>
+#include <atomic>
+#include "Tools.h"
+
+#if defined(__arm__)
+#define process_vm_readv_syscall 376
+#define process_vm_writev_syscall 377
+#elif defined(__aarch64__)
+#define process_vm_readv_syscall 270
+#define process_vm_writev_syscall 271
+#elif defined(__i386__)
+#define process_vm_readv_syscall 347
+#define process_vm_writev_syscall 348
+#else
+#define process_vm_readv_syscall 310
+#define process_vm_writev_syscall 311
+#endif
+
+// Kept for compatibility with the original port; pvm() uses its own
+// thread-safe function-local pid (see below).
+pid_t target_pid = -1;
+#define INRANGE(x, a, b)        (x >= a && x <= b)
+#define getBits(x)              (INRANGE(x,'0','9') ? (x - '0') : ((x&(~0x20)) - 'A' + 0xa))
+#define getByte(x)              (getBits(x[0]) << 4 | getBits(x[1]))
+
+ssize_t process_v(pid_t __pid, const struct iovec *__local_iov, unsigned long __local_iov_count, const struct iovec *__remote_iov, unsigned long __remote_iov_count, unsigned long __flags, bool iswrite) {
+    return syscall((iswrite ? process_vm_writev_syscall : process_vm_readv_syscall), __pid, __local_iov, __local_iov_count, __remote_iov, __remote_iov_count, __flags);
+}
+
+bool pvm(void *address, void *buffer, size_t size, bool write = false) {
+    struct iovec local[1];
+    struct iovec remote[1];
+
+    local[0].iov_base = buffer;
+    local[0].iov_len = size;
+    remote[0].iov_base = address;
+    remote[0].iov_len = size;
+
+    // Our own pid, resolved once. This used to be `if (target_pid == -1)
+    // target_pid = getpid();` on a plain global, which is an unsynchronised
+    // read-modify-write on the same address from every thread that calls
+    // IsPtrValid (the render thread and Skins_Thread both do). A function-local
+    // static is initialised exactly once, thread-safely, with no lock on the
+    // steady-state path.
+    static const pid_t self_pid = getpid();
+
+    ssize_t bytes = process_v(self_pid, local, 1, remote, 1, 0, write);
+    return bytes == size;
+}
+
+void Tools::Hook(void *target, void *replace, void **backup) {
+    unsigned long page_size = sysconf(_SC_PAGESIZE);
+    unsigned long size = page_size * sizeof(uintptr_t);
+    void *p = (void *) ((uintptr_t) target - ((uintptr_t) target % page_size) - page_size);
+    if (mprotect(p, (size_t) size, PROT_EXEC | PROT_READ | PROT_WRITE) == 0) {
+		DobbyHook(target, replace, backup);
+    }
+}
+
+bool Tools::Read(void *addr, void *buffer, size_t length) {
+	return memcpy(buffer, addr, length) != 0;
+}
+
+bool Tools::Write(void *addr, void *buffer, size_t length) {
+	return memcpy(addr, buffer, length) != 0;
+}
+
+bool Tools::ReadAddr(void *addr, void *buffer, size_t length) {
+	unsigned long page_size = sysconf(_SC_PAGESIZE);
+	unsigned long size = page_size * sizeof(uintptr_t);
+	return mprotect((void *) ((uintptr_t) addr - ((uintptr_t) addr % page_size) - page_size), (size_t) size, PROT_EXEC | PROT_READ | PROT_WRITE) == 0 && memcpy(buffer, addr, length) != 0;
+}
+
+bool Tools::WriteAddr(void *addr, void *buffer, size_t length) {
+	unsigned long page_size = sysconf(_SC_PAGESIZE);
+    unsigned long size = page_size * sizeof(uintptr_t);
+    return mprotect((void *) ((uintptr_t) addr - ((uintptr_t) addr % page_size) - page_size), (size_t) size, PROT_EXEC | PROT_READ | PROT_WRITE) == 0 && memcpy(addr, buffer, length) != 0;
+}
+
+bool Tools::PVM_ReadAddr(void *addr, void *buffer, size_t length) {
+    return pvm(addr, buffer, length, false);
+}
+
+bool Tools::PVM_WriteAddr(void *addr, void *buffer, size_t length) {
+    return pvm(addr, buffer, length, true);
+}
+
+static uint8_t tools_isvalid_buf[4] = {0,0,0,0};
+
+// ---------------------------------------------------------------------------
+// Readable-memory probe for Tools::IsPtrValid (port of V3 @c2c1e12).
+//
+// The previous implementation parsed /proc/self/maps EXACTLY ONCE and cached
+// the ranges forever. On a device that also worked, but on this build the map
+// snapshot was taken before the game had allocated its heap: every pawn /
+// MatchGame / weapon object allocated later lived outside the frozen cache,
+// so IsPtrValid() rejected every valid heap pointer permanently. The ESP drew
+// nothing, the triggerbot scanned an empty world ("Enemy=0"), and Test Fire
+// reported the very-alive local pawn as "no local pawn" - while the hook
+// heartbeat counters kept incrementing.
+//
+// Now: process_vm_readv is the cheap fast path; if it fails we re-read a
+// fresh /proc/self/maps snapshot (refreshed at most every 250 ms, binary
+// search per call) instead of trusting a startup-time cache. A pvm that is
+// blocked by SELinux therefore degrades to a correct answer, not to a
+// permanent "everything is invalid".
+//
+// ---------------------------------------------------------------------------
+// CONCURRENCY - the snapshot is immutable while it is readable.
+//
+// The first version of the above kept ONE `std::vector` of ranges and had the
+// refreshing thread clear() it and emplace_back() into it. IsPtrValid() is
+// called from several threads (the render thread's DrawESP / trigger scan /
+// kill-decoration pass, Skins_Thread's loaders, Init_Thread), and the refresh
+// is triggered by the *common* case of a dead pointer falling out of the
+// snapshot - so a reader was routinely binary-searching the live vector while
+// another thread was reallocating its buffer. A binary search that samples
+// `ranges[mid]` across a realloc reads freed memory: on device that is a
+// SIGSEGV inside ToolsRangesContain, which is exactly the "the game crashes
+// after a while, not always at the same moment" report this fixes. Measured
+// with ThreadSanitizer against this very file: 13 data races and
+// "SUMMARY: ThreadSanitizer: SEGV ... Tools.cpp in ToolsRangesContain".
+//
+// Now the ranges live in a small pool of snapshots. A reader takes the live
+// snapshot pointer ONCE per call and only ever reads it; the writer fills a
+// slot that is not published, then publishes it with a release store. The slot
+// it fills is the one published kRangeSlots - 1 refreshes ago, and each slot
+// keeps its capacity after clear(), so a reader can never observe a slot that
+// is being written and no buffer is ever freed. At the 250 ms refresh throttle
+// that is at least 1.5 s of grace for a reader whose whole critical section is
+// one binary search over a few hundred entries, and the pool itself is static
+// storage: the hot path stays one acquire load plus the search, with no
+// syscall, no lock and no allocation.
+// ---------------------------------------------------------------------------
+struct ToolsRangeSnapshot {
+    std::vector<std::pair<uintptr_t, uintptr_t>> ranges;
+};
+
+static const int kRangeSlots = 8;
+static ToolsRangeSnapshot g_rangeSlots[kRangeSlots];
+static std::atomic<int> g_rangeLive{-1};        // slot readers must use, or -1
+static std::atomic<int> g_rangeGeneration{-1};  // slot the writer filled last
+static std::atomic<uint64_t> g_rangeCacheMs{0};
+static std::atomic<bool> g_rangeRefreshing{false};
+
+static uint64_t ToolsNowMs() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / 1000000ull;
+}
+
+// Parses the leading "lo-hi perms" of one /proc/self/maps line by hand.
+// sscanf over a few thousand lines was the expensive half of a refresh, and a
+// refresh runs on whichever thread first touches an address that is missing
+// from the snapshot - usually the render thread inside DrawESP. This keeps the
+// parse to a handful of instructions per line.
+static bool ToolsParseRangeLine(const char *line, uintptr_t &lo, uintptr_t &hi,
+                                bool &readable) {
+    const unsigned char *p = (const unsigned char *)line;
+    auto hex = [](unsigned char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+
+    uintptr_t a = 0, b = 0;
+    int digits = 0;
+    for (int d; (d = hex(*p)) >= 0; ++p, ++digits) a = (a << 4) | (uintptr_t)d;
+    if (digits == 0 || *p != '-') return false;
+    ++p;
+    digits = 0;
+    for (int d; (d = hex(*p)) >= 0; ++p, ++digits) b = (b << 4) | (uintptr_t)d;
+    if (digits == 0) return false;
+    if (*p == ' ') ++p;
+
+    readable = (*p == 'r');
+    lo = a;
+    hi = b;
+    return hi > lo;
+}
+
+static const ToolsRangeSnapshot *ToolsLiveRanges() {
+    const int i = g_rangeLive.load(std::memory_order_acquire);
+    return i >= 0 && i < kRangeSlots ? &g_rangeSlots[i] : nullptr;
+}
+
+// Refreshes at most every 250 ms unless `force`. Parsing /proc/self/maps is
+// not free (thousands of fgets/sscanf on a game process), so it is only done
+// when the snapshot actually has to answer something - never on the fast path.
+//
+// Exactly one thread parses at a time; a thread that loses that race simply
+// answers from the snapshot that is already live, which is correct - the
+// snapshot it wanted is the one being built.
+static void ToolsRefreshReadableRanges(bool force = false) {
+    const uint64_t now = ToolsNowMs();
+    const uint64_t cachedMs = g_rangeCacheMs.load(std::memory_order_relaxed);
+    if (!force && g_rangeLive.load(std::memory_order_acquire) >= 0 &&
+        now >= cachedMs && now - cachedMs <= 250)
+        return;
+
+    bool expected = false;
+    if (!g_rangeRefreshing.compare_exchange_strong(expected, true,
+                                                   std::memory_order_acq_rel))
+        return;
+
+    if (!force) {
+        // Re-check under the claim: another thread may have finished a refresh
+        // while this one was waiting for it.
+        const uint64_t again = g_rangeCacheMs.load(std::memory_order_relaxed);
+        if (g_rangeLive.load(std::memory_order_acquire) >= 0 &&
+            now >= again && now - again <= 250) {
+            g_rangeRefreshing.store(false, std::memory_order_release);
+            return;
+        }
+    }
+
+    const int gen = g_rangeGeneration.load(std::memory_order_relaxed);
+    const int slot = (gen + 1 + kRangeSlots) % kRangeSlots;
+    ToolsRangeSnapshot &snap = g_rangeSlots[slot];
+    snap.ranges.clear();                      // keeps capacity: no realloc churn
+
+    FILE *f = fopen("/proc/self/maps", "r");
+    if (f) {
+        char line[512];
+        while (fgets(line, sizeof line, f)) {
+            uintptr_t lo = 0, hi = 0;
+            bool readable = false;
+            if (ToolsParseRangeLine(line, lo, hi, readable) && readable) {
+                snap.ranges.emplace_back(lo, hi);
+            }
+        }
+        fclose(f);
+    }
+
+    g_rangeCacheMs.store(now, std::memory_order_relaxed);
+    // Publish LAST: the snapshot is complete before any reader can pick it up.
+    g_rangeLive.store(slot, std::memory_order_release);
+    g_rangeGeneration.store(gen + 1, std::memory_order_relaxed);
+    g_rangeRefreshing.store(false, std::memory_order_release);
+}
+
+// Binary search of ONE immutable snapshot. Pure userspace - no syscall.
+static bool ToolsRangesContain(const ToolsRangeSnapshot *snap, uintptr_t a) {
+    if (!snap) return false;
+    const std::vector<std::pair<uintptr_t, uintptr_t>> &r = snap->ranges;
+    size_t lo = 0, hi = r.size();
+    while (lo < hi) {
+        size_t mid = (lo + hi) / 2;
+        if (a < r[mid].first)        hi = mid;
+        else if (a >= r[mid].second) lo = mid + 1;
+        else return true;
+    }
+    return false;
+}
+
+static bool ToolsAddrReadable(void *addr) {
+    const uintptr_t a = (uintptr_t)addr;
+    if (a < 0x10000) return false;
+    ToolsRefreshReadableRanges();
+    return ToolsRangesContain(ToolsLiveRanges(), a);
+}
+
+bool Tools::IsPtrValid(void *addr) {
+    if (addr == nullptr) return false;
+    const uintptr_t a = (uintptr_t)addr;
+    if (a < 0x10000) return false;
+
+    // FAST PATH: consult the /proc/self/maps snapshot first. A pointer that is
+    // listed readable there IS readable, and the binary search costs zero
+    // syscalls. IsPtrValid() runs several hundred times per frame (every ESP
+    // liveness guard, every object guard inside the trigger scan, every hook
+    // gate) and the process_vm_readv syscall this used to do PER CALL was the
+    // single biggest per-frame cost of the whole mod. The snapshot is only
+    // PARSED when it is empty (first call) - see ToolsRefreshReadableRanges.
+    //
+    // The pointer is taken ONCE: a reader must never follow a snapshot that a
+    // refreshing thread could be refilling (see the concurrency note above).
+    const ToolsRangeSnapshot *snap = ToolsLiveRanges();
+    if (!snap) {
+        ToolsRefreshReadableRanges(true);
+        snap = ToolsLiveRanges();
+    }
+    if (ToolsRangesContain(snap, a)) return true;
+
+    // NOT in the snapshot: either a dead pointer, or memory mapped after the
+    // snapshot was taken (a pawn spawned a moment ago). process_vm_readv
+    // answers authoritatively; the next snapshot refresh picks the address up
+    // and later calls return through the fast path above.
+    if (pvm(addr, tools_isvalid_buf, sizeof tools_isvalid_buf)) return true;
+
+    // pvm failed: either the page really is unreadable, or this device blocks
+    // process_vm_readv entirely. Confirm through /proc/self/maps (at most every
+    // 250 ms, so a frame full of dead pointers cannot become a maps-parsing
+    // loop) instead of blindly rejecting - a blind reject silently disabled
+    // every guarded hook, ESP pass and the triggerbot.
+    ToolsRefreshReadableRanges();
+    return ToolsRangesContain(ToolsLiveRanges(), a);
+}
+
+uintptr_t Tools::GetBaseAddress(const char *name) {
+    uintptr_t base = 0;
+    char line[512];
+
+    FILE *f = fopen("/proc/self/maps", "r");
+
+    if (!f) {
+        return 0;
+    }
+    while (fgets(line, sizeof line, f)) {
+        uintptr_t tmpBase;
+        char tmpName[256];
+        if (sscanf(line, "%" PRIXPTR "-%*" PRIXPTR "%*s %*s %*s %*s %s", &tmpBase, tmpName) > 0) {
+            if (!strcmp(basename(tmpName), name)) {
+                base = tmpBase;
+                break;
+            }
+        }
+    }
+
+    fclose(f);
+    return base;
+}
+
+uintptr_t Tools::GetRealOffsets(const char *libraryName, uintptr_t relativeAddr) {
+	uintptr_t libBase = Tools::GetBaseAddress(libraryName);
+	if (libBase == 0)
+		return 0;
+	return (reinterpret_cast<uintptr_t>(libBase + relativeAddr));
+}
+
+
+uintptr_t Tools::GetEndAddress(const char *name) {
+    uintptr_t end = 0;
+    char line[512];
+
+    FILE *f = fopen("/proc/self/maps", "r");
+
+    if (!f) {
+        return 0;
+    }
+
+    bool found = false;
+    while (fgets(line, sizeof line, f)) {
+        uintptr_t tmpEnd;
+        char tmpName[256];
+        if (sscanf(line, "%*" PRIXPTR "-%" PRIXPTR "%*s %*s %*s %*s %s", &tmpEnd, tmpName) > 0) {
+            if (!strcmp(basename(tmpName), name)) {
+                if (!found) {
+                    found = true;
+                }
+            } else {
+                if (found) {
+                    end = tmpEnd;
+                    break;
+                }
+            }
+        }
+    }
+
+    fclose(f);
+    return end;
+}
+
+
+uintptr_t Tools::FindPattern(const char *lib, const char *pattern) {
+    auto start = GetBaseAddress(lib);
+    if (!start)
+        return 0;
+    auto end = GetEndAddress(lib);
+    if (!end)
+        return 0;
+    auto curPat = reinterpret_cast<const unsigned char *>(pattern);
+    uintptr_t firstMatch = 0;
+    for (uintptr_t pCur = start; pCur < end; ++pCur) {
+        if (*(uint8_t *) curPat == (uint8_t) '\?' || *(uint8_t *) pCur == getByte(curPat)) {
+            if (!firstMatch) {
+                firstMatch = pCur;
+            }
+            curPat += (*(uint16_t *) curPat == (uint16_t) '\?\?' || *(uint8_t *) curPat != (uint8_t) '\?') ? 2 : 1;
+            if (!*curPat) {
+                return firstMatch;
+            }
+            curPat++;
+            if (!*curPat) {
+                return firstMatch;
+            }
+        } else if (firstMatch) {
+            pCur = firstMatch;
+            curPat = reinterpret_cast<const unsigned char *>(pattern);
+            firstMatch = 0;
+        }
+    }
+    return 0;
+}
+
+std::string Tools::RandomString(const int len) {
+    static const char alphanumerics[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    srand((unsigned) time(0) * getpid());
+    std::string tmp;
+    tmp.reserve(len);
+    for (int i = 0; i < len; ++i) {
+        tmp += alphanumerics[rand() % (sizeof(alphanumerics) - 1)];
+    }
+    return tmp;
+}
+
+std::string Tools::GetPackageName(JNIEnv *env, jobject context) {
+    jclass contextClass = env->FindClass("android/content/Context");
+    jmethodID getPackageNameId = env->GetMethodID(contextClass, "getPackageName", "()Ljava/lang/String;");
+    auto str = (jstring) env->CallObjectMethod(context, getPackageNameId);
+    return env->GetStringUTFChars(str, 0);
+}
+
+const char *Tools::GetAndroidID(JNIEnv *env, jobject context) {
+    jclass contextClass = env->FindClass("android/content/Context");
+    jmethodID getContentResolverMethod = env->GetMethodID(contextClass, "getContentResolver", "()Landroid/content/ContentResolver;");
+    jclass settingSecureClass = env->FindClass("android/provider/Settings$Secure");
+    jmethodID getStringMethod = env->GetStaticMethodID(settingSecureClass, "getString", "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;");
+
+    auto obj = env->CallObjectMethod(context, getContentResolverMethod);
+    auto str = (jstring) env->CallStaticObjectMethod(settingSecureClass, getStringMethod, obj, env->NewStringUTF("android_id"));
+    return env->GetStringUTFChars(str, 0);
+}
+
+const char *Tools::GetDeviceModel(JNIEnv *env) {
+	jclass buildClass = env->FindClass("android/os/Build");
+	jfieldID modelId = env->GetStaticFieldID(buildClass, "MODEL", "Ljava/lang/String;");
+	
+	auto str = (jstring) env->GetStaticObjectField(buildClass, modelId);
+	return env->GetStringUTFChars(str, 0);
+}
+
+const char *Tools::GetDeviceBrand(JNIEnv *env) {
+	jclass buildClass = env->FindClass("android/os/Build");
+	jfieldID modelId = env->GetStaticFieldID(buildClass, "BRAND", "Ljava/lang/String;");
+	
+	auto str = (jstring) env->GetStaticObjectField(buildClass, modelId);
+	return env->GetStringUTFChars(str, 0);
+}
+
+const char *Tools::GetDeviceUniqueIdentifier(JNIEnv *env, const char *uuid) {
+    jclass uuidClass = env->FindClass("java/util/UUID");
+
+    auto len = strlen(uuid);
+
+    jbyteArray myJByteArray = env->NewByteArray(len);
+    env->SetByteArrayRegion(myJByteArray, 0, len, (jbyte *) uuid);
+
+    jmethodID nameUUIDFromBytesMethod = env->GetStaticMethodID(uuidClass, "nameUUIDFromBytes", "([B)Ljava/util/UUID;");
+    jmethodID toStringMethod = env->GetMethodID(uuidClass, "toString", "()Ljava/lang/String;");
+
+    auto obj = env->CallStaticObjectMethod(uuidClass, nameUUIDFromBytesMethod, myJByteArray);
+    auto str = (jstring) env->CallObjectMethod(obj, toStringMethod);
+    return env->GetStringUTFChars(str, 0);
+}
+
+std::string Tools::CalcMD5(std::string s) {
+    std::string result;
+
+    unsigned char hash[MD5_DIGEST_LENGTH];
+    char tmp[4];
+
+    MD5_CTX md5;
+    MD5_Init(&md5);
+    MD5_Update(&md5, s.c_str(), s.length());
+    MD5_Final(hash, &md5);
+	
+    for (unsigned char i : hash) {
+        sprintf(tmp, "%02x", i);
+        result += tmp;
+    }
+	
+    return result;
+}

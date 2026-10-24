@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive-icon background: a deep violet field that the accent "E" sits on.
+     It replaces the AIDE template's teal blueprint grid, which clashed with the
+     menu's purple theme. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#141020"
+        android:pathData="M0,0h108v108h-108z" />
+
+    <!-- Two soft accent discs behind the mark, one step lighter each. -->
+    <path
+        android:fillColor="#1B1530"
+        android:pathData="M54,12a42,42 0,1 0,0 84a42,42 0,1 0,0 -84z" />
+    <path
+        android:fillColor="#221A3C"
+        android:pathData="M54,26a28,28 0,1 0,0 56a28,28 0,1 0,0 -56z" />
+</vector>

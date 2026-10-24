@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Launcher mark: a solid accent-violet "E" (matches the menu brand). -->
+    <path
+        android:fillColor="#A868FF"
+        android:fillType="nonZero"
+        android:pathData="M34,30 h40 v11 h-28 v7 h24 v11 h-24 v8 h28 v11 h-40 z"
+        android:strokeWidth="0" />
+</vector>
