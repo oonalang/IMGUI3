@@ -34,11 +34,6 @@ static inline bool IsFiniteVec3(const Vector3 &v) {
            fabsf(v.x) < 100000.0f && fabsf(v.y) < 100000.0f && fabsf(v.z) < 100000.0f;
 }
 
-// A pawn whose bone chain faulted once is not asked again for a while. A
-// despawned body leaves the bone map holding pointers that are still inside a
-// mapped page, so IsPtrValid() cannot see the difference; the game's own
-// get_position() then walks the torn object and faults. Retrying every frame
-// would mean a fault every frame.
 struct SkeletonFaultEntry {
     uintptr_t pawn = 0;
     int64_t untilMs = 0;
@@ -161,11 +156,6 @@ static bool DrawBoneMapSkeleton(ImDrawList *draw, Pawn *pawn, ImU32 color, float
     bool visible[16] = {};
     int visibleCount = 0;
 
-    // The bone map of a pawn that is despawning still points inside a mapped
-    // page, so IsPtrValid() passes and the game's get_position() then walks a
-    // torn object. Every read into the game is inside this guard: a fault
-    // costs one skeleton, not the process, and the pawn is skipped for a
-    // moment afterwards so it is not faulted again on the next frame.
     const bool safe = fault_guard::Run([&] {
         bones[0] = GetBoneMapPos(boneMap, BoneMapOffsets::m_Head);
         bones[1] = GetBoneMapPos(boneMap, BoneMapOffsets::m_Neck);

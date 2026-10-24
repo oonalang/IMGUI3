@@ -1,5 +1,5 @@
 #pragma once
-// Profile filesystem operations shared by the Android UI and native unit tests.
+
 #include <string>
 #include <fstream>
 #include <vector>
@@ -44,7 +44,6 @@ inline std::string GetAutoLoadProfile()
     return name;
 }
 
-// An empty value disables autoload. A nonempty value must already exist.
 inline bool SetAutoLoadProfile(const std::string& name)
 {
     if (!name.empty() && !ProfileExists(name)) return false;
@@ -82,13 +81,12 @@ inline bool RenameProfile(const std::string& from, const std::string& to)
 inline bool DeleteProfile(const std::string& name)
 {
     if (!ProfileExists(name)) return false;
-    // Don't leave a stale autoload target if the selected profile was deleted.
+
     const bool selected = GetAutoLoadProfile() == name;
     if (std::remove(ProfilePath(name).c_str()) != 0) return false;
     if (selected) SetAutoLoadProfile("");
     return true;
 }
-
 
 inline std::vector<std::string> ListProfiles()
 {

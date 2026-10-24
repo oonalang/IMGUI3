@@ -1,9 +1,5 @@
 #include "raspody_font.h"
 
-// Inter SemiBold is already compiled into the app for its existing HUD
-// (Fonts/fonts::h -> MainFeatureIncludes.h). It is a plain global array in the
-// Main.cpp translation unit; declaring it here avoids pulling in that header a
-// second time (which would define the array twice).
 extern unsigned char inter_semibold[];
 static constexpr int kInterSemiboldBytes = 316220;
 
@@ -19,8 +15,6 @@ namespace raspody
         cfg.OversampleV = 2;
         cfg.PixelSnapH = true;
 
-        // Cyrillic ranges already cover Latin (0x0020-0x00FF) plus all UI text
-        // characters; no need for additional ranges.
         const ImWchar* ranges = io.Fonts->GetGlyphRangesCyrillic();
 
         fonts::small = io.Fonts->AddFontFromMemoryTTF(inter_semibold, kInterSemiboldBytes, 16.0f, &cfg, ranges);
@@ -29,8 +23,6 @@ namespace raspody
         fonts::title = io.Fonts->AddFontFromMemoryTTF(inter_semibold, kInterSemiboldBytes, 30.0f, &cfg, ranges);
         fonts::brand = io.Fonts->AddFontFromMemoryTTF(inter_semibold, kInterSemiboldBytes, 40.0f, &cfg, ranges);
 
-        // A failed custom payload must never leave null fonts behind: every
-        // Raspody drawing path uses these pointers.
         if (!fonts::small || !fonts::body || !fonts::label || !fonts::title || !fonts::brand)
         {
             ImFont* fallback = io.FontDefault;
@@ -44,7 +36,5 @@ namespace raspody
             if (!fonts::brand) fonts::brand = fallback;
         }
 
-        // Leave io.FontDefault alone: the rest of the app (login window, HUD)
-        // was configured around the existing 16 px Inter default.
     }
 }

@@ -324,8 +324,6 @@ namespace login_screen
 
         const char* brand = (p.brand && p.brand[0]) ? p.brand : "ethnir.cc";
 
-        // The card sits on the game's own frame, so it needs its own light:
-        // a soft ambient shadow under it and one faint purple rim outside it.
         for (int i = 4; i >= 1; --i)
         {
             const float grow = (float)i * 7.0f * s;
@@ -389,7 +387,6 @@ namespace login_screen
                                 IM_COL32_WHITE, L.cardRound,
                                 ImDrawFlags_RoundCornersBottomLeft);
 
-            // Leave the Hachiware frames untouched; no gradient darkens the video.
             dl->AddLine(ImVec2(L.wellMax.x - 1.0f, L.wellMin.y),
                         ImVec2(L.wellMax.x - 1.0f, L.wellMax.y),
                         IM_COL32(139, 92, 246, 36), 1.0f);
@@ -441,8 +438,6 @@ namespace login_screen
             const bool hovered = ImGui::IsItemHovered();
             ImGui::PopFont();
 
-            // Focus reads from across the card: a bloom under the baseline, then
-            // the line itself on top of it.
             if (focused)
             {
                 for (int i = 3; i >= 1; --i)

@@ -22,9 +22,6 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-// ------------------------------------------------------------
-// Android NDK missing PTRACE_* constants (Linux aarch64 values)
-// ------------------------------------------------------------
 #ifndef PTRACE_TRACEME
 #define PTRACE_TRACEME      0
 #endif
@@ -71,10 +68,6 @@
 #define ANTI_LOG_TAG "ANTIHOOK"
 #define ANTI_LOGI(...) __android_log_print(ANDROID_LOG_INFO,  ANTI_LOG_TAG, __VA_ARGS__)
 #define ANTI_LOGE(...) __android_log_print(ANDROID_LOG_ERROR, ANTI_LOG_TAG, __VA_ARGS__)
-
-// ============================================================
-// === EXISTING CORE (UNCHANGED - DO NOT MODIFY) ===
-// ============================================================
 
 void* GetAnogs() {
     static void* cached = nullptr;
@@ -155,11 +148,6 @@ void ApplyHook(uintptr_t& offs, void* hook, void** orig) {
     offs = offs ^ key;
 }
 
-// ============================================================
-// === STEALTH / ANTI-DETECTION LAYER ===
-// ============================================================
-
-// ---------- 1. ptrace ----------
 static long (*g_orig_ptrace)(int, pid_t, void*, void*) = nullptr;
 
 static long Hook_ptrace(int request, pid_t pid, void* addr, void* data) {
@@ -188,10 +176,6 @@ static long Hook_ptrace(int request, pid_t pid, void* addr, void* data) {
     return -1;
 }
 
-// ---------- 2. process_vm_readv / writev ----------
-// These are the syscalls EasyProDex/GameGuardian/Frida use to read
-// remote process memory. Blocking them here plus PR_SET_DUMPABLE=0
-// in InstallStealth() is our main defense.
 static ssize_t (*g_orig_process_vm_readv)(pid_t, const struct iovec*, unsigned long,
                                           const struct iovec*, unsigned long, unsigned long) = nullptr;
 
@@ -210,7 +194,6 @@ static ssize_t Hook_process_vm_writev(pid_t, const struct iovec*, unsigned long,
     return -1;
 }
 
-// ---------- 3. Optional frida sniff (logging only) ----------
 static bool DetectFridaLog() {
     const char* paths[] = {
         "/data/local/tmp/frida-server",
@@ -243,30 +226,15 @@ static bool DetectFridaLog() {
     return false;
 }
 
-// ---------- 4. Installer ----------
 static bool g_stealthInstalled = false;
 
 inline void InstallStealth() {
     if (g_stealthInstalled) return;
     g_stealthInstalled = true;
 
-    // ============================================================
-    // STEP 1 — PRIMARY DEFENSE
-    // Clear the dumpable flag. The kernel will then refuse any
-    // /proc/<our-pid>/mem open, any /proc/<our-pid>/maps read,
-    // and any process_vm_readv() from a process without CAP_SYS_PTRACE.
-    // Since EasyProDex is a non-root app, this alone stops it.
-    // ============================================================
     prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
     ANTI_LOGI("PR_SET_DUMPABLE=0 (kernel-level /proc/mem + process_vm block)");
 
-    // ============================================================
-    // STEP 2 — Userspace backup
-    // Hook only the syscalls used exclusively by memory tools.
-    // DO NOT hook read/open/openat/pread globally — those run for
-    // every operation in the process and break GMS, launcher, and
-    // system libs (they were the cause of the GMS crash).
-    // ============================================================
     void* a;
 
     a = (void*)dlsym(RTLD_DEFAULT, "ptrace");

@@ -550,16 +550,24 @@ inline float DisperseBase(void * instance) {
 
 inline bool (*orig_IsUnlocked)(void *instance) = nullptr;
 inline bool IsUnlocked(void *instance) {
-    // The blueprint toggle means "this player owns everything". The game asks
-    // some of these questions through a static helper that passes a null
-    // receiver; requiring an instance made those calls answer "locked", so the
-    // switch did nothing in part of the loadout.
+
     if (Config.ExtraMenu.MythicAttachments)
         return true;
     return orig_IsUnlocked != nullptr ? orig_IsUnlocked(instance) : false;
 }
 
+#include "MythicAttachmentSystem.h"
+
 #include "MythicAttachments.h"
+
+inline bool (*orig_IsWeaponSkinUnlock)(void *instance, uint32_t skinId) = nullptr;
+inline bool IsWeaponSkinUnlock(void *instance, uint32_t skinId) {
+    if (Config.ExtraMenu.MythicAttachments || Config.ExtraMenu.Attachment)
+        return true;
+    return orig_IsWeaponSkinUnlock != nullptr
+         ? orig_IsWeaponSkinUnlock(instance, skinId)
+         : false;
+}
 
 #include "ReportBlock.h"
 
@@ -878,6 +886,9 @@ inline void InitializeAllHooks() {
     HOOK_LIB("libunity.so", "0x901F988", IsUnlocked, orig_IsUnlocked);
 
     HOOK_LIB("libunity.so", "0xA61AA00", IsWeaponAttachmentUnlock, orig_IsWeaponAttachmentUnlock);
+    HOOK_LIB("libunity.so", "0xA61AD54", IsWeaponSkinUnlock, orig_IsWeaponSkinUnlock);
+
+    mythic_attachment_system::InstallMythicAttachmentHooksFresh(m_unity);
 
     report_block::InstallReportBlockHooks();
 

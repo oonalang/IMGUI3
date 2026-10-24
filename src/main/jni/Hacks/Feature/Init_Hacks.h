@@ -96,10 +96,6 @@ struct sConfig {
 struct sWeaponAim {
         bool Aimbot360;
         float AimAssistSize;
-        // Aim Lock: 0 = off, 1..100 = tracking speed. Keeps the aim on the
-        // target while firing or scoping, unlike the assist which only acts on
-        // a bullet.
-        float AimLock;
         bool AimSilent;
         EAimTarget Target;
         EAimTrigger Trigger;
@@ -247,9 +243,7 @@ sColorsESPBOT sColorsESPBOT{0};
         bool NoCrouch = false;
         bool Triggerbot = false;
         int TriggerbotMode = 0;
-        // Human reaction time before the trigger is pressed, in ms. 0 keeps
-        // the instant trigger; the default is a plausible human reaction so a
-        // press never lands on the tick the target appeared.
+
         int TriggerbotDelay = 120;
         int TriggerbotRadius = 80;
         bool TriggerbotDotRay = true;

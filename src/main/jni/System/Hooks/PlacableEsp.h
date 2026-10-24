@@ -260,8 +260,6 @@ inline void TrackPlacable(void *proj, PlacableRoute route = PlcRouteTick)
     if (!label)
         return;
 
-    // Object-specific state offsets are not guaranteed on every subclass.
-    // Only treat a successfully read true state as a removal signal.
     bool exploded = false;
     bool destroyed = false;
     const bool removed =
@@ -280,13 +278,9 @@ inline void TrackPlacable(void *proj, PlacableRoute route = PlcRouteTick)
     g_placableDiag.classified++;
     PlacableRememberClass(className);
 
-    // An unavailable owner/team field should not hide an otherwise valid item.
     int camp = -1;
     PlacableReadInt(base, PlacableCfg::OwnerCampOff, camp);
 
-    // The placed actor outlives the projectile for mines, so an entry that was
-    // already re-keyed to its actor is refreshed in place instead of adding a
-    // second entry for the same object.
     uintptr_t actor = 0;
     if (!PlacableReadPtr(base, PlacableCfg::GrenadeActorOff, actor) ||
         !PlacableObjectAlive(actor))
@@ -614,8 +608,7 @@ inline bool hook_RemoveWeaponProjectile(void *game, void *projectile)
                              ? orig_RemoveWeaponProjectile(game, projectile)
                              : false;
     if (removed) {
-        // A placed mine leaves the live projectile list while its actor stays
-        // in the world; re-key the entry to the actor instead of dropping it.
+
         PlacableDetach(projectile);
     }
     return removed;

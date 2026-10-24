@@ -20,7 +20,6 @@ static float g_Timer    = 0.0f;
 static float g_Duration = 3.0f;
 static float g_Time     = 0.0f;
 
-// Same card as the menu and the login screen.
 static constexpr float kCardW      = kUiCardW;
 static constexpr float kCardH      = kUiCardH;
 static constexpr float kCardRound  = 28.0f;
@@ -81,10 +80,6 @@ static void TextTracked(ImDrawList* dl, ImFont* font, float size, float centerX,
     }
 }
 
-// Fills the box with the whole of the widest crop that keeps the source's aspect.
-// The crop is done in texture coordinates rather than by drawing a larger rect, so
-// the image can never spill out of the box it was asked to fill - the card corners
-// stay the card's.
 static void CoverImage(ImDrawList* dl, ImTextureID tex, ImVec2 mn, ImVec2 mx, float aspect,
                        float rounding = 0.0f)
 {
@@ -118,8 +113,7 @@ static void CoverImage(ImDrawList* dl, ImTextureID tex, ImVec2 mn, ImVec2 mx, fl
         const ImVec2 size(mx.x - mn.x, mx.y - mn.y);
         const ImTextureID video = ui_media::VideoTexture();
         const bool ready = permitVideo && video != nullptr && ui_media::VideoReady();
-        // Never display menu artwork or the previous Hachiware still while
-        // the Arknights decoder is preparing. Draw only the neutral backdrop.
+
         (void)still;
         const ImTextureID source = ready ? video : nullptr;
 
@@ -127,8 +121,6 @@ static void CoverImage(ImDrawList* dl, ImTextureID tex, ImVec2 mn, ImVec2 mx, fl
                                : (size.x > 0.0f ? size.x / size.y : 16.0f / 9.0f);
     if (!(size.x > 0.0f) || !(size.y > 0.0f) || aspect <= 0.0f) return;
 
-    // As on the field: only paint what can be seen. With an image over the whole
-    // card the gradient and the three circles were pure overdraw.
     if (source == nullptr)
     {
         const float drift = std::sin(g_Time * 0.28f) * size.x * 0.06f;
@@ -164,9 +156,6 @@ static void GlassCard(ImDrawList* dl, ImVec2 mn, ImVec2 mx)
                     kCardRound + grow, 0, 14.0f);
     }
 
-    // Keep the Arknights video unobscured. The progress bar and labels have
-    // their own contrast, so no darkening / glass blur is needed over the clip.
-
     dl->AddRect(ImVec2(mn.x + 1.0f, mn.y + 1.0f), ImVec2(mx.x - 1.0f, mx.y - 1.0f),
                 C::UA(C::Border, 0.42f * breathe), kCardRound - 1.0f, 0, 1.4f);
     dl->AddRect(ImVec2(mn.x + 7.0f, mn.y + 7.0f), ImVec2(mx.x - 7.0f, mx.y - 7.0f),
@@ -191,7 +180,6 @@ static void ProgressBar(ImDrawList* dl, ImVec2 mn, ImVec2 mx, float progress)
     const float radius = h * 0.5f;
     const float pulse  = 0.85f + 0.15f * Pulse(g_Time, 0.6f);
 
-    // Outer bloom: the glass sits in its own light.
     for (int i = 3; i >= 1; --i)
     {
         const float grow = (float)i * 3.5f;
@@ -199,7 +187,6 @@ static void ProgressBar(ImDrawList* dl, ImVec2 mn, ImVec2 mx, float progress)
                     C::UA(C::Purple, 0.022f / (float)i), radius + grow, 0, 5.0f);
     }
 
-    // Track: tinted glass, bright rim, top specular band.
     dl->AddRectFilled(mn, mx, IM_COL32(255, 255, 255, 12), radius);
     dl->AddRectFilled(mn, mx, IM_COL32(12, 5, 24, 138), radius);
 
@@ -216,12 +203,10 @@ static void ProgressBar(ImDrawList* dl, ImVec2 mn, ImVec2 mx, float progress)
 
     const ImVec2 fillMax(mn.x + fillW, mx.y);
 
-    // Liquid body.
     dl->AddRectFilledMultiColor(mn, fillMax,
         C::UA(C::PurpleDeep, 0.92f), C::UA(C::PurpleBrt, 0.92f),
         C::UA(C::PurpleBrt, 0.92f), C::UA(C::PurpleDeep, 0.92f));
 
-    // Glass on top of the liquid: specular band plus a travelling streak.
     dl->PushClipRect(ImVec2(mn.x, mn.y), ImVec2(fillMax.x, mx.y), true);
     dl->AddRectFilledMultiColor(ImVec2(mn.x, mn.y), ImVec2(fillMax.x, mn.y + h * 0.58f),
         IM_COL32(255, 255, 255, 118), IM_COL32(255, 255, 255, 88),
@@ -240,7 +225,6 @@ static void ProgressBar(ImDrawList* dl, ImVec2 mn, ImVec2 mx, float progress)
     dl->AddRect(ImVec2(mn.x, mn.y), ImVec2(fillMax.x, mx.y),
                 IM_COL32(255, 255, 255, 88), radius, 0, 1.0f);
 
-    // The liquid head: bloom, core and a wet highlight.
     const ImVec2 head(fillMax.x, mn.y + radius);
     dl->AddCircleFilled(head, radius * 2.2f * pulse, C::UA(C::PurpleBrt, 0.15f), 24);
     dl->AddCircleFilled(head, radius * 1.05f * pulse, C::UA(C::PurpleBrt, 0.95f), 20);
@@ -287,9 +271,6 @@ static void StatusRow(ImDrawList* dl, ImFont* font, ImVec2 mn, ImVec2 mx, float 
                       : (progress < 0.95f) ? "PREPARING INTERFACE"
                       :                      "READY";
 
-    // The stage label used to cut to the next one mid-bar. It now fades over
-    // the outgoing label and rises a couple of pixels, which reads as one
-    // continuous line instead of a flash of new text.
     static const char* lastStage = nullptr;
     static const char* fadingStage = nullptr;
     static float stageFade = 1.0f;
@@ -317,8 +298,6 @@ static void StatusRow(ImDrawList* dl, ImFont* font, ImVec2 mn, ImVec2 mx, float 
     dl->AddText(font, 11.0f, ImVec2(mx.x - w, mn.y), C::UA(C::PurpleBrt, 0.98f), pct);
 }
 
-// Lock visibility at the beginning: a late decoder frame must not suddenly
-// overlay the loading animation half-way through.
 inline bool g_ShowVideoThisRun = false;
 
 inline void Start(float durationSeconds = 3.0f) {
@@ -347,8 +326,6 @@ inline bool RenderWindow(ImTextureID tex = nullptr) {
 
     const ImVec2 display = io.DisplaySize;
 
-    // Card-sized popup centred on the same rect the menu uses, with a band
-    // above and below for the fade-in and the rotating promo line.
     const MenuWindow win = ComputeMenuWindow(display);
     const float kPromoRoom = 130.0f;
     const ImVec2 winPos(win.pos.x, win.pos.y - kPromoRoom * 0.5f);
@@ -372,8 +349,6 @@ inline bool RenderWindow(ImTextureID tex = nullptr) {
         const float cardH = win.size.y;
         const float cardCx = (cardMin.x + cardMax.x) * 0.5f;
 
-        // Draw the video only inside the loading card. No fullscreen media
-        // layer is painted behind the popup or over the running game.
         const float enter = EaseOut(Clamp01(g_Time / 0.55f));
         CardBackdrop(dl, cardMin, cardMax, tex, g_ShowVideoThisRun);
         GlassCard(dl, cardMin, cardMax);
@@ -404,9 +379,7 @@ inline bool RenderWindow(ImTextureID tex = nullptr) {
     if (g_Timer >= g_Duration) {
         g_Active = false;
         g_Timer  = 0.0f;
-        // Release the MediaPlayer too, not just the audio: the loading video is
-        // ~20 s long, and leaving it running past the loading screen keeps a live
-        // SurfaceTexture and an OES texture around long after the menu is up.
+
         ui_media::Shutdown();
         finished = true;
     }

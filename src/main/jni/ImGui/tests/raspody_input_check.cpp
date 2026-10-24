@@ -160,8 +160,6 @@ int main()
     for (int i = 0; i < 3; ++i)
         Frame(in);
 
-    // Hit points come from the same layout maths the menu uses, so the check does
-    // not break when the card is resized.
     const float sc = ImClamp(ImMin(menuWin.size.x / kUiCardW, menuWin.size.y / kUiCardH), 0.70f, 1.45f);
     auto Sc = [&](float v) { return v * sc; };
     const float pad     = ImClamp(menuWin.size.x * 0.017f, Sc(10), Sc(18));

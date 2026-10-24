@@ -1,8 +1,4 @@
-// Host check for the loading screen.
-//
-// The loader renders its video only inside the centered card. No fullscreen
-// video or still image may be drawn behind the card.
-// The check renders the loader headless and inspects the draw commands.
+
 
 #include <cstdio>
 #include <cstdint>
@@ -74,8 +70,7 @@ static void Collect(std::vector<Cmd>& out)
                 k.maxAlpha = ImMax(k.maxAlpha,
                                    (float)((v.col >> IM_COL32_A_SHIFT) & 0xFF) / 255.0f);
             }
-            // The font atlas sits on texture 0, so an unset fake texture would
-            // make every command look like an image.
+
             k.tex   = c.TextureId;
             k.image = (c.TextureId == kStill || c.TextureId == kVideo);
             k.coversScreen = (k.minX <= 1.0f && k.minY <= 1.0f &&
@@ -112,7 +107,6 @@ int main()
     const MenuWindow win = ComputeMenuWindow(io.DisplaySize);
     std::vector<Cmd> cmds;
 
-    // A clip change clears an old login frame before Arknights is available.
     ui_media::SetVideo(ui_media::VideoKind::Login);
     ui_media::g_hostVideoTex = kStill;
     ui_media::SetVideo(ui_media::VideoKind::Loading);
@@ -141,7 +135,7 @@ int main()
     Check("no fullscreen fallback image is drawn", !fullscreenStill);
 
     ui_media::g_hostVideoTex = kVideo;
-    // Only media decoded before the card starts is allowed to appear.
+
     ui_loading::g_ShowVideoThisRun = true;
     ui_media::g_hostVideoW = 960;
     ui_media::g_hostVideoH = 540;
@@ -168,7 +162,6 @@ int main()
     Check("no solid fullscreen rectangle hides the video", !solidBackdropWithVideo);
     Check("still artwork is not drawn when the video is ready", stillAnywhere < 0);
 
-    // 4. A pending loading clip must never briefly reveal older still artwork.
     ui_loading::g_ShowVideoThisRun = false;
     ui_media::g_hostVideoTex = nullptr;
     ui_media::g_hostVideoPending = true;
@@ -181,8 +174,6 @@ int main()
         if (k.image && k.tex == kStill && InsideCard(k, win)) cardStill = true;
     Check("the card never flashes unrelated still artwork while waiting", !cardStill);
 
-    // A decoder becoming ready AFTER Start cannot suddenly pop the video
-    // onto an already-running loading animation.
     ui_media::g_hostVideoTex = kVideo;
     ui_media::g_hostVideoPending = false;
     Frame(kStill);
@@ -193,13 +184,11 @@ int main()
     Check("late decoder frames do not pop into the current animation", !lateVideoPainted);
     ui_media::g_hostVideoTex = nullptr;
 
-    // 5. The card sits within the screen without a fullscreen overlay.
     Check("the card is on screen",
           win.pos.x >= 0.0f && win.pos.y >= 0.0f &&
           win.pos.x + win.size.x <= io.DisplaySize.x + 0.5f &&
           win.pos.y + win.size.y <= io.DisplaySize.y + 0.5f);
 
-    // 6. The loader ends on its own and releases the media.
     ui_loading::Start();
     for (int i = 0; i < 179; ++i) Frame(kStill);
     Check("the loader remains active before three seconds", ui_loading::IsActive());

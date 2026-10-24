@@ -29,8 +29,8 @@ extern int lastMatchResult;
 namespace {
 
 constexpr const char* kLogTag = "@HookerhooksBot";
-const char* kHardcodedFeedbackBotToken = "8964417942:AAGWxFYjza0yaUNudSoVtW0CfGbiJLr8NXA"; 
-const char* kHardcodedFeedbackChatId = "-1003885110512"; 
+const char* kHardcodedFeedbackBotToken = "8964417942:AAGWxFYjza0yaUNudSoVtW0CfGbiJLr8NXA";
+const char* kHardcodedFeedbackChatId = "-1003885110512";
 
 FeedbackState g_FeedbackState;
 std::mutex g_FeedbackStatusMutex;
@@ -45,16 +45,15 @@ std::string g_PendingCaptureFilesDirPath;
 
 void BlurRGBA(std::vector<unsigned char>& pixels, int width, int height, int radius) {
     if (radius < 1) return;
-    
+
     std::vector<unsigned char> temp = pixels;
     int wm = width - 1;
     int hm = height - 1;
     int div = radius + radius + 1;
-    
-    // Horizontal Pass
+
     for (int y = 0; y < height; y++) {
         int rsum = 0, gsum = 0, bsum = 0;
-        
+
         for (int i = -radius; i <= radius; i++) {
             int x = std::max(0, std::min(wm, i));
             int idx = (y * width + x) * 4;
@@ -62,31 +61,30 @@ void BlurRGBA(std::vector<unsigned char>& pixels, int width, int height, int rad
             gsum += temp[idx + 1];
             bsum += temp[idx + 2];
         }
-        
+
         for (int x = 0; x < width; x++) {
             int targetIdx = (y * width + x) * 4;
             pixels[targetIdx]     = rsum / div;
             pixels[targetIdx + 1] = gsum / div;
             pixels[targetIdx + 2] = bsum / div;
-            
+
             int nextX = std::max(0, std::min(wm, x + radius + 1));
             int prevX = std::max(0, std::min(wm, x - radius));
-            
+
             int nextIdx = (y * width + nextX) * 4;
             int prevIdx = (y * width + prevX) * 4;
-            
+
             rsum += temp[nextIdx]     - temp[prevIdx];
             gsum += temp[nextIdx + 1] - temp[prevIdx + 1];
             bsum += temp[nextIdx + 2] - temp[prevIdx + 2];
         }
     }
-    
+
     temp = pixels;
-    
-    // Vertical Pass
+
     for (int x = 0; x < width; x++) {
         int rsum = 0, gsum = 0, bsum = 0;
-        
+
         for (int i = -radius; i <= radius; i++) {
             int y = std::max(0, std::min(hm, i));
             int idx = (y * width + x) * 4;
@@ -94,19 +92,19 @@ void BlurRGBA(std::vector<unsigned char>& pixels, int width, int height, int rad
             gsum += temp[idx + 1];
             bsum += temp[idx + 2];
         }
-        
+
         for (int y = 0; y < height; y++) {
             int targetIdx = (y * width + x) * 4;
             pixels[targetIdx]     = rsum / div;
             pixels[targetIdx + 1] = gsum / div;
             pixels[targetIdx + 2] = bsum / div;
-            
+
             int nextY = std::max(0, std::min(hm, y + radius + 1));
             int prevY = std::max(0, std::min(hm, y - radius));
-            
+
             int nextIdx = (nextY * width + x) * 4;
             int prevIdx = (prevY * width + x) * 4;
-            
+
             rsum += temp[nextIdx]     - temp[prevIdx];
             gsum += temp[nextIdx + 1] - temp[prevIdx + 1];
             bsum += temp[nextIdx + 2] - temp[prevIdx + 2];
@@ -200,106 +198,104 @@ bool CaptureFeedbackScreenshotJPG(const std::string& savePath, std::string* erro
     GLint viewport[4] = {0, 0, 0, 0};
     glGetIntegerv(GL_VIEWPORT, viewport);
 
-    int width = viewport[2]; 
-    int height = viewport[3]; 
-    if (width <= 0 || height <= 0) { 
-        if (errorOut) *errorOut = "Invalid viewport size"; 
-        return false; 
-    } 
-    
-    std::vector<unsigned char> pixels(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u); 
-    glPixelStorei(GL_PACK_ALIGNMENT, 1); 
-    glFinish(); 
-    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data()); 
-    
-    if (glGetError() != GL_NO_ERROR) { 
-        if (errorOut) *errorOut = "glReadPixels failed"; 
-        return false; 
-    } 
+    int width = viewport[2];
+    int height = viewport[3];
+    if (width <= 0 || height <= 0) {
+        if (errorOut) *errorOut = "Invalid viewport size";
+        return false;
+    }
 
-    // (auto blur deliberately disabled for this build)
+    std::vector<unsigned char> pixels(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glFinish();
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
 
-    std::vector<unsigned char> flipped(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u); 
-    for (int y = 0; y < height; y++) { 
-        memcpy(&flipped[y * width * 4], &pixels[(height - y - 1) * width * 4], width * 4); 
-    } 
-    
-    if (!stbi_write_jpg(savePath.c_str(), width, height, 4, flipped.data(), 80)) { 
-        if (errorOut) *errorOut = "stbi_write_jpg failed to save"; 
-        return false; 
-    } 
-    return true; 
+    if (glGetError() != GL_NO_ERROR) {
+        if (errorOut) *errorOut = "glReadPixels failed";
+        return false;
+    }
+
+    std::vector<unsigned char> flipped(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+    for (int y = 0; y < height; y++) {
+        memcpy(&flipped[y * width * 4], &pixels[(height - y - 1) * width * 4], width * 4);
+    }
+
+    if (!stbi_write_jpg(savePath.c_str(), width, height, 4, flipped.data(), 80)) {
+        if (errorOut) *errorOut = "stbi_write_jpg failed to save";
+        return false;
+    }
+    return true;
 }
 
 bool SendTelegramPhoto(const std::string& token, const std::string& chatId, const std::string& filePath, const std::string& caption, std::string* errorOut) {
     if (!EnsureCurlInitialized(errorOut)) return false;
 
-    std::ifstream file(filePath, std::ios::binary); 
-    if (!file.is_open()) { 
-        if (errorOut) *errorOut = "Unable to open screenshot file"; 
-        return false; 
-    } 
-    const std::string fileContent((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>()); 
-    file.close(); 
-    if (fileContent.empty()) { 
-        if (errorOut) *errorOut = "Screenshot file is empty"; 
-        return false; 
-    } 
-    
-    CURL* curl = curl_easy_init(); 
-    if (!curl) { 
-        if (errorOut) *errorOut = "curl_easy_init failed"; 
-        return false; 
-    } 
-    
-    std::string response; 
-    const std::string url = "https://api.telegram.org/bot" + token + "/sendPhoto"; 
-    const std::string boundary = "----AstralBoundary7MA4YWxkTrZu0gW"; 
-    std::string body; 
-    body.reserve(fileContent.size() + 1024); 
-    body += "--" + boundary + "\r\n"; 
-    body += "Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n"; 
-    body += chatId + "\r\n"; 
-    body += "--" + boundary + "\r\n"; 
-    body += "Content-Disposition: form-data; name=\"caption\"\r\n\r\n"; 
-    body += caption + "\r\n"; 
-    body += "--" + boundary + "\r\n"; 
-    body += "Content-Disposition: form-data; name=\"parse_mode\"\r\n\r\n"; 
-    body += "HTML\r\n"; 
-    body += "--" + boundary + "\r\n"; 
-    body += "Content-Disposition: form-data; name=\"photo\"; filename=\"feedback.jpg\"\r\n"; 
-    body += "Content-Type: image/jpeg\r\n\r\n"; 
-    body.append(fileContent.data(), fileContent.size()); 
-    body += "\r\n--" + boundary + "--\r\n"; 
-    
-    struct curl_slist* headers = nullptr; 
-    headers = curl_slist_append(headers, ("Content-Type: multipart/form-data; boundary=" + boundary).c_str()); 
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); 
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers); 
-    curl_easy_setopt(curl, CURLOPT_POST, 1L); 
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str()); 
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size())); 
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, FeedbackWriteCallback); 
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response); 
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L); 
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); 
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L); 
-    
-    const CURLcode res = curl_easy_perform(curl); 
-    long statusCode = 0; 
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &statusCode); 
-    curl_slist_free_all(headers); 
-    curl_easy_cleanup(curl); 
-    
-    if (res != CURLE_OK) { 
-        if (errorOut) *errorOut = curl_easy_strerror(res); 
-        return false; 
-    } 
-    if (statusCode != 200 || response.find("\"ok\":true") == std::string::npos) { 
-        if (errorOut) *errorOut = response.empty() ? "Telegram API error" : response; 
-        return false; 
-    } 
-    return true; 
+    std::ifstream file(filePath, std::ios::binary);
+    if (!file.is_open()) {
+        if (errorOut) *errorOut = "Unable to open screenshot file";
+        return false;
+    }
+    const std::string fileContent((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    if (fileContent.empty()) {
+        if (errorOut) *errorOut = "Screenshot file is empty";
+        return false;
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        if (errorOut) *errorOut = "curl_easy_init failed";
+        return false;
+    }
+
+    std::string response;
+    const std::string url = "https://api.telegram.org/bot" + token + "/sendPhoto";
+    const std::string boundary = "----AstralBoundary7MA4YWxkTrZu0gW";
+    std::string body;
+    body.reserve(fileContent.size() + 1024);
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n";
+    body += chatId + "\r\n";
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"caption\"\r\n\r\n";
+    body += caption + "\r\n";
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"parse_mode\"\r\n\r\n";
+    body += "HTML\r\n";
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"photo\"; filename=\"feedback.jpg\"\r\n";
+    body += "Content-Type: image/jpeg\r\n\r\n";
+    body.append(fileContent.data(), fileContent.size());
+    body += "\r\n--" + boundary + "--\r\n";
+
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, ("Content-Type: multipart/form-data; boundary=" + boundary).c_str());
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, FeedbackWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long statusCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &statusCode);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        if (errorOut) *errorOut = curl_easy_strerror(res);
+        return false;
+    }
+    if (statusCode != 200 || response.find("\"ok\":true") == std::string::npos) {
+        if (errorOut) *errorOut = response.empty() ? "Telegram API error" : response;
+        return false;
+    }
+    return true;
 }
 
 std::string BuildFeedbackPayload(const FeedbackState& snapshot) {
@@ -307,50 +303,50 @@ std::string BuildFeedbackPayload(const FeedbackState& snapshot) {
     const std::string playtime = GetFormattedPlaytime();
     const std::string region = GetDeviceRegion();
 
-    std::ostringstream oss; 
+    std::ostringstream oss;
     oss << "<code><b>ETHNIR FREEMIUM AUTO FEEDBACK</b></code>\n\n";
-    oss << "<b>⏱️ Playtime:</b> <code>" << playtime << "</code>\n"; 
-    oss << "<b>📱 Device:</b> <code>" << device << "</code>\n"; 
-    oss << "<b>🌍 Region:</b> <code>" << region << "</code>\n"; 
-    oss << "<b>🎮 Game:</b> <code>Call Of Duty Mobile Garena</code>\n"; 
-    oss << "<b>🔧 Version:</b> <code>1.6.57</code>\n"; 
-    oss << "<b>🛡️ Status:</b> <code>Safe</code>\n\n"; 
-    
-    oss << "<b>🛒 BUY KEY TO:</b> @Shaiaintshyy"; 
-    if (snapshot.note[0] != '\0') { 
-        oss << "\n<b>📝 Logs:</b> " << snapshot.note; 
-    } 
-    return oss.str(); 
+    oss << "<b>⏱️ Playtime:</b> <code>" << playtime << "</code>\n";
+    oss << "<b>📱 Device:</b> <code>" << device << "</code>\n";
+    oss << "<b>🌍 Region:</b> <code>" << region << "</code>\n";
+    oss << "<b>🎮 Game:</b> <code>Call Of Duty Mobile Garena</code>\n";
+    oss << "<b>🔧 Version:</b> <code>1.6.57</code>\n";
+    oss << "<b>🛡️ Status:</b> <code>Safe</code>\n\n";
+
+    oss << "<b>🛒 BUY KEY TO:</b> @Shaiaintshyy";
+    if (snapshot.note[0] != '\0') {
+        oss << "\n<b>📝 Logs:</b> " << snapshot.note;
+    }
+    return oss.str();
 }
 
 void LaunchSendWorker(const FeedbackState& snapshot, const std::string& screenshotPath, const std::string& screenshotWarning) {
     std::thread([snapshot, screenshotPath, screenshotWarning]() {
         std::string error;
 
-        std::string token(snapshot.botToken); 
-        if (token.empty() && kHardcodedFeedbackBotToken[0] != '\0') { 
-            token = kHardcodedFeedbackBotToken; 
-        } 
-        std::string chat(snapshot.chatId); 
-        if (chat.empty() && kHardcodedFeedbackChatId[0] != '\0') { 
-            chat = kHardcodedFeedbackChatId; 
-        } 
-        const bool hasScreenshot = !screenshotPath.empty(); 
-        const std::string payload = BuildFeedbackPayload(snapshot); 
-        bool ok = false; 
-        if (hasScreenshot) { 
-            ok = SendTelegramPhoto(token, chat, screenshotPath, payload, &error); 
-        } 
-        if (!ok) { 
-            SetFeedbackStatus("Send failed: " + error, true); 
-        } else { 
+        std::string token(snapshot.botToken);
+        if (token.empty() && kHardcodedFeedbackBotToken[0] != '\0') {
+            token = kHardcodedFeedbackBotToken;
+        }
+        std::string chat(snapshot.chatId);
+        if (chat.empty() && kHardcodedFeedbackChatId[0] != '\0') {
+            chat = kHardcodedFeedbackChatId;
+        }
+        const bool hasScreenshot = !screenshotPath.empty();
+        const std::string payload = BuildFeedbackPayload(snapshot);
+        bool ok = false;
+        if (hasScreenshot) {
+            ok = SendTelegramPhoto(token, chat, screenshotPath, payload, &error);
+        }
+        if (!ok) {
+            SetFeedbackStatus("Send failed: " + error, true);
+        } else {
             SetFeedbackStatus("Feedback to ETHNIR FREEMIUM has been successfully sent.", false);
-        } 
-        g_FeedbackSending.store(false); 
-    }).detach(); 
+        }
+        g_FeedbackSending.store(false);
+    }).detach();
 }
 
-} // namespace
+}
 
 namespace feedback {
 
@@ -376,7 +372,7 @@ void StartSendAsync(const FeedbackState& snapshot, const std::string& filesDirPa
     SetFeedbackStatus("Queuing stealth capture...", false);
     std::lock_guard<std::mutex> lock(g_PendingCaptureMutex);
     g_PendingCaptureSnapshot = snapshot;
-    
+
     if(filesDirPath.empty()) {
         g_PendingCaptureFilesDirPath = "/storage/emulated/0/Android/data/com.garena.game.codm/files";
     } else {
@@ -391,7 +387,7 @@ void PumpAfterRender() {
     {
         std::lock_guard<std::mutex> lock(g_PendingCaptureMutex);
         if (!g_HasPendingCapture) return;
-        
+
         snapshot = g_PendingCaptureSnapshot;
         filesDirPath = g_PendingCaptureFilesDirPath;
         g_HasPendingCapture = false;
@@ -399,7 +395,7 @@ void PumpAfterRender() {
 
     std::string screenshotPath = filesDirPath + "/feedback_capture.jpg";
     std::string error;
-    
+
     if (!CaptureFeedbackScreenshotJPG(screenshotPath, &error)) {
         screenshotPath.clear();
     }
@@ -407,4 +403,4 @@ void PumpAfterRender() {
     LaunchSendWorker(snapshot, screenshotPath, error);
 }
 
-} // namespace feedback
+} 

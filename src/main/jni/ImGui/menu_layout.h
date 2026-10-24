@@ -3,7 +3,6 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 
-// One card size for the menu, the login and the loading screen.
 constexpr float kUiCardW = 900.0f;
 constexpr float kUiCardH = 532.0f;
 

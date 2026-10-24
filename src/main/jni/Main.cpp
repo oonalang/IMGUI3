@@ -940,9 +940,7 @@ EGLBoolean (*old_eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
 
 static void ApplyMenuFeaturePatches()
 {
-    // Do not rewrite executable pages on every EGL frame. Repeated writes to
-    // live functions can race game threads and are unnecessary when the menu
-    // state has not changed. Retry the transition if MemoryPatch fails.
+
     static bool s_appliedWallHack = false;
     const bool wantWallHack = Config.ExtraMenu.WallHack;
     if (wantWallHack != s_appliedWallHack) {
@@ -1199,7 +1197,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         if (!isLogin && !ui_loading::IsActive()) {
             if (g_LoginButton != login_screen::ButtonState::Success)
                 ui_media::SetVideo(ui_media::VideoKind::Login);
-            ui_media::Warmup();  // Keep decoding while the success state is visible.
+            ui_media::Warmup();
         }
 
         ImVec2 viewportCenter = ImGui::GetMainViewport()->GetCenter();
@@ -1254,9 +1252,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 }
                 if (g_LoginButton == login_screen::ButtonState::Success) {
                     const double elapsed = ImGui::GetTime() - g_LoginSuccessAt;
-                    // Keep the success screen during video prepare. The card
-                    // only opens with an available Arknights frame, or the
-                    // neutral fallback after a bounded decoder timeout.
+
                     if (elapsed >= 0.85 && (ui_media::VideoReady() || elapsed >= 3.0))
                         ui_loading::Start(3.0f);
                 }
@@ -1270,7 +1266,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 lp.reveal = &revealKey;
                 lp.remember = &rememberKey;
                 lp.error = err.c_str();
-                // Never paint loading-video frames on the login screen.
+
                 const bool liveArt = g_LoginButton != login_screen::ButtonState::Success &&
                                      ui_media::VideoReady() && ui_media::VideoTexture() != nullptr;
                 lp.art = liveArt ? ui_media::VideoTexture() : (ImTextureID)(intptr_t)loginArtTex;
@@ -1317,7 +1313,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         else if (!isLogin && ui_loading::IsActive()) {
             if (ui_loading::RenderWindow()) {
                 isLogin = true;
-                uncollapseOpenAnim = 0.0f;   // fade the menu in instead of flashing black
+                uncollapseOpenAnim = 0.0f;
             }
         }
         else {
@@ -1489,8 +1485,6 @@ void Init_Thread() {
     InstallBRClassEspConfigHook();
     InitializeAllHooks();
 
-    // The libanogs set lives in System/Core/Bypass.h (once-guarded), so both
-    // init threads can ask for it without installing any hook twice.
     InitializeProtection();
 
     auto swapBuffers = ((uintptr_t)DobbySymbolResolver(OBFUSCATE("libunity.so"), OBFUSCATE("eglSwapBuffers")));

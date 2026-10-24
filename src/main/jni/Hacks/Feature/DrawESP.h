@@ -386,9 +386,6 @@ static inline void DrawBoxEnemy(ImDrawList *draw, ImVec2 X, ImVec2 Y, float thic
     draw->AddLine({X.x, X.y}, {Y.x, Y.y}, color, thicc);
 }
 
-// These shapes live in ImGui/esp_shared.h now: the Visuals-page preview draws
-// its box and health bar from the same functions, which is how the preview
-// stays a picture of what the game actually draws.
 static inline void DrawEspBoxOutline(ImDrawList *draw, float x, float y, float w, float h, ImU32 color, float thickness) {
     esp_shared::DrawOutline(draw, x, y, w, h, color, thickness);
 }
@@ -708,11 +705,6 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
     List<Pawn *> *EnemyPawns = get_MatchGame->EnemyPawns();
     if (!Tools::IsPtrValid(EnemyPawns)) return;
 
-    // getItems() dereferences the list's backing array, and the list is being
-    // rebuilt on the game thread while a match loads, so the array object and
-    // the count have to be checked before either is used. Everything else that
-    // walks this list (A_FireScan, aim lock, bullet track) already caps it at
-    // 1024; this pass did not, so a torn size read walked off the array.
     if (!Tools::IsPtrValid((void *)EnemyPawns->items)) return;
     const int enemyCount = EnemyPawns->getSize();
     if (enemyCount <= 0 || enemyCount > 1024) return;
@@ -731,10 +723,6 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
 
         if (!Tools::IsPtrValid((void *)m_AttackableInfo)) continue;
 
-        // Health is only read when the option is on - the attackable-info
-        // pointer still gates the pawn, so nothing that used to draw stops
-        // drawing, but the two field reads per enemy go away when they are not
-        // being drawn.
         int CurHP = 0;
         int MaxHP = 1;
         if (Config.ESPMenu.Health) {
@@ -787,8 +775,6 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
         float distanceToMe = Vector3::Distance(pLocalPawn_rootPos, pEnemyPawn_rootPos);
         float actualHeight = Vector3::Distance(pEnemyPawn_headPos, pEnemyPawn_rootPos);
 
-        // `pawnAlive` was read above; calling m_IsAlive() again was a second
-        // managed call per enemy per frame for an answer we already had.
         if (HeadSc.z > 0) {
             Vector2 screen(sWidth, sHeight);
             Vector2 location(RootSc.x, HeadSc.y);
@@ -798,12 +784,6 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
             if (boxHeight < 5.0f || boxHeight > sHeight * 0.85f) continue;
             if (boxWidth < 2.0f) continue;
 
-            // The box is drawn at RootSc.x, so everything that is positioned
-            // relative to the box (the side health bar, the armour bar) has to
-            // use the same x. Anchoring them to the head's screen x - which
-            // only matches once the camera is square behind the pawn - put the
-            // health bar inside the box on one flank and floating away from it
-            // on the other, which is what looked like a broken health bar.
             const float boxX = RootSc.x - (boxWidth / 2.0f);
 
             Rect PlayerRect(boxX, sHeight - HeadSc.y, boxWidth, boxHeight);
@@ -928,9 +908,7 @@ void DrawESP(ImDrawList *draw, int sWidth, int sHeight, float density) {
                         if (pawn->m_IsBot()) {
                             displayText = "BOT";
                         } else {
-                            // A pawn that has just spawned has no replicated name
-                            // yet; dereferencing get_PlayerName() unconditionally
-                            // faulted on the first frame of a match.
+
                             String *playerName = pawn->get_PlayerName();
                             if (Tools::IsPtrValid(playerName))
                                 displayText = playerName->CString();

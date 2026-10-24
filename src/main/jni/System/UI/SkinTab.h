@@ -330,12 +330,7 @@ inline void SelectSnowboardSkin(int skinId)
 }
 
 inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = false) {
-    // No child window here. This used to open two nested children and close
-    // neither, so every EndChild after it (the menu's page area included)
-    // closed the wrong window and left ImGui's window stack unbalanced - the
-    // Skins page rendered as an empty box with stray text outside it. The
-    // content flows in the caller's window, and the page's own drag scroll
-    // moves it.
+
     ImGui::Dummy(ImVec2(0, 8 * c::scale));
 
     if (drawSubTabs) {
@@ -362,7 +357,7 @@ inline void RenderSkinCategoryContent(int categoryIndex, bool drawSubTabs = fals
         ImGui::SameLine();
         if (custom::Page(skinSubTab == 6, "Snowboard", ImVec2(tabWidth, tabHeight), false, false)) skinSubTab = 6;
         if (subTabFont) ImGui::PopFont();
-        ImGui::PopStyleVar();   // the row push above was never popped
+        ImGui::PopStyleVar();
     }
 
     static char charSearchQuery[256] = "";
@@ -628,11 +623,7 @@ case 3:
         if (!items.empty())
         {
             auto applyWeaponSkin = [&](const auto& getitem) {
-                // The config ctor hooks on the game thread append to these lists
-                // while this runs, and a push_back can reallocate the vector we
-                // are iterating - the crash after applying a second skin. Take
-                // one snapshot under the data mutex (as the camo page does) and
-                // walk that instead. Only on a tap, so no per-frame cost.
+
                 std::vector<void *> itemInv, confs, extras, assetGroups,
                                     itemResources, fireEffects;
                 {
@@ -702,11 +693,14 @@ case 3:
                         }
                     }
                 }
-                // The decorators below answer from these maps on the game
-                // thread while this runs, so the inserts are made together
-                // under the map mutex. The lookups happen outside it because
-                // they take it themselves.
+
                 const int effectKeys[5] = {baseID, extraID, skinID, itemID, lootID};
+
+                mythic_attachment_system::ApplyMythicAttachments(
+                    {baseID, extraID, skinID, itemID, lootID},
+                    mythic_attachment_system::BuildMythicAttach(
+                        skinID, baseID,
+                        DetectSkinTier(getitem.itemName) == SkinTier::Mythic));
                 if (getitem.WeaponExtra[4] > 0)
                 {
                     const int effectAssetID = getitem.WeaponExtra[4];
@@ -750,10 +744,7 @@ case 3:
                             getitem.itemName.find("[MYTHIC]") != std::string::npos;
                         if (mythicItem)
                         {
-                            // Assign even when the value is zero: the field
-                            // belongs to this weapon's extra config, so a
-                            // mythic without a piece has to clear the piece the
-                            // previous selection left behind.
+
                             weaponextraFields->DefaultMythicArmor = getitem.WeaponExtra[1];
                             weaponextraFields->DefaultMythicSig =
                                 getitem.itemName.find("[MYTHIC] AK117 - Memento Mori") != std::string::npos
@@ -762,12 +753,7 @@ case 3:
                         }
                         else
                         {
-                            // A legendary skin picked after a mythic one used to
-                            // keep the mythic armour asset on the base weapon:
-                            // the game then builds mythic armour pieces for a
-                            // model that has none. That mismatch is the crash
-                            // seen when a mythic and a legendary skin are used
-                            // together.
+
                             weaponextraFields->DefaultMythicArmor = 0;
                             weaponextraFields->DefaultMythicSig = 0;
                         }
@@ -1052,9 +1038,6 @@ case 3:
         break;
     }
 
-    // The list's tighter item spacing is scoped to the list alone. Left pushed,
-    // it leaked into every page rendered afterwards - and tripped ImGui's
-    // PushStyleVar/PopStyleVar stack assertion on the way out of the menu window.
     ImGui::PopStyleVar();
 
     if (showKeyboard) {

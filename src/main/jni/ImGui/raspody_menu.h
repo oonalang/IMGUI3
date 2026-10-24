@@ -355,10 +355,6 @@ namespace raspody
                                  &Config.ESPMenu.ShowFov, "Show FOV circle");
                 SliderFloat("Assist size", "Reach of the assist around the target.",
                             &Config.Aim.AimAssistSize, 0.0f, 100.0f, "%.0f");
-                // The assist only moves the aim on a bullet, so it does nothing
-                // while you scope in. Aim Lock turns the aim every tick instead.
-                SliderFloat("Aim lock", "Keeps the aim on the target while firing or scoping. 0 = off, 100 = instant.",
-                            &Config.Aim.AimLock, 0.0f, 100.0f, "%.0f");
             });
 
             AddPageCard(p, 1, "Targeting", [&] {
@@ -682,7 +678,6 @@ namespace raspody
     inline void ConfigsPage(PageLayout& p, int subtab)
     {
         std::vector<std::string> profiles = ListProfiles();
-        // Do not inject a fake profile: the default name is not a real JSON file.
 
         if (subtab == 0)
         {
@@ -772,7 +767,7 @@ namespace raspody
                 {
                     ui.renamingProfile = true;
                     ui.confirmDeleteProfile = false;
-                    ui.renameProfile[0] = '\0';  // Type the replacement name directly, no prefix.
+                    ui.renameProfile[0] = '\0';
                 }
                 if (ui.renamingProfile)
                 {
@@ -946,10 +941,7 @@ namespace raspody
     {
         if (subtab == 0)
         {
-            // p.origin is a screen position; SetCursorPos takes window-local
-            // coordinates, so the browser used to land far outside the page and
-            // be clipped away. The content draws straight into the page now, so
-            // the page's drag scroll moves the skin list.
+
             ImGui::SetCursorScreenPos(ImVec2(p.origin.x, p.origin.y));
             RenderSkinCategoryContent(0, true);
             p.singleY = ImGui::GetCursorScreenPos().y - p.origin.y + S(8);
@@ -970,9 +962,6 @@ namespace raspody
                          &Config.ExtraMenu.OutfitTintBypass);
             });
 
-            // Blueprint and Attachment unlock live on the Weapons page only;
-            // repeating them here was two extra toggles for the same two
-            // settings. The preview grid reads the same config either way.
             AddPageCard(p, 0, "Blueprints", [&] {
                 ParagraphRow("Blueprint and attachment-unlock toggles are on the Weapons page.");
             });
@@ -1210,7 +1199,6 @@ namespace raspody
         if (open && !*open)
             return;
 
-        // Restore only the explicitly chosen profile, once after initialization.
         static bool profileAutoLoaded = false;
         if (!profileAutoLoaded)
         {
@@ -1373,9 +1361,6 @@ namespace raspody
                 {
                     const float dy = io.MousePos.y - dragOrigin.y;
 
-                    // The page follows the finger from the first pixel. A dead
-                    // zone here used to hold the content still until the drag
-                    // passed the threshold, then jump it by the whole distance.
                     ImGui::SetScrollY(dragOriginScroll - dy);
                     if (fabsf(dy) > S(10))
                         ui.dragScrolling = true;
@@ -1396,8 +1381,6 @@ namespace raspody
                     flick = fabsf(velocity) > S(260) ? velocity : 0.0f;
                 }
 
-                // Release with speed and the page keeps moving, then settles:
-                // exponential decay, no snap to a stop on the last frame.
                 if (flick != 0.0f)
                 {
                     const float dt = ImMin(0.05f, io.DeltaTime);
@@ -1415,7 +1398,6 @@ namespace raspody
         const float scrollMax = ImGui::GetScrollMaxY();
         const float availW = ImMax(S(140), ImGui::GetWindowSize().x - S(6) - ImGui::GetStyle().ScrollbarSize);
 
-        // Page switch: slides in from the right while it fades, so a tab change reads as motion.
         const float pageAlpha = var.tab.alpha * var.subtab.alpha;
         const float slide = (1.0f - pageAlpha) * S(12);
         const ImVec2 pageOrigin(origin.x + slide, origin.y + slide * 0.4f);
@@ -1463,9 +1445,6 @@ namespace raspody
             static bool cardMoved = false;
             static ImVec2 cardDisplay(-1.0f, -1.0f);
 
-            // A drag pins the card for the session; a rotation or a display
-            // change would otherwise leave it hanging off the new screen, which
-            // reads as "the preview is not centred". Re-dock on a resize.
             if (display.x != cardDisplay.x || display.y != cardDisplay.y)
             {
                 cardDisplay = display;
@@ -1482,10 +1461,7 @@ namespace raspody
 
             if (!cardMoved)
             {
-                // Dock beside the menu when there is real room for a side panel,
-                // otherwise centre the card on the display. Pushing it to the
-                // right edge (the old fallback) pinned the model against the
-                // screen border on a phone, which read as a cropped preview.
+
                 const float sideX = pos.x + size.x + S(16);
                 if (sideX + cardW <= display.x - S(6))
                 {
@@ -1500,7 +1476,6 @@ namespace raspody
             cardPos.x = ImClamp(cardPos.x, 0.0f, ImMax(0.0f, display.x - cardW));
             cardPos.y = ImClamp(cardPos.y, 0.0f, ImMax(0.0f, display.y - cardH));
 
-
             ImGui::SetNextWindowPos(cardPos, ImGuiCond_Always);
             ImGui::SetNextWindowSize(ImVec2(cardW, cardH), ImGuiCond_Always);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -1514,8 +1489,7 @@ namespace raspody
                 ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoCollapse |
                 ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav);
             {
-                // The preview mirrors the in-game player ESP, so it uses the very
-                // same toggles and colour pickers the Visuals page edits.
+
                 auto EspCol = [](float* c, ImU32 fallback) -> ImU32 {
                     if (!c) return fallback;
                     auto u8 = [](float v) {

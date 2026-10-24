@@ -33,8 +33,8 @@ inline Vec3 Normalize(const Vec3 &v)
 
 struct Face
 {
-    Vec3 p[4];      // world (model space) corners
-    Vec3 n[4];      // per corner normals, always pointing outwards
+    Vec3 p[4];
+    Vec3 n[4];
     ImU32 col;
     int count;
     bool twoSided;
@@ -54,7 +54,6 @@ inline void PushPoly(Vec3 a, Vec3 b, Vec3 c, Vec3 d,
     Vec3 p[4] = {a, b, c, d};
     Vec3 nn[4] = {na, nb, nc, nd};
 
-    // keep the winding consistent with the supplied normals
     const Vec3 avg = (nn[0] + nn[1] + nn[2] + nn[3]) * 0.25f;
     const Vec3 fn = Normalize(Cross(b - a, c - a));
     if (Dot(fn, avg) < 0.0f)
@@ -174,8 +173,6 @@ struct Ring
     float y, rx, rz, cz;
 };
 
-// stacked ellipses; flutes cuts pleats into the surface and colB shades every
-// other one, which is what gives the skirt its folds
 inline void AddLoft(const Ring *rings, int count, int segs, ImU32 col,
                     bool caps = true, int flutes = 0, float fluteAmp = 0.0f,
                     ImU32 colB = 0, bool shiny = false)
@@ -329,7 +326,7 @@ inline const float HeadRadius = 0.122f;
 
 inline const float ModelBottom = -0.01f;
 inline const float ModelTop = 1.80f;
-inline const float ModelWidth = 0.56f;   // widest on screen: shoulders to twin tails
+inline const float ModelWidth = 0.56f;
 
 inline void BuildModel()
 {
@@ -509,7 +506,6 @@ inline void BuildModel()
     AddEllipsoid(mk(0.066f, 1.778f, -0.014f), 0.032f, 0.017f, 0.015f, 10, 6, GoldCol());
 }
 
-// fixed front view, no motion
 inline const float g_yaw = IM_PI;
 inline const float g_pitch = 0.0f;
 
@@ -636,8 +632,6 @@ inline Result DrawModel(ImDrawList *draw, const ImVec2 &pos, const ImVec2 &size)
         pf.depth = depthSum;
         pf.count = f.count;
 
-        // back faces only feed the inverted-hull ink outline; shading them too
-        // would draw a wireframe instead of a contour
         if (backFacing && !f.twoSided)
         {
             for (int i = 0; i < f.count; ++i)

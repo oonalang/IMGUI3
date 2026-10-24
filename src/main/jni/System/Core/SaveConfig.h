@@ -45,7 +45,6 @@ void SaveConfiguration(const std::string& filename) {
     config["Aim"]["Aimbot360"] = Config.Aim.Aimbot360;
     config["Aim"]["AimSilent"] = Config.Aim.AimSilent;
     config["Aim"]["AimAssistSize"] = Config.Aim.AimAssistSize;
-    config["Aim"]["AimLock"] = Config.Aim.AimLock;
     config["Aim"]["Target"] = static_cast<int>(Config.Aim.Target);
     config["Aim"]["Trigger"] = static_cast<int>(Config.Aim.Trigger);
     config["Aim"]["By"] = static_cast<int>(Config.Aim.By);
@@ -153,7 +152,6 @@ bool LoadConfiguration(const std::string& filename) {
             if (config["Aim"].contains("Aimbot360")) Config.Aim.Aimbot360 = config["Aim"]["Aimbot360"].get<bool>();
             if (config["Aim"].contains("AimSilent")) Config.Aim.AimSilent = config["Aim"]["AimSilent"].get<bool>();
             if (config["Aim"].contains("AimAssistSize")) Config.Aim.AimAssistSize = config["Aim"]["AimAssistSize"].get<float>();
-            if (config["Aim"].contains("AimLock")) Config.Aim.AimLock = config["Aim"]["AimLock"].get<float>();
             if (config["Aim"].contains("Target")) Config.Aim.Target = static_cast<EAimTarget>(config["Aim"]["Target"].get<int>());
             if (config["Aim"].contains("Trigger")) Config.Aim.Trigger = static_cast<EAimTrigger>(config["Aim"]["Trigger"].get<int>());
             if (config["Aim"].contains("By")) Config.Aim.By = static_cast<EAim>(config["Aim"]["By"].get<int>());

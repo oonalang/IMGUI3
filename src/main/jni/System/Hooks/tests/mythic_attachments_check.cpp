@@ -129,9 +129,7 @@ int main()
     }
 
     {
-        // The game asks some of these through a static helper, which passes a
-        // null receiver. That call has to be granted too, or the loadout keeps
-        // showing the attachments locked.
+
         Config.ExtraMenu.Attachment = true;
         installFake();
         CHECK(IsWeaponAttachmentUnlock(nullptr, 607011),

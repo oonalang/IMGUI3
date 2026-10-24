@@ -15,7 +15,6 @@
 #include "../../Includes/Macros.h"
 #include "../StructGame/StructGame.h"
 #include "../../System/Core/FaultGuard.h"
-#include "AimLock.h"
 
 namespace NewFeatures
 {
@@ -127,9 +126,6 @@ namespace NewFeatures
         constexpr uintptr_t Weapon_get_SpringFireGetReady   = 0x50E9F28;
         constexpr uintptr_t Weapon_get_GetReadyTime         = 0x514D2C8;
 
-        // Weapon categories live on Inventory, the base class of Weapon, so the
-        // held weapon can be asked directly. There is no getter for SMG or LMG
-        // in this build; both are full auto and share the "auto" behaviour.
         constexpr uintptr_t Inventory_IsGun                 = 0xC364D3C;
         constexpr uintptr_t Inventory_IsAssaultRifle         = 0xC364C74;
         constexpr uintptr_t Inventory_IsSniper               = 0xC364C94;
@@ -138,7 +134,6 @@ namespace NewFeatures
         constexpr uintptr_t Inventory_IsPistol               = 0xC364C10;
         constexpr uintptr_t Inventory_IsLauncher             = 0xC364C54;
     }
-
 
     inline void* UnityRva(uintptr_t rva)
     {
@@ -393,21 +388,11 @@ namespace NewFeatures
         static constexpr float kSurfaceFrac     = 0.80f;
         static constexpr float kMinStemGap      = 0.05f;
 
-        // The bullet leaves the weapon, not the eye. A ray from the eye point
-        // hits the cover you are peeking over at ~0 m whenever the camera sits
-        // inside or on that cover - the "head glitch" case - and every shot
-        // came back as "wall in the way". Start where the muzzle really is.
         static constexpr float kRayStem         = 0.30f;
         static constexpr float kRayStepPast     = 0.05f;
         static constexpr float kHeadRadius      = 0.14f;
         static constexpr float kBodyRadius      = 0.30f;
 
-        // The camera is the only authority on what can be shot: if the eye
-        // cannot see the target, the target is behind something. Peeking over
-        // cover is the single exception - the ledge touches the player, so the
-        // eye ray dies within a couple of decimetres and the muzzle is already
-        // past it. Anything the eye ray hits further out than this is a real
-        // wall, no matter what the barrel sees through it.
         static constexpr float kMuzzleRedeemM  = 1.50f;
         static constexpr float kMuzzleMaxEyeM  = 1.00f;
         static constexpr float kMuzzleStem     = 0.05f;
@@ -416,8 +401,6 @@ namespace NewFeatures
         static constexpr float kFriendlyRadius  = 0.35f;
         static constexpr float kSelfExclusion    = 0.15f;
 
-        // No practical range cap: 1.5 km is past every sightline in the map, so
-        // a distant target is never refused for being distant.
         static constexpr float kCrosshairRayMax = 1500.0f;
         static constexpr float kMaxTravelTime   = 3.00f;
         static constexpr float kAssumedSpeed    = 800.0f;
@@ -493,8 +476,6 @@ namespace NewFeatures
         return FireMode::Single;
     }
 
-    // The weapon family, as the game itself reports it. Tap vs hold and the log
-    // panel key off this instead of guessing from the fire interval.
     enum class WeaponClass : int
     {
         Unknown = 0,
@@ -502,7 +483,7 @@ namespace NewFeatures
         Sniper,
         Marksman,
         Shotgun,
-        AutoRifle,      // SMG / LMG: no getter in this build, both are full auto
+        AutoRifle,
         Pistol,
         Launcher,
         Melee,
@@ -545,9 +526,6 @@ namespace NewFeatures
                                                            : WeaponClass::Other;
     }
 
-    // A sniper, marksman, shotgun or pistol is one press per shot even when the
-    // game reports auto fire: holding those triggers is what turns a semi
-    // weapon into a fire-rate glitch the server can see.
     inline bool A_FireClassHolds(WeaponClass cls)
     {
         switch (cls)
@@ -561,7 +539,7 @@ namespace NewFeatures
             case WeaponClass::Other:
                 return false;
             default:
-                return true;      // AR / SMG-LMG: follow the weapon's fire mode
+                return true;
         }
     }
 
@@ -663,8 +641,6 @@ namespace NewFeatures
         if (!Tools::IsPtrValid(weapon)) return false;
         if (fn_WeaponAmmoCanFire != nullptr && !fn_WeaponAmmoCanFire(weapon)) return false;
 
-        // A weapon that is not a gun (throwable, launcher, melee) has no clip,
-        // and its clip count reads 0 - that must not read as "empty".
         const bool gun = (fn_InventoryIsGun == nullptr) || fn_InventoryIsGun(weapon);
         if (gun && fn_WeaponGetClipAmmoCount != nullptr && fn_WeaponGetClipAmmoCount(weapon) <= 0)
             return false;
@@ -716,7 +692,7 @@ namespace NewFeatures
         bool settling;
         bool asked;
         bool aiming;
-        void* comp;     // the fire component this scan already resolved
+        void* comp;
     };
 
     inline bool A_FireAdsSwapActive()
@@ -741,7 +717,7 @@ namespace NewFeatures
         }
 
         void *comp = GetCurrentFireComponent(weapon);
-        s.comp = comp;      // A_FireAdsGate reuses this instead of asking again
+        s.comp = comp;
         if (!g_afireAdsCompSeen) {
             g_afireAdsCompSeen = true;
             g_afireAdsLastComp = comp;
@@ -750,12 +726,6 @@ namespace NewFeatures
             g_afireAdsLastComp = comp;
         }
 
-        // Start a settle window the first time a transition is seen, but never
-        // extend one that is already running. A fire component that is rebuilt
-        // every tick (round transition, some weapon swaps) used to push the
-        // deadline out on every tick, so the triggerbot settled forever on the
-        // 2nd round: it never fired, and the per-tick component lookups kept the
-        // frame hitching before the game gave out.
         if (moved && !g_afireAdsSettling) {
             g_afireAdsSettleUntil = now + kAdsSettleSeconds;
             g_afireAdsSettleMax   = now + kAdsSettleMaxSeconds;
@@ -772,10 +742,6 @@ namespace NewFeatures
             return s;
         }
 
-        // Past the settle window the weapon has settled. Only keep waiting when
-        // it genuinely cannot fire yet (mid-reload); a component pointer that
-        // merely wiggled is a rebuilt wrapper, not a scope transition, so it no
-        // longer counts against stability.
         if (!A_FireWeaponCanFire(weapon)) {
             s.settling = true;
             g_afireAdsSettling = true;
@@ -801,12 +767,6 @@ namespace NewFeatures
             r.pawnAim = fn_PawnIsAiming((void *)localPawn);
         }
 
-        // The scoping check has already resolved this weapon's fire component
-        // for this scan; asking the managed side again was the same call twice
-        // on every tick of an ADS-only triggerbot. And when the pawn flag
-        // already says "scoped" the answer cannot change, so the component call
-        // and its class-name lookup are skipped outright - that lookup was the
-        // per-tick work that only ADS-only mode paid for.
         if (!r.pawnAim) {
             void *fireComp = settle.comp != nullptr ? settle.comp : GetCurrentFireComponent(weapon);
             if (fireComp != nullptr)
@@ -825,11 +785,6 @@ namespace NewFeatures
         return r;
     }
 
-    // The ADS state cannot change 250 times a second, so the expensive half of
-    // the gate - the "not scoped" verdict, which costs a managed call and a
-    // class-name lookup - is remembered for a few milliseconds. A fresh
-    // "scoped" answer needs no managed call at all and is never cached, so
-    // nothing is delayed when you actually scope in.
     constexpr double kAdsGateRefreshSeconds = 0.012;
     inline AdsRead   g_afireAdsNegCached{};
     inline double    g_afireAdsNegTime     = -1000.0;
@@ -949,10 +904,6 @@ namespace NewFeatures
         return n;
     }
 
-    // Teammates move at walking speed, so rebuilding their positions on every
-    // tick was a transform read plus a position read per teammate for no gain.
-    // A 100 ms snapshot is far fresher than the 0.35 m proximity radius it is
-    // tested against, and it drops one whole managed pass from the scan.
     constexpr double kFriendProbeSeconds = 0.100;
     inline AF_FriendProbe g_afireFriendProbes[64];
     inline int    g_afireFriendCount = 0;
@@ -1110,7 +1061,6 @@ namespace NewFeatures
     };
     inline TriggerbotDiag g_triggerDiag{};
 
-    // Fixed, user-configured reaction delay. Zero means no added reaction wait.
     inline void   *g_afireSeenTarget   = nullptr;
     inline double  g_afireSeenStamp    = -1000.0;
     inline double  g_afireReactionDelay = 0.0;
@@ -1131,8 +1081,6 @@ namespace NewFeatures
         bool        holds;
     };
 
-    // Classifying costs up to seven managed calls, and a weapon does not turn
-    // into a different weapon, so the answer is remembered per held weapon.
     inline WeaponClass g_afireClassCache  = WeaponClass::Unknown;
     inline void       *g_afireTraitWeapon = nullptr;
     inline double      g_afireTraitStamp  = -1000.0;
@@ -1150,8 +1098,6 @@ namespace NewFeatures
             g_afireTraitStamp  = now;
         }
 
-        // The fire mode can change under the same weapon (fire selector,
-        // attachment), so it is asked every scan - one managed call.
         t.cls   = g_afireClassCache;
         t.mode  = GetWeaponFireMode(weapon);
         t.holds = A_FireShouldHoldTrigger(weapon, t.mode);
@@ -1183,11 +1129,6 @@ namespace NewFeatures
         return p;
     }
 
-    // The muzzle is only ever consulted as a second opinion on a shot the camera
-    // has already refused, and only when it is genuinely the same gun: within a
-    // metre of the eye. An implausible read (a stale parent bone, a third-person
-    // offset, a zeroed transform) must never move the origin, or the line stops
-    // describing this player's shot at all.
     inline bool A_FireMuzzlePosition(Pawn *localPawn, const Vector3 &eye, Vector3 &out)
     {
         if (fn_PawnGetFirePosition == nullptr || !A_FireObjectAlive((void *)localPawn))
@@ -1268,11 +1209,6 @@ namespace NewFeatures
         return radius;
     }
 
-    // How far off the aim point, in screen pixels, the crosshair may be and the
-    // triggerbot still fires. The crosshair dot used to be the whole zone, so a
-    // small dot refused shots that were a few pixels off the body. The trigger
-    // size setting (px at 1080p, scaled to the frame) is a floor now, and each
-    // candidate is additionally allowed its own projected body width.
     inline float A_FireZoneRadiusPx()
     {
         float radius = A_FireCrosshairRadiusPx();
@@ -1434,9 +1370,7 @@ namespace NewFeatures
             }
 
             if (hitTransform == nullptr) return AF_Ray::Unknown;
-            // Distances this tiny sit inside the player's own capsule: the
-            // muzzle is buried in a collider the raycast reported without a
-            // usable transform. That can never be cover, so it cannot block.
+
             if (totalDistance <= A_FireTune::kSelfExclusion) {
                 g_triggerDiag.occOverrides++;
                 return AF_Ray::Clear;
@@ -1455,8 +1389,6 @@ namespace NewFeatures
         if (!(dist >= 0.01f)) return AF_Ray::Clear;
         const Vector3 dir(d.x / dist, d.y / dist, d.z / dist);
 
-        // Stem: skip what the origin is already inside of. A target closer than
-        // the stem is point blank - nothing can block that line.
         const float stem = (dist > 4.0f * stemWanted) ? stemWanted : 0.0f;
         const Vector3 start(from.x + dir.x * stem,
                             from.y + dir.y * stem,
@@ -1484,11 +1416,6 @@ namespace NewFeatures
         return AF_Ray::Unknown;
     }
 
-    // Line of sight for one candidate. The camera decides first; the muzzle is a
-    // second opinion allowed only on cover that is touching the player. That
-    // keeps the head-glitch case (a ledge the eye is inside of, barrel already
-    // past it) working without ever shooting through a wall the camera cannot
-    // see through.
     inline AF_Ray A_FireRayToTarget(const Vector3 &eye, const Vector3 &to, Pawn *target,
                                     float probeRadius, Pawn *localPawn,
                                     bool *identified = nullptr, float *hitDistance = nullptr)
@@ -1502,8 +1429,6 @@ namespace NewFeatures
                                                   identified, hitDistance, &eyeBlock);
         if (eyeRay != AF_Ray::Blocked) return eyeRay;
 
-        // A wall metres away is a wall. Only cover within arm's reach can be
-        // something you are peeking over.
         if (!(eyeBlock >= 0.0f) || eyeBlock > A_FireTune::kMuzzleRedeemM)
             return AF_Ray::Blocked;
 
@@ -1614,9 +1539,6 @@ namespace NewFeatures
         if (!(len > 0.0001f)) return nullptr;
         const Vector3 dir(rayDir.x / len, rayDir.y / len, rayDir.z / len);
 
-        // The dot is a pixel on the camera, so the ray that decides it starts at
-        // the camera - not at a point a fixed distance along the aim, which can
-        // sit on the far side of the wall the camera is looking at.
         const Vector3 start = camPos;
         const float reach = A_FireTune::kCrosshairRayMax;
 
@@ -1625,13 +1547,8 @@ namespace NewFeatures
             return nullptr;
         }
 
-        // Single-hit raycast: a hit on your own body used to end the probe. At
-        // point blank (and in a head glitch) your capsule is the first thing
-        // under the dot, so step past it and keep looking instead. Trigger
-        // volumes are not geometry either - the dot sitting "inside" smoke or a
-        // spawn volume must not read as a wall - so they are stepped past too.
         Vector3 origin = start;
-        float travelled = 0.0f;   // measured from the camera start, like the walk
+        float travelled = 0.0f;
         float remaining = reach;
         for (int attempt = 0; attempt < 4 && remaining > 0.01f; attempt++) {
             unsigned char hitBuf[AF_RAYHIT_SIZE];
@@ -1662,9 +1579,7 @@ namespace NewFeatures
             }
 
             Pawn *hitPawn = A_FirePawnFromHitTransform(hitTransform, items, count);
-            // The ray stopped on scene geometry rather than on a player: the dot
-            // is on a wall, a prop or a teammate. Nothing behind that may be
-            // shot, whatever the trigger zone says.
+
             if (hitPawn == nullptr && solidBlockOut != nullptr) *solidBlockOut = true;
             return hitPawn;
         }
@@ -1754,10 +1669,7 @@ namespace NewFeatures
             d.dotRayHonest = honestDotRay = rayViaGame || rayFellBack || rayPlain;
             dotRayDir = camForward;
         }
-        // With the dot gate on this ray IS the triggerbot: the shot is only
-        // taken when the pixel under the dot is the enemy. Everything below -
-        // the pixel zone and the per-candidate LOS pass - is the fallback for
-        // when the gate is off.
+
         const bool dotRayGate = Config.NewFeaturesMenu.TriggerbotDotRay;
         if (dotRayGate && fn_TransformGetForward != nullptr && honestDotRay) {
             bool symbolMissing = false;
@@ -1768,8 +1680,7 @@ namespace NewFeatures
             d.crosshairHitDist = centreHitDist;
             d.crosshairPawn = (unsigned)(uintptr_t)centred;
             if (symbolMissing) {
-                // No raycast symbol resolved: the dot cannot decide this frame,
-                // so the candidate path (with its segment fallback) takes over.
+
                 d.rayUnknown = true;
             } else if (centred != nullptr && centred != localPawn &&
                        !IsSameTeamAcceptBots(localPawn, centred) && A_FirePawnAlive(centred)) {
@@ -1802,11 +1713,7 @@ namespace NewFeatures
                 }
                 if (limitPx < 0.0f) {
                     limitPx = radius + 2.0f;
-                    // His body could not be projected (point blank, feet behind
-                    // the near plane, head bone only). The dot's own ray landed
-                    // on him, so bound the dot by his real half width at the hit
-                    // distance instead of the tiny dot radius: that refusal is
-                    // why close-range shots never arrived.
+
                     if (centreHitDist > 0.05f && focalPx > 0.0f) {
                         const float bodyPx =
                             A_FireTune::kBodyHalfWidthM * focalPx / centreHitDist + 2.0f;
@@ -1814,19 +1721,11 @@ namespace NewFeatures
                     }
                     testSq  = bestSq;
                 }
-                // The physics hit already proves the dot is on him, so the
-                // projection is only a sanity bound. It may never be stricter
-                // than the configured trigger size, or a shoulder or a gun
-                // sticking out from the body axis would read as a miss.
+
                 if (limitPx < radius + 2.0f) limitPx = radius + 2.0f;
 
-                // bestSq < 0 means the aim point did not project at all; the ray
-                // hit is the only evidence left, and it says the dot is on him.
                 if (testSq >= 0.0f && testSq > limitPx * limitPx) {
-                    // The physics hit says the dot is on him but his body
-                    // projects outside the dot. Refuse rather than fall back:
-                    // the fallback is the pixel zone, and firing on that while
-                    // the dot is on a wall is exactly the through-wall shot.
+
                     d.dotRayDeclined++;
                 } else {
                     d.projKeepFrac = sqrtf(testSq) / limitPx;
@@ -1849,21 +1748,13 @@ namespace NewFeatures
                     return FireBlock::Fired;
                 }
             } else {
-                // The ray stopped on a wall, a prop, a teammate or the sky.
-                // With the gate on there is nothing to shoot under the dot.
+
                 if (solidBlock) d.raysBlocked++;
                 else            d.dotRayDeclined++;
             }
 
-            // A missing raycast symbol is the one case that cannot decide: the
-            // candidate path (segment fallback) takes over. Everything else is
-            // an answer, and the answer is no.
             if (!symbolMissing) return FireBlock::NoLineOfSight;
         }
-
-        // A centre-ray miss is not proof that the visible body is outside the
-        // crosshair. Fall back to projected candidates and LOS validation.
-        // This also covers missing raycast symbols and close-range colliders.
 
         static auto getTeamIdFn = (uint32_t (*)(void *))UnityRva(RVA::Pawn_GetTeamId);
         const uint32_t localTeam = (A_FireObjectAlive((void *)localPawn) && getTeamIdFn != nullptr)
@@ -1897,9 +1788,6 @@ namespace NewFeatures
                 d2 = dx * dx + dy * dy;
             }
 
-            // Use the target's projected body width instead of testing only
-            // the body centre against a fixed pixel-sized crosshair circle.
-            // Distance-aware coverage avoids missing small distant targets.
             const float candDist = Vector3::Distance(camPos, ap.pos);
             const float projectedHalfWidth = (focalPx > 0.0f && candDist > 0.05f)
                 ? A_FireTune::kBodyHalfWidthM * focalPx / candDist : 0.0f;
@@ -1919,8 +1807,7 @@ namespace NewFeatures
                     if (d2 < 0.0f || body < d2) d2 = body;
                 }
             }
-            // Partial visibility: the chest and feet can sit behind a ledge
-            // while the exposed head still intersects the crosshair.
+
             if (ap.headOk) {
                 Vector3 scHead = Vector3::zero();
                 if (w2s(ap.head, scHead) && scHead.z > 0.0f) {
@@ -1935,9 +1822,6 @@ namespace NewFeatures
             if (d2 > allowSq) continue;
             const float pxOffset = sqrtf(d2);
 
-            // Keep the nearest candidates on screen, regardless of the order
-            // returned by EnemyPawns(). Later entries must not be ignored just
-            // because the first eight slots were filled already.
             int slot = n;
             if (n >= MAX_CANDIDATES) {
                 slot = 0;
@@ -1989,8 +1873,6 @@ namespace NewFeatures
         bool speedKnown = false;
         const float bulletSpeed = GetWeaponBulletSpeed(weapon, &speedKnown);
 
-        // All retained candidates are eligible. The first five might be behind
-        // cover even when another enemy is directly visible.
         for (int oi = 0; oi < n; oi++) {
             const A_FireCandidate &c = cands[order[oi]];
 
@@ -2002,9 +1884,7 @@ namespace NewFeatures
 
             Vector3 probePoint  = c.aim.pos;
             float   probeRadius = c.aim.radius;
-            // Two probes, not three: the torso point already covers the head.
-            // Beyond 60 m a head is a few pixels wide, so the extra ray only
-            // cost frame time for a target this zone could barely contain.
+
             if (los != AF_Ray::Clear && c.aim.headOk && c.worldDist < 60.0f) {
                 Vector3 testPoints[2] = {c.aim.head, c.aim.head};
                 float testRadii[2] = {A_FireTune::kHeadRadius,
@@ -2059,8 +1939,6 @@ namespace NewFeatures
                 }
             }
 
-            // Recalculate against the selected visible point, not the
-            // original (possibly occluded) torso projection.
             float predPx = c.pxOffset;
             Vector3 scProbe = Vector3::zero();
             if (w2s(probePoint, scProbe) && scProbe.z > 0.0f) {
@@ -2166,10 +2044,6 @@ namespace NewFeatures
         d.weaponClass = (int)traits.cls;
         d.holdTrigger = traits.holds;
 
-        // No ammo, no press. StartFire on an empty clip only plays the dry fire
-        // on the client - the server sees nothing - and the trigger then kept
-        // pressing at the pace floor. Never ask the game to fire a shot it
-        // cannot make.
         if (!d.ammoOk) return FireBlock::NoAmmo;
 
         const ScopeSettle settle = A_FireScopingTransition((void *)held, localPawn);
@@ -2212,10 +2086,7 @@ namespace NewFeatures
     {
         if (!g_afireHoldingFire) return;
         if (instance == nullptr || instance == g_afireFiringOn) {
-            // A weapon pointer outlives its object between matches and on a
-            // respawn: the memory stays mapped, so IsPtrValid still says yes and
-            // StopFire was called into a destroyed weapon. Only release the
-            // trigger of a weapon the local pawn is holding right now.
+
             if (fn_Weapon_StopFire != nullptr &&
                 A_FireStillHoldsWeapon(g_afireFiringOn) &&
                 A_FireObjectAlive(g_afireFiringOn))
@@ -2263,11 +2134,6 @@ namespace NewFeatures
         const double now = A_FireNow();
         d.lastTickTime = now;
 
-        // Off means off. The scan used to keep asking for the local pawn and its
-        // weapon even with the feature switched off, which meant touching a
-        // scene that was not a match yet (menu, loading, post-match) ten times a
-        // second. That is a lead in the startup-crash notes and it costs frame
-        // time for nothing.
         if (!Config.NewFeaturesMenu.Triggerbot &&
             !g_afireHoldingFire && !g_testFireRequest) {
             if (now - g_afireOffDiagStamp < 0.1) return;
@@ -2320,10 +2186,6 @@ namespace NewFeatures
             return;
         }
 
-        // The scan is a read-only probe of live game objects, and a live match
-        // can hand back a pawn that was destroyed between the enemy list being
-        // built and the scan reaching it. A guarded tick that is skipped is a
-        // stutter; an unguarded one is a crash. The press itself stays outside.
         TriggerTarget target{};
         FireBlock block = FireBlock::NoEnemyInZone;
         if (!fault_guard::Run([&] { block = A_FireShouldFire(target); })) {
@@ -2343,7 +2205,7 @@ namespace NewFeatures
 
         if (block != FireBlock::Fired || !Tools::IsPtrValid((void *)target.pawn)) {
             A_FireReleaseTriggerDeferred(nullptr);
-            // Keep a brief grace when targets flicker at the zone boundary.
+
             if ((now - g_afireSeenStamp) > kFireSeenGraceSeconds) {
                 g_afireSeenTarget   = nullptr;
                 g_afireReactionDelay = 0.0;
@@ -2371,7 +2233,6 @@ namespace NewFeatures
         d.weaponClass      = (int)traits.cls;
         d.holdTrigger      = traits.holds;
 
-        // Apply the exact selected delay once per new target; zero has no wait.
         if (g_afireSeenTarget != (void *)target.pawn) {
             g_afireSeenTarget   = (void *)target.pawn;
             g_afireSeenStamp    = now;
@@ -2394,13 +2255,9 @@ namespace NewFeatures
             if (edgePress) {
                 A_FireReleaseTrigger(nullptr);
             } else {
-                // For automatic weapons, a change of target does not require
-                // another StartFire call while the trigger is still held.
+
                 g_afireTargetPawn = (void *)target.pawn;
-                // StartFire is a state transition, not a per-frame keep-alive.
-                // Re-enter it only if the engine reports that firing stopped.
-                // Calling it every 250 ms while firing is still active can
-                // repeatedly restart native fire effects during sustained ADS.
+
                 const bool becameReady = d.canFire && !g_afireCanFireLast;
                 const bool engineStopped = fn_PawnGetIsFiring != nullptr &&
                                            A_FirePawnCallable(localPawn) &&
@@ -2425,17 +2282,10 @@ namespace NewFeatures
             if (g_afireLastPressWeapon != (void *)held)
                 g_afireLastPressTime = -1000.0;
             float pace = A_FireRepressPaceSeconds(interval);
-            // Use a fixed weapon-dependent firing pace, with no random jitter.
+
             const double since   = now - g_afireLastPressTime;
             const bool   tooSoon = since < (double)pace;
 
-            // The pacing floor is a floor. It used to be skipped for as long as
-            // Weapon.CanFire() merely said "yes", and CanFire is usually still
-            // true right after a press - so a scoped triggerbot pressed and
-            // released the trigger on alternating ticks (~125 shots a second),
-            // rebuilding the game's fire effects every time. Only the moment
-            // CanFire TURNS true (a reload or a bolt finishing) may jump the
-            // queue; the pace covers everything else.
             const bool   readyNow    = d.canFire && (fn_WeaponCanFire != nullptr);
             const bool   becameReady = readyNow && !g_afireCanFireLast;
             d.paceSeconds = pace;
@@ -2466,9 +2316,6 @@ namespace NewFeatures
         d.fires++;
         s_dbgTriggerState = 2;
 
-        // One line per engagement, not one per bullet. A full-auto trigger wrote
-        // ten logcat lines a second from the game thread, which is both noise
-        // and real time on a device whose log buffer is already busy.
         if (g_afireLogTarget != (void *)target.pawn || (now - g_afireLogStamp) > 0.5) {
             g_afireLogTarget = (void *)target.pawn;
             g_afireLogStamp  = now;
@@ -2537,9 +2384,7 @@ namespace NewFeatures
         d.pawnTicks++;
 
         if (A_FireLocalPawnFast() == (Pawn *)pawnInstance) {
-            // A new local pawn means a new match or a respawn. The triggerbot's
-            // caches still describe the old pawn and its weapon, so drop them
-            // before anything touches the new scene.
+
             if (g_afireLastLocalPawn != nullptr && g_afireLastLocalPawn != pawnInstance) {
                 LOGI("[NewFeatures] triggerbot: local pawn %p replaced %p, per-match state cleared",
                      pawnInstance, g_afireLastLocalPawn);
@@ -2547,11 +2392,6 @@ namespace NewFeatures
             }
             g_afireLastLocalPawn = pawnInstance;
 
-            // A new match game means a new round even when the game reuses the
-            // same pawn address across rounds. The weapon and fire-component
-            // caches would still point into the torn-down round, and the next
-            // managed call would dereference a freed object - that is the crash
-            // seen entering the 2nd round. Clear them on the match change too.
             if (fn_GameGetMatchGame != nullptr) {
                 void *mg = fn_GameGetMatchGame();
                 if (g_afireLastMatchGame != nullptr && g_afireLastMatchGame != mg) {
@@ -2567,13 +2407,8 @@ namespace NewFeatures
 
             UpdateNoSprintFireDelayWeapon(pawnInstance);
 
-            // Press from the weapon's own tick whenever it is running. The pawn
-            // path stays as the fallback for a build where Weapon::Tick does
-            // not resolve, but calling StartFire from inside Pawn::Tick reenters
-            // the weapon state machine mid-update.
             if ((A_FireNow() - g_afireHeldWeaponStamp) > 0.05)
                 A_FireTick(nullptr);
-            aim_lock::Tick((Pawn *)pawnInstance);
         }
     }
 

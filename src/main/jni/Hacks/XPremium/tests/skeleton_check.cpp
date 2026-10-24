@@ -1,7 +1,6 @@
-// Host syntax check for the skeleton ESP: stubs the game SDK surface the
+
 #include <cstdio>
-// header expects, so a typo in Skeleton.h fails here instead of in the NDK
-// build.
+
 #include <cmath>
 #include <cstdint>
 
@@ -50,17 +49,14 @@ int main()
 {
     ImDrawList *draw = nullptr;
 
-    // A null pawn and an invalid bone map must be refused without a fault.
     if (DrawBoneMapSkeleton(draw, nullptr, IM_COL32_WHITE, 1.0f, 1080)) return 1;
     if (SkeletonCooldownActive(0x1234)) return 2;
 
     SkeletonStartCooldown(0x1234);
     if (!SkeletonCooldownActive(0x1234)) return 3;
 
-    // The guard is what turns a torn bone chain into a skipped frame.
     if (!fault_guard::Run([] {})) return 4;
 
-    // Non-finite bone positions have to be rejected, not drawn.
     if (IsFiniteVec3(Vector3{NAN, 0.0f, 0.0f})) return 5;
     if (IsFiniteVec3(Vector3{1.0e9f, 0.0f, 0.0f})) return 6;
     if (!IsFiniteVec3(Vector3{1.0f, 2.0f, 3.0f})) return 7;

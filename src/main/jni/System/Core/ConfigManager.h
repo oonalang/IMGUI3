@@ -47,7 +47,6 @@ void LoadConfig() {
         else if (key == "ESPMenu.EspStyle") Config.ESPMenu.EspStyle = static_cast<EspStyleTarget>(std::stoi(valueStr));
         else if (key == "Aim.Size") Config.Aim.size = std::stof(valueStr);
         else if (key == "Aim.AimAssistSize") Config.Aim.AimAssistSize = std::stof(valueStr);
-        else if (key == "Aim.AimLock") Config.Aim.AimLock = std::stof(valueStr);
         else if (key == "Aim.Aimbot360") Config.Aim.Aimbot360 = (valueStr == "1");
         else if (key == "Aim.AimSilent") Config.Aim.AimSilent = (valueStr == "1");
         else if (key == "Aim.Target") Config.Aim.Target = static_cast<EAimTarget>(std::stoi(valueStr));
@@ -125,7 +124,6 @@ void SaveConfig() {
     file << "ESPMenu.EspStyle " << Config.ESPMenu.EspStyle << "\n";
     file << "Aim.size " << Config.Aim.size << "\n";
     file << "Aim.AimAssistSize " << Config.Aim.AimAssistSize << "\n";
-    file << "Aim.AimLock " << Config.Aim.AimLock << "\n";
     file << "Aim.Aimbot360 " << Config.Aim.Aimbot360 << "\n";
     file << "Aim.AimSilent " << Config.Aim.AimSilent << "\n";
     file << "Aim.Target " << Config.Aim.Target << "\n";

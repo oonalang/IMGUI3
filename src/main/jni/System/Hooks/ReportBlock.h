@@ -4,15 +4,6 @@
 #include <cstddef>
 #include <cstring>
 
-// Block YOUR client from sending evidence when someone reports you.
-//
-// The four entry points of the report pull, each ended by the hook itself when
-// "Block report evidence" is on: nothing is captured, nothing is filled in,
-// nothing is uploaded. With the checkbox off every hook forwards to the game,
-// so the toggle is the only thing between the two behaviours.
-
-// The hooks below count what they stopped; the counters live here so they can
-// be touched before the namespace body is declared.
 namespace report_block
 {
     inline int g_pullsSeen = 0;
@@ -68,8 +59,6 @@ namespace report_block
         GateCount
     };
 
-    // Which hooks actually landed, so a build that moves an RVA says so
-    // instead of pretending the report path is covered.
     inline bool g_landed[GateCount] = {};
 
     inline void NoteLanded(Gate gate, bool landed)
@@ -77,8 +66,6 @@ namespace report_block
         if (landed && gate >= 0 && gate < GateCount) g_landed[gate] = true;
     }
 
-    // Filling the report payload is a separate call; drop it as well so the
-    // request the game already allocated never receives the evidence.
     inline void (*orig_FillPlayerFullData)(void *instance, void *request) = nullptr;
     inline void hook_FillPlayerFullData(void *instance, void *request)
     {
@@ -89,10 +76,6 @@ namespace report_block
         }
         g_payloadsDropped++;
     }
-
-    // ---- ACE report payload -------------------------------------------------
-    // Separate from the player-report pull: ACE hands back buffers that are
-    // uploaded on their own, so each getter is scrubbed in place.
 
     inline int g_aceBlobsScrubbed = 0;
     inline int g_aceBytesScrubbed = 0;

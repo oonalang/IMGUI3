@@ -1,12 +1,5 @@
 std::unordered_map<std::string, bool> sBool;
 
-// The kill-decoration maps are written by the menu's apply path on the render
-// thread and read every frame by the kill-decoration pass, plus on the game
-// thread by the four decoration getters below. An insert that rehashes while
-// another thread walks the buckets is a use-after-free - the "applying a
-// mythic skin crashes" report. Every access to them goes through this mutex.
-// It is only ever held for the map access itself, never across a game native
-// call, so it cannot stall the game thread.
 inline std::mutex g_killDecoMapMutex;
 
 std::unordered_map<int, int> activeKillEffects;
@@ -59,12 +52,7 @@ CharacterModelFields *characterfields;
 RolePackFields *packfields;
 RoleConfFields *roleFields;
 thread_local ItemResourceFields *itemFields;
-// These are scratch pointers, not state: each loop assigns the object it is
-// about to read. They must NOT be shared, because the loader thread and the
-// render thread both walk config lists, and a cross-thread overwrite made the
-// menu's apply path write into whatever object the loader had picked last
-// (a mythic skin write landing on a different WeaponConf is instant heap
-// corruption, and it is what crashed the game after applying two skins).
+
 thread_local WeaponConfFields *weaponconfFields;
 thread_local WeaponCamosFields *weaponcamosFields;
 thread_local WeaponSkinFields *weaponskinFields;
@@ -190,12 +178,6 @@ VehicleItemConfCtor orig_VehicleItemConfCtor = nullptr;
 
 std::mutex g_dataMutex;
 
-// itemData is filled by the loader thread while the Skins page may already be
-// drawing it. A push_back that reallocates the vector under an open loop frees
-// the elements the loop is holding - the menu then walks heap that has been
-// reused. The menu therefore never touches itemData directly: it keeps a
-// snapshot that is refreshed under the lock whenever the loader has added
-// something. The copy only happens on a change, not per frame.
 inline size_t ItemDataCount()
 {
     std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -500,7 +482,7 @@ int _GetCurrentWeaponBrocast(Weapon weapon) {
 
 static bool FindInMapExtra(const std::unordered_map<int, int> &m, void *extraInfo, int &outVal) {
     if (!extraInfo || !Tools::IsPtrValid(extraInfo)) return false;
-    // Every native read happens before the lock; only the map is guarded.
+
     uintptr_t p = (uintptr_t)extraInfo;
     const int itemID = (int)*(uint *)(p + 0x28);
     const int virtID = (int)*(uint *)(p + 0x20);
@@ -612,9 +594,6 @@ void LoadKillIcons() {
         killIcons = killIconConfigInstance;
     }
 
-    // Rank every icon once instead of re-scanning the whole icon list for each
-    // weapon id of each icon (that was O(icons x weapons x icons) on the render
-    // thread the first time a held weapon had no kill icon).
     std::unordered_map<int, int> rankByIconId;
     std::unordered_map<int, int> bestIconForWeapon;
     for (void *icon : killIcons) {
@@ -676,11 +655,6 @@ inline void KillDecoration_ApplyLocalInventoryInfo()
 
     g_killDecorationDiag.lastHeldWeaponID = weaponID;
 
-    // This runs every render frame, so the resolution is cached per weapon id:
-    // the old version re-walked activeKillIcons and, when the id was missing,
-    // called LoadKillIcons() again - which locked the data mutex, copied the
-    // whole icon-config vector and re-scanned it, sixty times a second, until
-    // the game had built its icon table.
     static int    s_iconWeaponID    = -1;
     static int    s_iconForWeapon   = 0;
     static double s_lastIconLoadTry = -1.0e9;
@@ -700,9 +674,6 @@ inline void KillDecoration_ApplyLocalInventoryInfo()
     {
         killIcon = KillIconForWeapon(weaponID);
 
-        // Resolve the held weapon's own icon lazily, so the result does not
-        // depend on the order the player picked things in - but never more than
-        // once a second.
         if (killIcon <= 0 && !loadKillIcons)
         {
             const double now = std::chrono::duration<double>(

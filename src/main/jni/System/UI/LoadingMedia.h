@@ -67,9 +67,7 @@ namespace ui_media
     inline bool        g_audioLive = false;
 
 #if !defined(__ANDROID__)
-    // Host builds only. A test can pretend a video is playing so the loader can
-    // be checked with one - the loader has to keep painting its field
-    // underneath the video either way.
+
     inline ImTextureID g_hostVideoTex   = nullptr;
     inline int         g_hostVideoW     = 0;
     inline int         g_hostVideoH     = 0;
@@ -133,9 +131,7 @@ namespace ui_media
         inline std::string ResolveMedia(const char* const* names, int nameCount,
                                         const unsigned char* embedded, unsigned embeddedSize)
         {
-            // Explicit HD overrides take precedence over the low-resolution
-            // bundled clips. Older files can stay on disk as fallback.
-            // Named overrides are deliberate to avoid arbitrary Download videos.
+
             if (nameCount > 0)
             {
                 const std::string root = MediaRoot();
@@ -154,8 +150,7 @@ namespace ui_media
                         }
                     }
             }
-            // Keep existing deployed media deterministic when HD overrides are
-            // absent. Embedded contents only rewrite files with different size.
+
             if (embedded != nullptr && embeddedSize > 0 && nameCount > 0)
             {
                 const std::string dir = MediaRoot();
@@ -193,7 +188,7 @@ namespace ui_media
 
 #if defined(__ANDROID__)
 
-    inline GLuint g_oesTextures[2] = {0, 0}; // login / loading, separate frame queues
+    inline GLuint g_oesTextures[2] = {0, 0};
     inline GLuint g_targetTex    = 0;
     inline GLuint g_fbo          = 0;
     inline GLuint g_program      = 0;
@@ -204,37 +199,24 @@ namespace ui_media
     inline int    g_targetH      = 0;
     inline float  g_matrix[16]   = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 
-    // 1080p intermediate gives HD replacements their original detail without
-    // allocating a large 33 MB 4K FBO on lower-memory Android GPUs.
-    // No artificial enlargement: 360p and 540p bundled files stay source-limited.
     static constexpr int kMaxVideoTexW = 1920;
     static constexpr int kMaxVideoTexH = 1080;
 
     inline jobject g_surfaceTextures[2] = {nullptr, nullptr};
-    // Reused transform scratch: allocating one per frame was a per-frame JNI
-    // allocation on the loader's hottest path.
+
     inline jfloatArray g_matrixArray = nullptr;
     inline jobject g_audioPlayer   = nullptr;
 
-    // Set once the video has actually been drawn into the target texture. Until
-    // then the texture holds nothing and must not be shown: drawing it is what
-    // turned the screen black.
     inline bool g_targetReady = false;
 
-    // The audio player is prepared on its own thread too: prepare() blocks,
-    // and the loader starts the sound from the render thread.
     inline pthread_t    g_audioWorker  = 0;
-    inline volatile int g_audioState   = 0;      // 0 idle, 1 busy, 2 playing
+    inline volatile int g_audioState   = 0;
     inline volatile int g_audioStop    = 0;
 
-    // The MediaPlayer lives on its own thread. prepare() blocks for as long as
-    // it takes to read the file, and it used to run on the game's render thread:
-    // the game stopped presenting frames for seconds at the exact moment the
-    // loading screen appeared, which is both the freeze and the crash.
-    inline jobject      g_videoPlayer   = nullptr;   // owned by the worker thread
+    inline jobject      g_videoPlayer   = nullptr;
     inline pthread_t    g_worker        = 0;
-    inline volatile int g_workerState   = 0;         // 0 idle, 1 preparing, 2 playing, 3 dead
-    inline volatile int g_workerGen     = 0;         // guards against a stale worker
+    inline volatile int g_workerState   = 0;
+    inline volatile int g_workerGen     = 0;
     inline volatile int g_stopRequested = 0;
     inline volatile int g_workerW       = 0;
     inline volatile int g_workerH       = 0;
@@ -407,8 +389,6 @@ namespace ui_media
             return g_vao != 0;
         }
 
-        // Cap the intermediate frame at 1080p to avoid the 33 MB RGBA8
-        // allocation required for full 4K. The media itself is never transcoded.
         inline void ClampTargetSize(int* width, int* height)
         {
             if (width == nullptr || height == nullptr) return;
@@ -420,14 +400,10 @@ namespace ui_media
             *width = w; *height = h;
         }
 
-        // Creates the texture the video is sampled into. On any failure every
-        // object is released again and the target stays invalid, so the loader
-        // never ends up drawing a texture that was never written into.
         inline bool EnsureTarget(int width, int height)
         {
             if (width <= 0 || height <= 0) return false;
 
-            // Keep GPU allocation bounded, even with a 4K source.
             ClampTargetSize(&width, &height);
             if (width <= 0 || height <= 0) return false;
 
@@ -477,12 +453,10 @@ namespace ui_media
 
         struct WorkerArgs
         {
-            jobject surfaces[2]; // global refs, owned by the worker
+            jobject surfaces[2];
             int     gen;
         };
 
-        // One MediaPlayer at a time, but distinct SurfaceTexture queues per clip.
-        // This prevents previously decoded login frames from flashing in the loading card.
         inline void* VideoWorker(void* arg)
         {
             WorkerArgs* args = (WorkerArgs*)arg;
@@ -565,7 +539,7 @@ namespace ui_media
                 env->CallVoidMethod(player, g_jni.mpRelease);
                 if (env->ExceptionCheck()) env->ExceptionClear();
                 env->DeleteLocalRef(player);
-                // A failed load is terminal. A requested clip change is not.
+
                 if (!prepared) break;
             }
 
@@ -576,8 +550,6 @@ namespace ui_media
         }
     }
 
-    // Starts the video: the GL side here on the render thread, the MediaPlayer
-    // on its own thread. Returns true once the worker is running.
     inline bool StartVideo()
     {
         using namespace detail;
@@ -589,9 +561,6 @@ namespace ui_media
         JNIEnv* env = Env();
         if (env == nullptr) return false;
 
-        // Each clip has its own external texture and SurfaceTexture buffer queue.
-        // They never decode concurrently: the worker releases the old player
-        // before starting the requested clip on its own surface.
         jobject surfaces[2] = {nullptr, nullptr};
         for (int index = 0; index < 2; ++index)
         {
@@ -666,11 +635,6 @@ namespace ui_media
         const int videoSlot = g_activeVideo.load(std::memory_order_acquire);
         if (videoSlot < 0 || videoSlot > 1 || g_surfaceTextures[videoSlot] == nullptr) return;
 
-        // The loader repaints at the display rate, but the clip is 30 fps. Copying
-        // the external frame into our own texture every render frame doubled the
-        // GL work (a full 960x540 blit plus the state save/restore around it) and
-        // produced frames identical to the previous one. One update per clip frame
-        // is enough and roughly halves the cost of the loader's slowest path.
         {
             struct timespec ts;
             clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -683,9 +647,6 @@ namespace ui_media
         JNIEnv* env = Env();
         if (env == nullptr) return;
 
-        // A video switch can change resolution (Hachiware 640x360 to Arknights
-        // 960x540). Recreate the FBO when needed, otherwise Arknights stays
-        // stuck at the smaller previous target and looks unnecessarily soft.
         int width = g_workerW;
         int height = g_workerH;
         if (width <= 0 || height <= 0) return;
@@ -696,17 +657,14 @@ namespace ui_media
         glBindTexture(GL_TEXTURE_EXTERNAL_OES, g_oesTextures[videoSlot]);
         env->CallVoidMethod(g_surfaceTextures[videoSlot], g_jni.stUpdate);
         if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
-        // A newly created SurfaceTexture has no decoded frame yet. Wait until
-        // its timestamp advances instead of sampling uninitialized black pixels.
+
         const jlong frameTimestamp = env->CallLongMethod(g_surfaceTextures[videoSlot], g_jni.stTimestamp);
         if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
         if (frameTimestamp == 0) return;
 
         if (g_jni.stTransform != nullptr)
         {
-            // One global array, reused. This used to allocate a 16-float JNI array
-            // every frame, which the loader then threw away - pure garbage for the
-            // ART collector to chase while the clip was decoding.
+
             if (g_matrixArray == nullptr)
             {
                 jfloatArray local = env->NewFloatArray(16);
@@ -728,8 +686,6 @@ namespace ui_media
             }
         }
 
-        // The game owns this context: put everything back the way it was, or
-        // the game's own renderer draws with the wrong state afterwards.
         GLint prevFbo = 0;
         GLint prevView[4] = {0, 0, 0, 0};
         GLint prevActive = 0;
@@ -765,7 +721,6 @@ namespace ui_media
         if (prevBlend)  glEnable(GL_BLEND);      else glDisable(GL_BLEND);
         if (prevDepth)  glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
 
-        // Only now is the texture worth showing: it has a frame in it.
         g_targetReady = true;
     }
 
@@ -779,8 +734,6 @@ namespace ui_media
             jobject player = env->NewObject(g_jni.mediaPlayer, g_jni.mpCtor);
             if (player == nullptr) { env->ExceptionClear(); g_audioState = 0; return nullptr; }
 
-            // The card video is silent; the sound is file-only by design, so
-            // there is no compiled-in audio payload to hand over here.
             static const char* names[2] = { "loading.mp3", "lofi.mp3" };
             const std::string path = ResolveMedia(names, 2, nullptr, 0);
             bool ok = !path.empty() && SetSource(env, player, path);
@@ -860,8 +813,6 @@ namespace ui_media
         g_audioPlayer = nullptr;
     }
 
-    // Stops the worker. The MediaPlayer is released by the worker itself, so
-    // this never blocks the render thread.
     inline void StopVideo()
     {
         using namespace detail;
@@ -932,17 +883,10 @@ namespace ui_media
         g_inited = false;
     }
 
-    // Starts the worker before the loader is up. The login screen calls this, so
-    // the player has been created, the file opened and a frame blitted into the
-    // texture by the time the card appears - the gap between the two is what
-    // showed as the black screen after signing in.
     inline void Warmup() { Tick(); }
 
     inline bool  VideoReady()   { return g_videoLive && g_targetTex != 0 && g_targetReady; }
 
-    // True when a video is on its way: the clip is compiled in, or the worker is
-    // opening it. The card uses this to hold its procedural field for the frame
-    // or two that takes instead of showing the still photo and swapping later.
     inline bool VideoPending()
     {
         return (g_requestedVideo.load(std::memory_order_acquire) ==
@@ -959,7 +903,6 @@ namespace ui_media
 
 #else
 
-    // Host-side stubs exercise video selection and the same scaling rules.
     inline int g_workerState = 0;
     inline bool StartVideo() { return false; }
     namespace detail

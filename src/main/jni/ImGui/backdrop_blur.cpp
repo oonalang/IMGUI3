@@ -4,14 +4,6 @@
 
 #include <cstdint>
 
-// The capture half of the backdrop blur. Called once per frame from the swap
-// hook, on the render thread, while the menu is on screen.
-//
-// Cost control is the whole design: the game frame is copied at 1/8 resolution
-// (a 1080p frame becomes 240x135 = 130 KB), smoothed twice through bilinear
-// filtering, and never read back to the CPU. Every pass is a GPU blit inside
-// the frame that is already being submitted, so the work does not grow with the
-// panel size and does not touch the game's own rendering.
 namespace backdrop_blur
 {
     namespace
@@ -23,9 +15,9 @@ namespace backdrop_blur
         int    g_allocW = 0, g_allocH = 0;
         int    g_failures = 0;
 
-        constexpr int kDownscale  = 8;   // game frame -> the sampled copy
-        constexpr int kMidDivide  = 4;   // the copy -> the pass that smooths it
-        constexpr int kMaxFailures = 3;  // a device that refuses FBOs stops retrying
+        constexpr int kDownscale  = 8;
+        constexpr int kMidDivide  = 4;
+        constexpr int kMaxFailures = 3;
 
         bool MakeTarget(GLuint& tex, GLuint& fbo, int w, int h)
         {
@@ -99,8 +91,6 @@ namespace backdrop_blur
         }
     }
 
-    // Keeps the blurred copy current. Safe to call every frame: the targets are
-    // rebuilt only when the surface size changes.
     void Capture(int screenW, int screenH)
     {
         if (screenW <= 0 || screenH <= 0) return;
@@ -111,9 +101,6 @@ namespace backdrop_blur
         glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevRead);
         glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDraw);
 
-        // The game frame is the default framebuffer here (ImGui has not drawn
-        // yet this frame). 1/8 -> 1/32 -> 1/8: the bilinear pass in the middle
-        // is what turns a mosaic into a blur.
         Copy(0, screenW, screenH, g_fboA, g_texAW, g_texAH);
         Copy(g_fboA, g_texAW, g_texAH, g_fboB, g_texBW, g_texBH);
         Copy(g_fboB, g_texBW, g_texBH, g_fboA, g_texAW, g_texAH);

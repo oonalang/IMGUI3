@@ -1,0 +1,6 @@
+build/
+src/main/obj/
+src/main/libs/
+src/main/jniLibs/
+*.o
+*.so

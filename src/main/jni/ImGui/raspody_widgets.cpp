@@ -527,7 +527,6 @@ namespace raspody
         float& hot = Anim(id, 20);
         Ease(hot, (hovered || selected) ? 1.0f : 0.0f, 18.0f);
 
-        // Hover lifts and grows the tile instead of snapping on.
         const ImVec2 center(pos.x + size.x * 0.5f, pos.y + size.y * 0.5f - S(1.6f) * hot);
         const float tile = ImMin(size.x, size.y) * (0.80f + 0.05f * hot);
         const ImVec2 tmin(center.x - tile * 0.5f, center.y - tile * 0.5f);

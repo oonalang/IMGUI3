@@ -187,6 +187,21 @@ f4734ee Licence keys carry a device list, and the signing key is rotated
   (`tickCalls`, `pushed`, `scanned`, `classified`, `tracked`, `drawn`, `posFailed`,
   `lastClass`) says which step stops.
 
+* **Mythic attachments: the subsystem was orphaned.** `System/Hooks/MythicAttachmentSystem.h`
+  was included by nothing, so none of its twelve hooks were ever installed, and its enabled
+  predicate read the "Attachment unlock" toggle only, not "Blueprint". It is now included
+  from `Feats.h`, installed from `InitializeAllHooks`, applied from the skin-apply path in
+  `SkinTab.h`, and `IsWeaponSkinUnlock` (`0xA61AD54`) is forced on with the other unlock
+  hooks. Still unverified in-game: if a mythic part refuses to equip, check whether the
+  refusal comes from the inventory request (`CSInventoryMythicWeaponChgAttrSkinReq`),
+  which is server-side and cannot be answered from the client.
+
+* **Bypass: offset sets merged with V3-OLD.** `System/Core/Bypass.h` now carries the
+  union of the previous set and the sets from `github.com/eliwoahzja/V3-OLD` (25 patch
+  entries, 3 hooked entries, no address in both). Patches and hooks address the private
+  remap of `libanogs.so` produced by `GetAnogs()` rather than the file-backed mapping, so
+  an integrity read of the original mapping still sees untouched bytes.
+
 * **Anti-login: unverified against the real kick flow.** The feature used to block the
   broker relogin coroutine, `Logout(isRelogin)`, `Pandora.CheckReloginState` and
   `LoadingFlowCheckPayTokenController.OnNotifyNeedReloginCallback`; the last one is the tail

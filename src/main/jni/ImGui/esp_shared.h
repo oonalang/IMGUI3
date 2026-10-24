@@ -1,24 +1,10 @@
 #pragma once
 
-// One implementation of the ESP box and the health bar.
-//
-// The in-game ESP (Hacks/Feature/DrawESP.h) and the Visuals-page preview
-// (ImGui/esp_preview.h) both draw these, and they used to be two separate
-// copies that had already drifted: the preview drew half-height health bars
-// filled from the top with a flat colour, while the game drew a full-height
-// bar filled from the bottom with a red-to-green ramp. The preview therefore
-// showed something the game never draws. Everything that has a shape lives
-// here now, so a change to one is a change to both.
-//
-// EspBoxType / EspHealthPosition are defined in Hacks/Feature/Init_Hacks.h;
-// the values below mirror them so this header stays free of game headers and
-// can be compiled on its own by the host harness.
-
 #include "imgui.h"
 
 namespace esp_shared
 {
-    // Mirrors EspBoxType { Fill = 0, Outline = 1, Corner = 2, ThreeD = 3 }.
+
     enum BoxStyle
     {
         BoxFill    = 0,
@@ -27,14 +13,12 @@ namespace esp_shared
         BoxThreeD  = 3
     };
 
-    // Mirrors EspHealthPosition { HealthTop = 0, HealthSide = 1 }.
     enum HealthStyle
     {
         HealthTop  = 0,
         HealthSide = 1
     };
 
-    // Mirrors LineTarget { Top = 0, Center = 1, Bottom = 2 }.
     enum LineStyle
     {
         LineTop    = 0,
@@ -42,7 +26,6 @@ namespace esp_shared
         LineBottom = 2
     };
 
-    // The game's own ramp: full health is green, empty is red, linear between.
     inline ImU32 HealthColor(int curHP, int maxHP)
     {
         if (maxHP <= 0) return IM_COL32(0, 255, 0, 255);
@@ -52,8 +35,6 @@ namespace esp_shared
         return IM_COL32(r, g, 0, 255);
     }
 
-    // The side bar: a 4 px track pinned to the left of the box, the FULL height
-    // of the box, filled from the bottom, black track plus a 1 px outline.
     inline void SideHealthBar(ImDrawList* draw, float x, float y, float h,
                               int curHP, int maxHP)
     {
@@ -69,7 +50,6 @@ namespace esp_shared
                             HealthColor(curHP, maxHP));
     }
 
-    // The top bar: a thin strip under the name, inset from the container.
     inline void TopHealthBar(ImDrawList* draw, float x, float y, float w, float h,
                              int curHP, int maxHP)
     {
@@ -111,9 +91,6 @@ namespace esp_shared
         draw->AddLine(ImVec2(x + w - 1.0f, y + h - ih), ImVec2(x + w - 1.0f, y + h), color, thickness);
     }
 
-    // The 3D box needs the pawn's world transform, which the preview does not
-    // have; both callers fall back to the outline so the preview still shows a
-    // box when the 3D style is selected in game.
     inline void Box(ImDrawList* draw, float x, float y, float w, float h,
                     ImU32 color, float thickness, int style)
     {

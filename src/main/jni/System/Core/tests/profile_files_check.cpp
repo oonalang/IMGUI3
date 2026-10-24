@@ -12,7 +12,7 @@ int main() {
  androidFilesDir=std::string(base)+"/";
  assert(ValidProfileName("F") && !ValidProfileName("../bad") && !ValidProfileName("a/b"));
  assert(GetAutoLoadProfile().empty());
- // Minimal sample JSON, storage-layer only.
+
  mkdir((androidFilesDir+"configs").c_str(), 0700);
  {std::ofstream f(ProfilePath("F")); f<<"{\"test\":true}";}
  assert(ProfileExists("F"));

@@ -19,12 +19,6 @@ namespace esp_preview
                          ImMax(1.0f, height - pad * 2.0f));
     }
 
-    // The in-game ESP box, expressed the same way the game builds it:
-    // width = 0.65 * height, centred on the pawn's own vertical axis - the
-    // root's screen x in game, the model's centre line here. The old preview
-    // drew the box around the figure's bounding box instead, which is wider
-    // than 0.65 * height and off-centre (the hair ribbons sit on one side), so
-    // the box looked crooked and the health bar hung off at an angle.
     struct BoxGeometry
     {
         float axisX = 0.0f;
@@ -48,24 +42,20 @@ namespace esp_preview
         return g;
     }
 
-    // Pairs of indices into esp_model_preview::Result::joint[].
     static const int kSkeletonLinks[][2] = {
-        { 0,  1 },              // head      -> neck
-        { 1,  2 }, { 1,  3 },   // neck      -> shoulders
-        { 2,  4 }, { 3,  5 },   // shoulders -> elbows
-        { 4,  6 }, { 5,  7 },   // elbows    -> wrists
-        { 1,  8 },              // neck      -> chest
-        { 8,  9 },              // chest     -> waist
-        { 9, 10 }, { 9, 11 },   // waist     -> hips
-        { 10, 12 }, { 11, 13 }, // hips      -> knees
-        { 12, 14 }, { 13, 15 }, // knees     -> ankles
+        { 0,  1 },
+        { 1,  2 }, { 1,  3 },
+        { 2,  4 }, { 3,  5 },
+        { 4,  6 }, { 5,  7 },
+        { 1,  8 },
+        { 8,  9 },
+        { 9, 10 }, { 9, 11 },
+        { 10, 12 }, { 11, 13 },
+        { 12, 14 }, { 13, 15 },
     };
     static const int kSkeletonLinkCount =
         (int)(sizeof(kSkeletonLinks) / sizeof(kSkeletonLinks[0]));
 
-    // `boxType`, `healthPosition` and `lineTarget` carry EspBoxType,
-    // EspHealthPosition and LineTarget straight through, so the preview follows
-    // the same dropdowns the in-game ESP reads.
     inline void Draw(ImDrawList* draw, ImVec2 pos, float width, float height,
                      bool drawBox, bool drawLine, bool drawSkeleton,
                      bool drawHealth, bool drawName, bool drawDistance,
@@ -94,16 +84,11 @@ namespace esp_preview
         const float thick = ImMax(1.0f, s * 1.5f);
         const BoxGeometry box = ComputeBox(r, modelPos, modelSize);
 
-        // A sample pawn, so the panels have something to show. 0.72 of full is
-        // the same colour the game would paint at 72 HP out of 100.
         const int previewHP = 72;
         const int previewMaxHP = 100;
 
-        // Overlays stay inside the card, so a dragged card at a screen edge
-        // cannot spray lines past its own frame.
         draw->PushClipRect(cardMin, cardMax, true);
 
-        // ESP line, from the same three anchors the game offers.
         if (drawLine)
         {
             ImVec2 from(cardMin.x + width * 0.5f, cardMin.y + s * 8.0f);
@@ -120,7 +105,6 @@ namespace esp_preview
             draw->AddLine(from, to, lineColor, thick);
         }
 
-        // ESP skeleton
         if (drawSkeleton)
         {
             for (int i = 0; i < kSkeletonLinkCount; ++i)
@@ -136,8 +120,6 @@ namespace esp_preview
         ImFont* font = ImGui::GetFont();
         const float fontH = ImGui::GetFontSize();
 
-        // Name, and the health strip that sits under it in the "top" style:
-        // both live in one dark container just above the box, as in game.
         const float containerW = ImMax(box.width * 1.6f, s * 70.0f);
         const float containerX = box.axisX - containerW * 0.5f;
         float textY = box.top - s * 26.0f;
@@ -175,16 +157,13 @@ namespace esp_preview
             }
         }
 
-        // Side health bar: full box height, filled from the bottom.
         if (drawHealth && healthPosition == esp_shared::HealthSide)
         {
-            // Same offset the game uses: the health track starts 8 px left of
-            // the box, and the armour bar (when it is on) takes 14 px.
+
             esp_shared::SideHealthBar(draw, box.left - s * 8.0f, box.top, box.height,
                                       previewHP, previewMaxHP);
         }
 
-        // Distance, under the box in its own container.
         if (drawDistance && font != nullptr)
         {
             const char* label = "12m";
@@ -208,7 +187,7 @@ namespace esp_preview
 
         draw->PopClipRect();
 
-        (void)healthColor;   // the game's bar ramps red->green, so a fixed tint is unused
+        (void)healthColor;
         (void)textY;
     }
 }
