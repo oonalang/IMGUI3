@@ -10,7 +10,7 @@
 //
 // Run it from the repo root:
 //   g++ -std=c++17 -fsanitize=thread -g -O1 -ffunction-sections -fdata-sections \
-//       -D__fastcall= -I src/main/jni/Skin/tests/stubs -I src/main/jni \
+//       -D__fastcall= -I src/main/jni/tests/stubs -I src/main/jni \
 //       -I src/main/jni/ImGui -I src/main/jni/Includes \
 //       src/main/jni/IL2CppSDKGenerator/IL2Cpp/tests/tools_isvalid_tsan.cpp \
 //       src/main/jni/IL2CppSDKGenerator/IL2Cpp/Tools.cpp \
@@ -24,7 +24,7 @@
 // because the refreshing thread reallocated the vector the reading thread was
 // binary-searching: the reader walked freed memory, which is the device crash.
 //
-// No NDK is needed (the Android/JNI headers are the stubs in Skin/tests) and
+// No NDK is needed (the Android/JNI headers are the stubs in tests/stubs) and
 // Android.mk does not wildcard this directory, so the file never reaches the
 // APK. ThreadSanitizer is a host-only instrument: the device build does not use
 // it, so this test proves the *concurrency contract* of the snapshot, not the

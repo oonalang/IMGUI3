@@ -23,6 +23,10 @@ struct KeyboardState {
 
 static std::map<std::string, KeyboardState> keyboardStates;
 
+inline float VirtualKeyboardHeight(float screen_height) {
+    return screen_height * 0.46f;
+}
+
 namespace keyboard_ui {
 inline size_t SafeLen(const char* text, size_t max_len) {
     if (text == nullptr || max_len == 0) {
@@ -185,7 +189,7 @@ inline void RenderVirtualKeyboard(const char* id, char* searchQuery, size_t quer
     ImGuiIO& io = ImGui::GetIO();
     const float screen_w = io.DisplaySize.x;
     const float screen_h = io.DisplaySize.y;
-    const float keyboard_h = screen_h * 0.46f;
+    const float keyboard_h = VirtualKeyboardHeight(screen_h);
 
     ImGui::SetNextWindowPos(ImVec2(0.0f, screen_h - keyboard_h), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(screen_w, keyboard_h), ImGuiCond_Always);

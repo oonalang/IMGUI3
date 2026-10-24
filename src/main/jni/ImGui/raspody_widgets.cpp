@@ -841,7 +841,7 @@ namespace raspody
             IsHovering(ImVec2(pos.x, pos.y), ImVec2(pos.x + width, pos.y + height));
         const ImGuiID editId = ImGui::GetID("##slider_bar");
         numeric_slider_entry::OpenOnDoubleTap(editId,
-            ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left),
+            ImGui::IsItemClicked(ImGuiMouseButton_Left),
             *value, false);
         ImGui::PopID();
 

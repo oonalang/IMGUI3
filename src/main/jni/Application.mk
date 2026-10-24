@@ -3,5 +3,7 @@ APP_PLATFORM        := android-21
 APP_STL             := c++_static
 APP_OPTIM           := release
 APP_THIN_ARCHIVE    := true
-APP_PIE 		    := true
+APP_PIE 	    := true
 
+NDK_CCACHE          := $(shell which ccache 2>/dev/null)
+APP_CFLAGS          += -pipe

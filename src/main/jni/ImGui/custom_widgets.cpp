@@ -541,14 +541,14 @@ namespace custom
         bool value_changed = false;
         int k = *key;
 
-        std::string active_key = "";
-        active_key += keys[*key];
+        const int key_count = (int)(sizeof(keys) / sizeof(keys[0]));
+        const char* key_name = (*key >= 0 && *key < key_count) ? keys[*key] : "-";
 
         if (*key != 0 && g.ActiveId != id) {
-            strcpy(buf_display, active_key.c_str());
+            std::snprintf(buf_display, sizeof(buf_display), "%s", key_name);
         }
         else if (g.ActiveId == id) {
-            strcpy(buf_display, "...");
+            std::snprintf(buf_display, sizeof(buf_display), "...");
         }
 
         const ImVec2 label_size = CalcTextSize(buf_display, NULL, true);
@@ -2657,7 +2657,7 @@ namespace custom
         }
 
         numeric_slider_entry::OpenOnDoubleTap(id,
-            hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left),
+            pressed,
             data_type == ImGuiDataType_S32 ? (double)*(int*)p_data : (double)*(float*)p_data,
             data_type == ImGuiDataType_S32);
         const bool active_slider = IsItemActive() && !numeric_slider_entry::Active(id);
