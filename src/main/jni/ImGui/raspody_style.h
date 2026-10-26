@@ -215,11 +215,11 @@ namespace raspody
     };
 
     inline const char* kSubtabDescriptions[Tab_Count][3] = {
-        { "Smoothing, FOV and target priority.", "Automatic fire and dot crosshair.", nullptr },
+        { "Smoothing, FOV and target priority.", "Automatic fire and the Dot ray gate.", nullptr },
         { "Everything drawn on players and bots.", "World, camera and awareness toggles.", nullptr },
         { "Handling, recoil and attachments.", "Speed, flight and slide tuning.", nullptr },
         { "Character, watch, weapon, camo and snowboard skins.", "Blueprint / skin unlock for weapons.", nullptr },
-        { "Firing-timing patches and movement fixes.", "The dot that the trigger aims through.", nullptr },
+        { "Firing-timing patches and movement fixes.", "Style, size, colour and outline of the reticle.", nullptr },
         { "Write, load and manage your profiles.", "License and build of the session.", nullptr },
         { "Menu appearance and build info.", "Reports, account and performance switches.", nullptr }
     };

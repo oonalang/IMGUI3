@@ -1072,12 +1072,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         Config.ExtraMenu.StretchAspect = 1.7778f;
 
         Config.ExtraMenu.Attachment = true;
-        Config.Crosshair.Enabled = true;
-        Config.Crosshair.Color[0] = 1.0f;
-        Config.Crosshair.Color[1] = 1.0f;
-        Config.Crosshair.Color[2] = 1.0f;
-        Config.Crosshair.Color[3] = 0.95f;
-        Config.Crosshair.Size = 6.0f;
+        CrosshairApplyDefaults();
         Config.NewFeaturesMenu.TriggerbotRadius = 40;
         Config.NewFeaturesMenu.TriggerbotDotRay = true;
         Config.Aim.FpsLevelUltra1 = 240.0f;
@@ -1115,7 +1110,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
     DrawESP(ImGui::GetBackgroundDrawList(), screenWidth, screenHeight, get_dpi());
 
-    DrawDotCrosshair(ImGui::GetBackgroundDrawList(), screenWidth, screenHeight);
+    DrawCrosshair(ImGui::GetBackgroundDrawList(), screenWidth, screenHeight);
 
     KillDecoration_ApplyLocalInventoryInfo();
     floating_info::Render(draw, screenWidth, screenHeight);

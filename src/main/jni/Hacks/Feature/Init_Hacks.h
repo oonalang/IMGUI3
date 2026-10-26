@@ -86,6 +86,14 @@ enum EAimTrigger {
 enum ReticleStyle {
     ReticleDot = 0,
     ReticleCross = 1,
+    ReticleGapCross = 2,
+    ReticleCircle = 3,
+    ReticleCircleDot = 4,
+    ReticleTShape = 5,
+    ReticleChevron = 6,
+    ReticleXShape = 7,
+    ReticleBrackets = 8,
+    ReticleStyleCount = 9
 };
 
 struct sConfig {
@@ -147,7 +155,6 @@ struct sWeaponAim {
         bool Distance;
         bool Skeleton;
         bool ShowFov;
-        bool Crosshair;
         bool Aimline;
     };
     sESPMenu ESPMenu{0};
@@ -266,10 +273,14 @@ sColorsESPBOT sColorsESPBOT{0};
 
     struct sCrosshair
     {
-        bool  Enabled = true;
+        bool  Enabled = false;
         int   Style = ReticleDot;
         float Color[4] = {1.0f, 1.0f, 1.0f, 0.95f};
         float Size = 6.0f;
+        float Thickness = 1.5f;
+        float Gap = 3.0f;
+        bool  Outline = false;
+        float OutlineThickness = 1.0f;
         float OffsetX = 0.0f;
         float OffsetY = 0.0f;
     };
