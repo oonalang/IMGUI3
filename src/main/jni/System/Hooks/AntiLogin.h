@@ -33,7 +33,7 @@ namespace anti_login
 
     inline bool Enabled()
     {
-        return Config.ExtraMenu.AntiLogin;
+        return g_premiumFeaturesEnabled && Config.ExtraMenu.AntiLogin;
     }
 
     inline void NoteLanded(Gate gate, bool landed)

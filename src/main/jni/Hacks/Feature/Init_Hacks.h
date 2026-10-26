@@ -1,5 +1,7 @@
 #pragma once
 
+inline bool g_premiumFeaturesEnabled = false;
+
 float SlideRange;
 bool isExecute;
 
@@ -79,6 +81,11 @@ enum EAimTrigger {
     None = 0,
     Shooting = 1,
     Scoping = 2
+};
+
+enum ReticleStyle {
+    ReticleDot = 0,
+    ReticleCross = 1,
 };
 
 struct sConfig {
@@ -200,7 +207,7 @@ sColorsESPBOT sColorsESPBOT{0};
 
         bool MythicAttachments = false;
 
-        bool BlockReportEvidence = true;
+        bool BlockReportEvidence = false;
 
         bool BlockAceReport = false;
 
@@ -260,6 +267,7 @@ sColorsESPBOT sColorsESPBOT{0};
     struct sCrosshair
     {
         bool  Enabled = true;
+        int   Style = ReticleDot;
         float Color[4] = {1.0f, 1.0f, 1.0f, 0.95f};
         float Size = 6.0f;
         float OffsetX = 0.0f;

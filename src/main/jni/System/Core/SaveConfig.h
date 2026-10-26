@@ -99,6 +99,7 @@ void SaveConfiguration(const std::string& filename) {
     config["NewFeatures"]["NoHipfireDelay"] = Config.NewFeaturesMenu.NoHipfireDelay;
 
     config["Crosshair"]["Enabled"] = Config.Crosshair.Enabled;
+    config["Crosshair"]["Style"] = Config.Crosshair.Style;
     config["Crosshair"]["Size"] = Config.Crosshair.Size;
     config["Crosshair"]["OffsetX"] = Config.Crosshair.OffsetX;
     config["Crosshair"]["OffsetY"] = Config.Crosshair.OffsetY;
@@ -211,6 +212,7 @@ bool LoadConfiguration(const std::string& filename) {
 
         if (config.contains("Crosshair")) {
             if (config["Crosshair"].contains("Enabled")) Config.Crosshair.Enabled = config["Crosshair"]["Enabled"].get<bool>();
+            if (config["Crosshair"].contains("Style")) Config.Crosshair.Style = config["Crosshair"]["Style"].get<int>();
             if (config["Crosshair"].contains("Size")) Config.Crosshair.Size = config["Crosshair"]["Size"].get<float>();
             if (config["Crosshair"].contains("OffsetX")) Config.Crosshair.OffsetX = config["Crosshair"]["OffsetX"].get<float>();
             if (config["Crosshair"].contains("OffsetY")) Config.Crosshair.OffsetY = config["Crosshair"]["OffsetY"].get<float>();

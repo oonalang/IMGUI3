@@ -44,6 +44,8 @@ bool DeleteProfile(const std::string& name);
 
 namespace raspody
 {
+    inline const char* kPremiumOnlyDesc = "This feature doesn't work. For premium only.";
+
     inline bool minimize_requested = false;
 
     inline int g_tabHistory[Tab_Count] = { 0 };
@@ -233,15 +235,34 @@ namespace raspody
 
         if (Config.Crosshair.Enabled)
         {
-            const ImVec4 dot(Config.Crosshair.Color[0], Config.Crosshair.Color[1],
-                             Config.Crosshair.Color[2], 1.0f);
-            dl->AddCircleFilled(ImVec2(cx, cy), radius + S(0.5f), Col(clr.black, 0.35f), 20);
-            dl->AddCircleFilled(ImVec2(cx, cy), radius, Col(dot), 20);
+            const ImVec4 reticle(Config.Crosshair.Color[0], Config.Crosshair.Color[1],
+                                 Config.Crosshair.Color[2], 1.0f);
+            if (Config.Crosshair.Style == ReticleCross)
+            {
+                const float arm = radius * 2.0f;
+                const float gap = ImMax(S(2), radius * 0.5f);
+                const float thickness = ImMax(S(1.2f), radius * 0.32f);
+                const ImVec2 arms[4][2] = {
+                    { ImVec2(cx - arm, cy), ImVec2(cx - gap, cy) },
+                    { ImVec2(cx + gap, cy), ImVec2(cx + arm, cy) },
+                    { ImVec2(cx, cy - arm), ImVec2(cx, cy - gap) },
+                    { ImVec2(cx, cy + gap), ImVec2(cx, cy + arm) },
+                };
+                for (const auto& armPair : arms)
+                    dl->AddLine(armPair[0], armPair[1], Col(clr.black, 0.35f), thickness + S(2));
+                for (const auto& armPair : arms)
+                    dl->AddLine(armPair[0], armPair[1], Col(reticle), thickness);
+            }
+            else
+            {
+                dl->AddCircleFilled(ImVec2(cx, cy), radius + S(0.5f), Col(clr.black, 0.35f), 20);
+                dl->AddCircleFilled(ImVec2(cx, cy), radius, Col(reticle), 20);
+            }
         }
 
         DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                  ImVec2(pos.x + S(14), pos.y + S(13)), Col(clr.text2),
-                 Config.Crosshair.Enabled ? "LIVE CROSSHAIR" : "CROSSHAIR DISABLED", ImVec2(0.0f, 0.5f));
+                 Config.Crosshair.Enabled ? "LIVE RETICLE" : "RETICLE DISABLED", ImVec2(0.0f, 0.5f));
 
         ImGui::Dummy(ImVec2(width, height + S(8)));
     }
@@ -349,50 +370,50 @@ namespace raspody
         if (subtab == 0)
         {
             AddPageCard(p, 0, "Aim control", [&] {
-                Checkbox("Aim Assist 360", "Rotates the aim toward any nearby target.",
+                Checkbox("Aim Assist 360", "Aim at nearby targets.",
                          &Config.Aim.Aimbot360, true);
                 CheckboxSettings("Aim Assist 360", &Config.Aim.AimSilent, "Silent aim (bullet track)",
                                  &Config.ESPMenu.ShowFov, "Show FOV circle");
-                SliderFloat("Assist size", "Reach of the assist around the target.",
+                SliderFloat("Assist size", "Assist reach.",
                             &Config.Aim.AimAssistSize, 0.0f, 100.0f, "%.0f");
             });
 
             AddPageCard(p, 1, "Targeting", [&] {
-                Dropdown("Aim trigger", "When the assist is allowed to fire.",
+                Dropdown("Aim trigger", "When the assist fires.",
                          (int*)&Config.Aim.Trigger, triggers, IM_ARRAYSIZE(triggers));
-                Dropdown("Hit part", "Preferred aim point on the target.",
+                Dropdown("Hit part", "Preferred aim point.",
                          (int*)&Config.Aim.Target, targets, IM_ARRAYSIZE(targets));
-                Dropdown("Target by", "Closest distance or smallest FOV.",
+                Dropdown("Target by", "Distance or FOV.",
                          (int*)&Config.Aim.By, targetBy, IM_ARRAYSIZE(targetBy));
-                SliderFloat("Aim range", "Maximum distance to consider a target.",
+                SliderFloat("Aim range", "Max target distance.",
                             &Config.Aim.size, 0.0f, 500.0f, "%.0f m");
             });
 
             AddPageCard(p, 0, "Field of view", [&] {
-                SliderFloat("FOV radius", "Visible radius of the aim cone.",
+                SliderFloat("FOV radius", "Aim cone radius.",
                             &Config.Aim.Cross, 0.0f, 180.0f, "%.0f");
-                Checkbox("Hide Stream", "Keep the overlay out of screenshots.", &HIDEESP);
+                Checkbox("Hide Stream", "Hide the overlay in screenshots.", &HIDEESP);
             });
         }
         else
         {
             AddPageCard(p, 0, "Triggerbot", [&] {
-                Checkbox("Triggerbot", "Fire automatically while the crosshair is on a target.",
+                Checkbox("Triggerbot", "Fire while on target.",
                          &Config.NewFeaturesMenu.Triggerbot);
-                Dropdown("Mode", "Always, only while aiming, or only while firing.",
+                Dropdown("Mode", "When to fire.",
                          &Config.NewFeaturesMenu.TriggerbotMode, triggerModes, IM_ARRAYSIZE(triggerModes));
-                SliderInt("Reaction delay", "Humanised delay before a shot, jittered per engagement. 0 = instant.",
+                SliderInt("Reaction delay", "Delay before each shot.",
                           &Config.NewFeaturesMenu.TriggerbotDelay, 0, 500, "%.0f ms");
-                SliderInt("Trigger size", "How far off the target the crosshair may be, in pixels at 1080p.",
+                SliderInt("Trigger size", "Reticle tolerance in pixels.",
                           &Config.NewFeaturesMenu.TriggerbotRadius, 0, 200, "%.0f px");
-                Checkbox("Dot-ray gate", "Only fire when the shot ray through the crosshair dot itself lands on the enemy.",
+                Checkbox("Dot", "Fire only when the shot ray hits the target.",
                          &Config.NewFeaturesMenu.TriggerbotDotRay);
             });
 
             AddPageCard(p, 1, "Trigger zone", [&] {
-                InfoRow("Trigger point", "Crosshair dot + body width");
-                InfoRow("Dot state", Config.Crosshair.Enabled ? "Enabled" : "Disabled");
-                ParagraphRow("The trigger zone is the crosshair dot or the trigger size, whichever is bigger, plus the target's own body width at range. With Dot-ray gate off, the zone alone decides and a shot can land beside the dot.");
+                InfoRow("Trigger point", "Reticle + body width");
+                InfoRow("Reticle state", Config.Crosshair.Enabled ? "Enabled" : "Disabled");
+                ParagraphRow("The zone is the larger of the reticle and trigger size, plus body width. With Dot off, a shot can land beside the reticle.");
                 if (Selectable("Open crosshair settings", false))
                 {
                     if (var.tab.stored != Tab_Scripts)
@@ -415,35 +436,35 @@ namespace raspody
         if (subtab == 0)
         {
             AddPageCard(p, 0, "Player ESP", [&] {
-                Checkbox("Enable ESP line", "Draw a line to every player.", &Config.ESPMenu.isPlayerLine);
-                Checkbox("Box", "Draw a box around the player.", &Config.ESPMenu.Box);
-                Checkbox("Skeleton", "Draw the player skeleton.", &Config.ESPMenu.Skeleton);
-                Checkbox("Health", "Draw a health bar.", &Config.ESPMenu.Health);
-                Checkbox("Name", "Draw the player name.", &Config.ESPMenu.Name);
-                Checkbox("Distance", "Draw the distance to the player.", &Config.ESPMenu.Distance);
-                Checkbox("Player count", "Show the visible player count.", &Config.ESPMenu.Count);
-                Checkbox("360 alert", "Warn when a player is behind you.", &Config.ESPMenu.Alert);
-                Checkbox("Aim line", "Draw a line toward the aim target.", &Config.ESPMenu.Aimline);
+                Checkbox("Enable ESP line", "Line to each player.", &Config.ESPMenu.isPlayerLine);
+                Checkbox("Box", "Box around the player.", &Config.ESPMenu.Box);
+                Checkbox("Skeleton", "Player skeleton.", &Config.ESPMenu.Skeleton);
+                Checkbox("Health", "Health bar.", &Config.ESPMenu.Health);
+                Checkbox("Name", "Player name.", &Config.ESPMenu.Name);
+                Checkbox("Distance", "Distance to the player.", &Config.ESPMenu.Distance);
+                Checkbox("Player count", "Visible player count.", &Config.ESPMenu.Count);
+                Checkbox("360 alert", "Behind-you warning.", &Config.ESPMenu.Alert);
+                Checkbox("Aim line", "Line toward the aim target.", &Config.ESPMenu.Aimline);
             });
 
             AddPageCard(p, 1, "ESP style", [&] {
-                Dropdown("Box type", "How the player box is rendered.",
+                Dropdown("Box type", "Box render style.",
                          (int*)&Config.ESPMenu.BoxType, boxTypes, IM_ARRAYSIZE(boxTypes));
-                Dropdown("Line position", "Where the player line is anchored.",
+                Dropdown("Line position", "Player line anchor.",
                          (int*)&Config.ESPMenu.Target, linePositions, IM_ARRAYSIZE(linePositions));
-                Dropdown("Health position", "Top bar or side bar.",
+                Dropdown("Health position", "Top or side bar.",
                          (int*)&Config.ESPMenu.HealthPosition, healthPositions, IM_ARRAYSIZE(healthPositions));
                 Dropdown("ESP style", "Extra target decoration.",
                          (int*)&Config.ESPMenu.EspStyle, espStyles, IM_ARRAYSIZE(espStyles));
-                Dropdown("Crosshair type", "Shape of the target marker.",
+                Dropdown("Marker shape", "Target marker shape.",
                          (int*)&Config.ESPMenu.CrosshairType, crosshairTypes, IM_ARRAYSIZE(crosshairTypes));
-                Range("Line thickness", "Player and bot line width.",
+                Range("Line thickness", "Line width.",
                       &Config.Pline, &Config.Bline, 0.0f, 5.0f, "%.1f");
-                Checkbox("Armor", "Draw armor state.", &Config.ESPMenu.Armor);
+                Checkbox("Armor", "Armor state.", &Config.ESPMenu.Armor);
             });
 
             AddPageCard(p, 0, "Player colours", [&] {
-                ColorRow("Player ESP colour", "Applied to the line, box, name, health and distance.",
+                ColorRow("Player ESP colour", "Line, box, name, health, distance.",
                          Config.sColorsESPPLAYER.LinePLAYER);
                 ColorGroup(Config.sColorsESPPLAYER.LinePLAYER,
                            Config.sColorsESPPLAYER.BoxPLAYER,
@@ -454,7 +475,7 @@ namespace raspody
             });
 
             AddPageCard(p, 1, "Bot colours", [&] {
-                ColorRow("Bot ESP colour", "Applied to every bot visual.",
+                ColorRow("Bot ESP colour", "Every bot visual.",
                          Config.sColorsESPBOT.LineBOT);
                 ColorGroup(Config.sColorsESPBOT.LineBOT,
                            Config.sColorsESPBOT.BoxBOT,
@@ -468,37 +489,37 @@ namespace raspody
         {
             AddPageCard(p, 0, "World", [&] {
                 Checkbox("No gravity", "Remove world gravity.", &Config.ExtraMenu.NoGravity);
-                SliderFloat("Gravity scale", "Multiplier applied while gravity is active.",
+                SliderFloat("Gravity scale", "Gravity multiplier.",
                             &Config.ExtraMenu.NoGravityScale, 0.1f, 3.0f, "%.2fx");
                 Checkbox("Clear terrain", "Remove terrain clutter.", &Config.ExtraMenu.ClearTerrain);
-                Checkbox("No smoke", "Remove smoke and dust effects.", &Config.ExtraMenu.NoSmoke);
-                Checkbox("Walk underwater", "Move normally below the water line.",
+                Checkbox("No smoke", "Remove smoke and dust.", &Config.ExtraMenu.NoSmoke);
+                Checkbox("Walk underwater", "Move normally underwater.",
                          &Config.ExtraMenu.WalkUnderWater);
                 Checkbox("Spectate X", "Extended spectator controls.", &Config.ExtraMenu.Spectatex);
             });
 
             AddPageCard(p, 1, "Camera", [&] {
-                Checkbox("Camera POV", "Override the third-person camera distance.",
+                Checkbox("Camera POV", "Override camera distance.",
                          &Config.ExtraMenu.CameraPov);
                 SliderFloat("POV size", "Camera distance multiplier.",
                             &Config.ExtraMenu.CameraPovSize, 0.0f, 100.0f, "%.0f");
-                Checkbox("Stretch screen", "Widen the horizontal field of view.",
+                Checkbox("Stretch screen", "Widen the field of view.",
                          &Config.ExtraMenu.StretchScreen);
                 if (Config.ExtraMenu.StretchScreen)
                 {
-                    SliderFloat("Aspect", "Target camera aspect ratio.",
+                    SliderFloat("Aspect", "Camera aspect ratio.",
                                 &Config.ExtraMenu.StretchAspect, 1.0f, 3.0f, "%.2f");
                     if (Selectable("16:9", false)) Config.ExtraMenu.StretchAspect = 1.7778f;
                     if (Selectable("21:9", false)) Config.ExtraMenu.StretchAspect = 2.3333f;
                     if (Selectable("4:3", false))  Config.ExtraMenu.StretchAspect = 1.3333f;
                 }
                 Checkbox("Clear display", "Use the clean display path.", &Config.ExtraMenu.ClearDisplay);
-                Checkbox("VSync mode", "Match frame pacing to the display.", &Config.ExtraMenu.Grap);
+                Checkbox("VSync mode", "Match the display frame pacing.", &Config.ExtraMenu.Grap);
             });
 
             AddPageCard(p, 0, "Awareness", [&] {
                 Checkbox("Grenade warning", "Warn about nearby grenades.", &Config.ESPMenu.GrenadeWarn);
-                Checkbox("Placed items", "Highlight placed equipment.", &Config.ESPMenu.Placables);
+                Checkbox("Placed items", kPremiumOnlyDesc, &Config.ESPMenu.Placables, false, !g_premiumFeaturesEnabled);
                 if (Config.ESPMenu.Placables) {
                     const int landed =
                         (int)g_placableHookLanded[PlcHookStick] +
@@ -516,10 +537,10 @@ namespace raspody
                         g_placableDiag.drawn.load(),
                         g_placableDiag.posFailed.load());
                 }
-                Checkbox("BR class", "Show the BR class marker.", &Config.ESPMenu.BRClass);
+                Checkbox("BR class", "BR class marker.", &Config.ESPMenu.BRClass);
                 Checkbox("Vehicle ESP", "Highlight vehicles.", &Config.ESPMenu.Vehicle);
-                Checkbox("Vehicle health", "Draw vehicle health.", &Config.ESPMenu.VehicleHealth);
-                Checkbox("Signal", "Show the player signal marker.", &Config.ESPMenu.Signal);
+                Checkbox("Vehicle health", "Vehicle health bar.", &Config.ESPMenu.VehicleHealth);
+                Checkbox("Signal", "Player signal marker.", &Config.ESPMenu.Signal);
             });
 
             AddPageCard(p, 1, "Environment", [&] {
@@ -527,15 +548,15 @@ namespace raspody
                 Checkbox("Yellow wallhack", "Render players through walls.", &Config.ExtraMenu.WallHack);
                 Checkbox("Red wallhack", "Render targets through walls in red.",
                          &Config.ExtraMenu.RedWallhack);
-                Checkbox("Display crosshair", "Draw the configurable crosshair.", &Config.ESPMenu.Crosshair);
-                SliderFloat("Vehicle scale", "Scale of rendered vehicles.",
+                Checkbox("Display crosshair", "Draw the selected reticle.", &Config.ESPMenu.Crosshair);
+                SliderFloat("Vehicle scale", "Vehicle render scale.",
                             &Config.ExtraMenu.VehicleScale, 0.5f, 3.0f, "%.2fx");
             });
 
             AddPageCard(p, 0, "Other colours", [&] {
-                ColorRow("POV marker colour", "Colour of the other-player marker.",
+                ColorRow("POV marker colour", "Other-player marker colour.",
                          Config.sColorsESPOTHERS.PovOTHERS);
-                ColorRow("Vehicle colour", "Colour used by the vehicle ESP.",
+                ColorRow("Vehicle colour", "Vehicle ESP colour.",
                          Config.ColorsESP.Vehicle);
             });
         }
@@ -546,54 +567,54 @@ namespace raspody
         if (subtab == 0)
         {
             AddPageCard(p, 0, "Weapon mods", [&] {
-                Checkbox("Hitbox", "Expand the weapon hitbox.", &Config.ExtraMenu.Hit);
-                Checkbox("No recoil", "Remove weapon recoil.", &Config.ExtraMenu.Recoil);
+                Checkbox("Hitbox", "Expand the hitbox.", &Config.ExtraMenu.Hit);
+                Checkbox("No recoil", "Remove recoil.", &Config.ExtraMenu.Recoil);
                 Checkbox("No spread", "Remove bullet spread.", &Config.ExtraMenu.Spread);
-                Checkbox("No shake", "Remove camera and weapon shake.", &Config.ExtraMenu.Shake);
-                Checkbox("No overheat", "Disable the overheat limit.", &Config.ExtraMenu.Rpd);
+                Checkbox("No shake", "Remove camera shake.", &Config.ExtraMenu.Shake);
+                Checkbox("No overheat", "Disable overheat.", &Config.ExtraMenu.Rpd);
                 Checkbox("Firerate", "Remove the fire-rate cap.", &Config.ExtraMenu.Fire);
-                Checkbox("Fast reload", "Shorten the reload animation.", &Config.ExtraMenu.Reload);
-                Checkbox("Fast scope", "Shorten the scope animation.", &Config.ExtraMenu.Scope);
-                Checkbox("Quick switch", "Remove the weapon-switch delay.", &Config.ExtraMenu.Switch);
-                Checkbox("Fast dive", "Speed up the dive animation.", &Config.ExtraMenu.Diving);
-                Checkbox("No parachute", "Skip the parachute deployment.", &Config.ExtraMenu.Parachute);
-                Checkbox("Anti flashbang", "Remove the flash effect.", &Config.ExtraMenu.Flash);
-                Checkbox("Weapon kinetic", "Apply the kinetic armour patch.", &Config.ExtraMenu.Kinetic);
+                Checkbox("Fast reload", "Shorten the reload.", &Config.ExtraMenu.Reload);
+                Checkbox("Fast scope", "Shorten the scope.", &Config.ExtraMenu.Scope);
+                Checkbox("Quick switch", "Remove the switch delay.", &Config.ExtraMenu.Switch);
+                Checkbox("Fast dive", "Speed up the dive.", &Config.ExtraMenu.Diving);
+                Checkbox("No parachute", "Skip the parachute.", &Config.ExtraMenu.Parachute);
+                Checkbox("Anti flashbang", "Remove the flash.", &Config.ExtraMenu.Flash);
+                Checkbox("Weapon kinetic", "Apply the kinetic patch.", &Config.ExtraMenu.Kinetic);
             });
 
             AddPageCard(p, 1, "Ammo & attachments", [&] {
                 Checkbox("Unlimited ammo", "Keep the magazine full.", &Config.UnlimitedAmmo);
-                Checkbox("Unlimited reserve", "Keep reserve ammunition full.", &Config.ExtraMenu.UnliAmmo);
-                Checkbox("Blueprint", "Turn on blueprint / skins (BlueprintWeaponInfo).",
-                          &Config.ExtraMenu.MythicAttachments);
+                Checkbox("Unlimited reserve", "Keep reserve ammo full.", &Config.ExtraMenu.UnliAmmo);
+                Checkbox("Blueprint", kPremiumOnlyDesc,
+                          &Config.ExtraMenu.MythicAttachments, false, !g_premiumFeaturesEnabled);
                 Checkbox("Attachment unlock", "Treat every attachment as owned.",
                          &Config.ExtraMenu.Attachment);
-                Checkbox("Smart reload", "Reload only when it is safe.", &Config.ExtraMenu.SmartReload);
+                Checkbox("Smart reload", "Reload only when safe.", &Config.ExtraMenu.SmartReload);
             });
         }
         else
         {
             AddPageCard(p, 0, "Movement", [&] {
-                Checkbox("Unlimited fly", "Hold jump to climb without a wingsuit.", &UnlimitedFly);
-                Checkbox("Long slide", "Extend the slide duration.", &Config.ExtraMenu.LongSlide);
+                Checkbox("Unlimited fly", "Hold jump to climb.", &UnlimitedFly);
+                Checkbox("Long slide", "Longer slide.", &Config.ExtraMenu.LongSlide);
                 Checkbox("Unlimited slide", "Remove the slide cooldown.", &Config.ExtraMenu.UnliSlide);
-                Checkbox("No wingsuit", "Disable the automatic wingsuit.", &Config.ExtraMenu.NoWingsuit);
-                SliderFloat("Slide distance", "Tuning multiplier for the slide.",
+                Checkbox("No wingsuit", "Disable auto wingsuit.", &Config.ExtraMenu.NoWingsuit);
+                SliderFloat("Slide distance", "Slide distance scale.",
                             &SlideRange, 0.0f, 30.0f, "%.1f");
-                SliderFloat("Snowboard speed", "Snowboard / slide speed tuning.",
+                SliderFloat("Snowboard speed", "Snowboard speed.",
                             &SnowBsize, 0.0f, 100.0f, "%.1f");
             });
 
             AddPageCard(p, 1, "Speed", [&] {
-                SliderFloat("SpeedHack", "Movement speed multiplier.",
+                SliderFloat("SpeedHack", "Move speed multiplier.",
                             &speedHackMultiplier, 0.5f, 2.0f, "%.2fx");
                 SliderFloat("High jump", "Jump height multiplier.",
                             &jumpHeightMultiplier, 0.5f, 5.0f, "%.2fx");
                 Checkbox("Speedhack X", "Apply the speedhack patch.", &Config.ExtraMenu.SpeedhackX);
-                Checkbox("Frame pacing", "Enable the frame limiter.", &Config.ExtraMenu.Frame);
-                Checkbox("High FPS", "Prefer the high frame-rate path.", &Config.ExtraMenu.HighFps);
-                Checkbox("FPS boost", "Enable the general FPS patch.", &Config.ExtraMenu.Fps);
-                Checkbox("Enhance FPS", "Apply the render-side FPS improvement.",
+                Checkbox("Frame pacing", "Frame limiter.", &Config.ExtraMenu.Frame);
+                Checkbox("High FPS", "High frame-rate path.", &Config.ExtraMenu.HighFps);
+                Checkbox("FPS boost", "General FPS patch.", &Config.ExtraMenu.Fps);
+                Checkbox("Enhance FPS", "Render-side FPS patch.",
                          &Config.ExtraMenu.EnhanceFPS);
             });
         }
@@ -601,21 +622,23 @@ namespace raspody
 
     inline void ScriptsPage(PageLayout& p, int subtab)
     {
+        static const char* reticleTypes[] = { "Dot", "Crosshair" };
+
         if (subtab == 0)
         {
             AddPageCard(p, 0, "Firing timing", [&] {
-                Checkbox("No sprint-fire delay", "Remove the sprint-out timer before firing.",
+                Checkbox("No sprint-fire delay", "Skip the sprint-out timer.",
                          &Config.NewFeaturesMenu.NoSprintToFireDelay);
-                Checkbox("No hipfire delay", "Remove the hipfire wind-up gate.",
-                         &Config.NewFeaturesMenu.NoHipfireDelay);
-                Checkbox("No hit flinch", "Remove the flinch applied when hit.",
+                Checkbox("No hipfire delay", kPremiumOnlyDesc,
+                         &Config.NewFeaturesMenu.NoHipfireDelay, false, !g_premiumFeaturesEnabled);
+                Checkbox("No hit flinch", "No flinch when hit.",
                          &Config.NewFeaturesMenu.NoHitFlinch);
                 Checkbox("No drift", "Remove hardscope drift.", &Config.NewFeaturesMenu.NoDrift);
             });
 
             AddPageCard(p, 1, "Movement patches", [&] {
-                Checkbox("No crouch", "Remove the crouch state.", &Config.NewFeaturesMenu.NoCrouch);
-                Checkbox("No slide fatigue", "Remove the slide fatigue limit.",
+                Checkbox("No crouch", kPremiumOnlyDesc, &Config.NewFeaturesMenu.NoCrouch, false, !g_premiumFeaturesEnabled);
+                Checkbox("No slide fatigue", "Remove slide fatigue.",
                          &Config.NewFeaturesMenu.NoSlideFatigue);
             });
 
@@ -631,7 +654,7 @@ namespace raspody
                 char buffer[32];
                 snprintf(buffer, sizeof(buffer), "%d / 6", active);
                 InfoRow("Active patches", buffer);
-                ParagraphRow("Patches are applied every frame and stay active while the menu is closed.");
+                ParagraphRow("Patches apply every frame, even with the menu closed.");
 
                 if (Selectable("Disable all patches", false))
                 {
@@ -646,19 +669,21 @@ namespace raspody
         }
         else
         {
-            AddPageCard(p, 0, "Dot crosshair", [&] {
-                Checkbox("Enabled", "Draw the dot and use it as the trigger zone.",
+            AddPageCard(p, 0, "Crosshair", [&] {
+                Dropdown("Reticle", "Dot or crosshair.",
+                         &Config.Crosshair.Style, reticleTypes, IM_ARRAYSIZE(reticleTypes));
+                Checkbox("Enabled", "Show reticle and use as trigger zone.",
                          &Config.Crosshair.Enabled);
-                SliderFloat("Size", "Diameter of the dot and trigger zone.",
+                SliderFloat("Size", "Reticle size and trigger diameter.",
                             &Config.Crosshair.Size, 1.0f, 40.0f, "%.0f px");
-                SliderFloat("Opacity", "Dot opacity.", &Config.Crosshair.Color[3], 0.0f, 1.0f, "%.2f");
-                ParagraphRow("The dot's radius is the triggerbot's zone: shrinking the dot tightens the trigger by the same amount.");
+                SliderFloat("Opacity", "Reticle opacity.", &Config.Crosshair.Color[3], 0.0f, 1.0f, "%.2f");
+                ParagraphRow("The reticle radius is the triggerbot zone, so a smaller reticle tightens the trigger.");
             });
 
             AddPageCard(p, 1, "Offset", [&] {
-                SliderFloat("Horizontal", "Pixels right of the render centre.",
+                SliderFloat("Horizontal", "Pixels right of centre.",
                             &Config.Crosshair.OffsetX, -400.0f, 400.0f, "%.0f px");
-                SliderFloat("Vertical", "Pixels below the render centre.",
+                SliderFloat("Vertical", "Pixels below centre.",
                             &Config.Crosshair.OffsetY, -400.0f, 400.0f, "%.0f px");
                 if (Selectable("Reset to centre", false))
                 {
@@ -668,7 +693,7 @@ namespace raspody
             });
 
             AddPageCard(p, 0, "Colour", [&] {
-                ColorRow("Crosshair colour", "Dot colour and transparency.",
+                ColorRow("Crosshair colour", "Reticle colour.",
                          Config.Crosshair.Color);
                 DrawCrosshairPreview();
             });
@@ -708,16 +733,18 @@ namespace raspody
                          }
                     }
                 }
-                ParagraphRow("Profiles live in the app's configs/ directory as JSON.");
+                ParagraphRow("Profiles are JSON files in configs/.");
             });
 
             AddPageCard(p, 1, "Saved profiles", [&] {
+                const std::string autoProfile = GetAutoLoadProfile();
                 for (auto& profile : profiles)
                 {
                     bool loadPressed = false;
                     bool savePressed = false;
-                    ConfigButton(profile.c_str(), "Config profile", profile == ui.activeProfile,
-                                 loadPressed, savePressed);
+                    ConfigButton(profile.c_str(),
+                                 profile == autoProfile ? "Loads at startup" : "Config profile",
+                                 profile == ui.activeProfile, loadPressed, savePressed);
 
                     if (loadPressed)
                     {
@@ -753,7 +780,7 @@ namespace raspody
                 InfoRow("Selected", exists ? ui.activeProfile.c_str() : "No profile selected");
                 const std::string autoProfile = GetAutoLoadProfile();
                 InfoRow("Auto-load at startup", autoProfile.empty() ? "Off" : autoProfile.c_str());
-                if (exists && Selectable("Auto-load this profile at startup", autoProfile == ui.activeProfile))
+                if (exists && Selectable("Load this profile at startup", autoProfile == ui.activeProfile))
                 {
                     const bool off = autoProfile == ui.activeProfile;
                     ui.configStatus = SetAutoLoadProfile(off ? "" : ui.activeProfile)
@@ -813,7 +840,7 @@ namespace raspody
                         const std::string deleted = ui.activeProfile;
                         if (DeleteProfile(deleted))
                         {
-                            ui.activeProfile = "ethnir";
+                            ui.activeProfile.clear();
                             ui.configStatus = "Deleted " + deleted + ".json";
                         }
                         else ui.configStatus = "Failed to delete " + deleted;
@@ -863,10 +890,9 @@ namespace raspody
         {
             AddPageCard(p, 0, "Session", [&] {
                 InfoRow("License", usedKey.empty() ? "not signed in" : usedKey.c_str());
-                InfoRow("Plan", userType.empty() ? "unknown" : userType.c_str());
-                InfoRow("Build", "26.10");
-                InfoRow("Active profile", ui.activeProfile.c_str());
-                ParagraphRow("Session values are read from the loader; menu options live on the Settings tab.");
+                InfoRow("Subscription", userType.empty() ? "Free trial" : userType.c_str());
+                InfoRow("Active profile", ui.activeProfile.empty() ? "None" : ui.activeProfile.c_str());
+                ParagraphRow("Session values come from the loader; menu options are on Settings.");
             });
         }
     }
@@ -886,10 +912,10 @@ namespace raspody
         if (subtab == 0)
         {
             AddPageCard(p, 0, "Menu appearance", [&] {
-                if (SliderFloat("Logo opacity", "Opacity of the on-screen logo.",
+                if (SliderFloat("Logo opacity", "On-screen logo opacity.",
                                 &logoOpacity, 0.0f, 1.0f, "%.2f"))
                     SetLogoOpacity(logoOpacity);
-                if (SliderFloat("Logo size", "Size multiplier of the on-screen logo.",
+                if (SliderFloat("Logo size", "On-screen logo size.",
                                 &logoSize, 0.1f, 2.0f, "%.2f"))
                     SetLogoSizeMultiplier(logoSize);
 
@@ -903,32 +929,30 @@ namespace raspody
             });
 
             AddPageCard(p, 1, "Menu", [&] {
-                InfoRow("Build", "26.10");
-                InfoRow("Renderer", "OpenGL ES 3");
-                InfoRow("Backend", "Dear ImGui 1.90");
-                InfoRow("Profile", ui.activeProfile.c_str());
-                ParagraphRow("Drag a page to scroll it. Hold the avatar in the header for save, load and minimize.");
+                InfoRow("Subscription", userType.empty() ? "Free trial" : userType.c_str());
+                InfoRow("Profile", ui.activeProfile.empty() ? "None" : ui.activeProfile.c_str());
+                ParagraphRow("Drag to scroll. Hold the avatar for save, load and minimize.");
             });
         }
         else
         {
             AddPageCard(p, 0, "Reports & account", [&] {
-                Checkbox("Block report evidence", "Drop player-report evidence.",
-                         &Config.ExtraMenu.BlockReportEvidence);
-                Checkbox("Block ACE report", "Empty the ACE report payload.",
-                         &Config.ExtraMenu.BlockAceReport);
-                Checkbox("Anti-login", "Block the forced relogin on location change.",
-                         &Config.ExtraMenu.AntiLogin);
-                Checkbox("Reset guest", "Reset the guest account state.", &Config.ExtraMenu.ResetGuest);
+                Checkbox("Block report evidence", kPremiumOnlyDesc,
+                         &Config.ExtraMenu.BlockReportEvidence, false, !g_premiumFeaturesEnabled);
+                Checkbox("Block ACE report", kPremiumOnlyDesc,
+                         &Config.ExtraMenu.BlockAceReport, false, !g_premiumFeaturesEnabled);
+                Checkbox("Anti-login", kPremiumOnlyDesc,
+                         &Config.ExtraMenu.AntiLogin, false, !g_premiumFeaturesEnabled);
+                Checkbox("Reset guest", "Reset the guest account.", &Config.ExtraMenu.ResetGuest);
             });
 
             AddPageCard(p, 1, "Performance", [&] {
-                Checkbox("Frame smoothness", "Cap the frame rate to the level below.",
+                Checkbox("Frame smoothness", "Cap the frame rate.",
                          &Config.Aim.FpsLevel);
                 if (Config.Aim.FpsLevel)
-                    SliderFloat("Frame level", "Target frames per second.",
+                    SliderFloat("Frame level", "Target FPS.",
                                 &Config.Aim.FpsLevel1, 30.0f, 120.0f, "%.0f");
-                Checkbox("Ultra frame boost", "Enable the higher frame ceiling.",
+                Checkbox("Ultra frame boost", "Higher frame ceiling.",
                          &Config.Aim.FpsLevelUltra);
                 if (Config.Aim.FpsLevelUltra)
                     SliderFloat("Ultra level", "Ultra frame ceiling.",
@@ -949,21 +973,21 @@ namespace raspody
         else
         {
             AddPageCard(p, 0, "Applied cosmetics", [&] {
-                Checkbox("Hide outfit", "Show your character without the applied skin.",
+                Checkbox("Hide outfit", "Hide the applied skin.",
                          &Config.ExtraMenu.HideOutfit);
-                SliderFloat("Outfit scale", "Scale of the applied skin model.",
+                SliderFloat("Outfit scale", "Skin model scale.",
                             &Config.ExtraMenu.OutfitScale, 0.5f, 2.0f, "%.2f");
             });
 
             AddPageCard(p, 1, "Outfit tint", [&] {
-                ColorRow("Tint colour", "Applied on top of the skin where supported.",
+                ColorRow("Tint colour", "Tint over the skin.",
                          Config.ExtraMenu.OutfitTint);
-                Checkbox("Tint bypass", "Keep the skin's own tint instead.",
+                Checkbox("Tint bypass", "Keep the skin's own tint.",
                          &Config.ExtraMenu.OutfitTintBypass);
             });
 
             AddPageCard(p, 0, "Blueprints", [&] {
-                ParagraphRow("Blueprint and attachment-unlock toggles are on the Weapons page.");
+                ParagraphRow("Blueprint and attachment toggles are on Weapons.");
             });
         }
     }
@@ -1199,21 +1223,6 @@ namespace raspody
         if (open && !*open)
             return;
 
-        static bool profileAutoLoaded = false;
-        if (!profileAutoLoaded)
-        {
-            profileAutoLoaded = true;
-            const std::string startup = GetAutoLoadProfile();
-            if (!startup.empty())
-            {
-                if (LoadConfiguration(startup))
-                {
-                    ui.activeProfile = startup;
-                    ui.configStatus = "Auto-loaded " + startup + ".json";
-                }
-                else ui.configStatus = "Failed to auto-load " + startup + ".json";
-            }
-        }
         BeginFrame();
 
         static bool historySeeded = false;

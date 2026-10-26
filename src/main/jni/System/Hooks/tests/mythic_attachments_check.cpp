@@ -73,6 +73,8 @@ static bool (*installFake())(void *, int)
 
 int main()
 {
+    g_premiumFeaturesEnabled = true;
+
     {
         sConfig fresh{0};
         CHECK(fresh.ExtraMenu.Attachment,

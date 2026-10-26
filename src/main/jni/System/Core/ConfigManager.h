@@ -88,6 +88,7 @@ void LoadConfig() {
         else if (key == "NewFeatures.NoHipfireDelay") Config.NewFeaturesMenu.NoHipfireDelay = (valueStr == "1");
 
         else if (key == "Crosshair.Enabled") Config.Crosshair.Enabled = (valueStr == "1");
+        else if (key == "Crosshair.Style") Config.Crosshair.Style = std::stoi(valueStr);
         else if (key == "Crosshair.Size") Config.Crosshair.Size = std::stof(valueStr);
         else if (key == "Crosshair.OffsetX") Config.Crosshair.OffsetX = std::stof(valueStr);
         else if (key == "Crosshair.OffsetY") Config.Crosshair.OffsetY = std::stof(valueStr);
@@ -164,6 +165,7 @@ void SaveConfig() {
     file << "NewFeatures.NoSprintToFireDelay " << Config.NewFeaturesMenu.NoSprintToFireDelay << "\n";
     file << "NewFeatures.NoHipfireDelay " << Config.NewFeaturesMenu.NoHipfireDelay << "\n";
     file << "Crosshair.Enabled " << Config.Crosshair.Enabled << "\n";
+    file << "Crosshair.Style " << Config.Crosshair.Style << "\n";
     file << "Crosshair.Size " << Config.Crosshair.Size << "\n";
     file << "Crosshair.OffsetX " << Config.Crosshair.OffsetX << "\n";
     file << "Crosshair.OffsetY " << Config.Crosshair.OffsetY << "\n";

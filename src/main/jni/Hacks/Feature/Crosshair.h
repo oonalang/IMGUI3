@@ -12,6 +12,22 @@ static inline void DrawDotCrosshair(ImDrawList *draw, float screenW, float scree
 
     if (cx < 0.0f || cy < 0.0f || cx > screenW || cy > screenH) return;
 
-    draw->AddCircleFilled(ImVec2(cx, cy), size * 0.5f, ToColor(Config.Crosshair.Color), 32);
-}
+    const ImU32 color = (ImU32)ToColor(Config.Crosshair.Color);
 
+    if (Config.Crosshair.Style == ReticleCross)
+    {
+        const float arm = size * 0.5f;
+        float gap = size * 0.12f;
+        if (gap < 1.0f) gap = 1.0f;
+        float thickness = size * 0.12f;
+        if (thickness < 1.0f) thickness = 1.0f;
+
+        draw->AddLine(ImVec2(cx - arm, cy), ImVec2(cx - gap, cy), color, thickness);
+        draw->AddLine(ImVec2(cx + gap, cy), ImVec2(cx + arm, cy), color, thickness);
+        draw->AddLine(ImVec2(cx, cy - arm), ImVec2(cx, cy - gap), color, thickness);
+        draw->AddLine(ImVec2(cx, cy + gap), ImVec2(cx, cy + arm), color, thickness);
+        return;
+    }
+
+    draw->AddCircleFilled(ImVec2(cx, cy), size * 0.5f, color, 32);
+}

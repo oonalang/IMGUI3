@@ -688,7 +688,7 @@ namespace raspody
                         ImVec2(max.x, top + stackH), Col(clr.text), description, ImVec2(0.0f, 0.0f));
     }
 
-    bool Checkbox(const char* label, const char* description, bool* value, bool settings)
+    bool Checkbox(const char* label, const char* description, bool* value, bool settings, bool locked)
     {
         if (!value || !MatchesSearch(label, description))
             return false;
@@ -715,32 +715,36 @@ namespace raspody
         const bool pressed = ImGui::IsItemClicked(0);
         ImGui::PopID();
 
-        if (pressed && !overSettings && !ui.dragScrolling)
+        if (pressed && !overSettings && !ui.dragScrolling && !locked)
             *value = !*value;
+
+        const bool on = !locked && *value;
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImGuiID id = ImGui::GetID(label);
 
         float& hoverAnim = Anim(id, 1);
-        Ease(hoverAnim, hovered ? 1.0f : 0.0f, 18.0f);
+        Ease(hoverAnim, (hovered && !locked) ? 1.0f : 0.0f, 18.0f);
         float& toggleAnim = Anim(id, 2);
-        Ease(toggleAnim, *value ? 1.0f : 0.0f, 22.0f);
+        Ease(toggleAnim, on ? 1.0f : 0.0f, 22.0f);
 
-        const ImU32 titleColor = *value ? Col(clr.white)
+        const ImU32 titleColor = locked ? Col(clr.text2, 0.65f)
+                              : on ? Col(clr.white)
                               : hovered ? Col(clr.text3) : Col(clr.text2);
         DrawRowText(dl, bodyFont, smallFont, pos,
                     ImVec2(pos.x + width - toggleW - (settings ? S(38) : S(8)), pos.y + height),
                     titleColor, label, hasDesc ? description : nullptr);
 
-        const ImVec4 bg = *value ? clr.widget
-                        : hovered ? clr.checkboxHover : clr.widget;
+        const ImVec4 bg = on ? clr.widget
+                        : (hovered && !locked) ? clr.checkboxHover : clr.widget;
         dl->AddRectFilled(toggleMin, toggleMax, Col(bg), S(999));
         dl->AddRectFilled(toggleMin, toggleMax, Col(clr.accent, 0.10f * toggleAnim), S(999));
 
         const float knobRadius = S(7);
         const float knobX = toggleMin.x + S(3) + knobRadius +
                             (toggleW - S(6) - knobRadius * 2.0f) * toggleAnim;
-        const ImU32 knobColor = *value ? Col(clr.accent)
+        const ImU32 knobColor = on ? Col(clr.accent)
+                              : locked ? Col(clr.text, 0.55f)
                               : hovered ? Col(clr.circleCheckboxHover) : Col(clr.text);
         dl->AddCircleFilled(ImVec2(knobX, toggleMin.y + toggleH * 0.5f), knobRadius, knobColor, 20);
 
@@ -761,7 +765,7 @@ namespace raspody
             g_lastRowLabel[sizeof(g_lastRowLabel) - 1] = '\0';
         }
 
-        return pressed && !overSettings;
+        return pressed && !overSettings && !locked;
     }
 
     void CheckboxSettings(const char* label, bool* option1, const char* option1Label,

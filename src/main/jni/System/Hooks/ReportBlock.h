@@ -13,13 +13,13 @@ namespace report_block
 
 inline void (*orig_DoReport)(void *ins) = nullptr;
 inline void hook_DoReport(void *ins) {
-    if (Config.ExtraMenu.BlockReportEvidence) return;
+    if (g_premiumFeaturesEnabled && Config.ExtraMenu.BlockReportEvidence) return;
     if (orig_DoReport) orig_DoReport(ins);
 }
 
 inline int (*orig_DoReportPlayer)(void *ins, void *openids) = nullptr;
 inline int hook_DoReportPlayer(void *ins, void *openids) {
-    if (Config.ExtraMenu.BlockReportEvidence) return 0;
+    if (g_premiumFeaturesEnabled && Config.ExtraMenu.BlockReportEvidence) return 0;
     if (orig_DoReportPlayer) return orig_DoReportPlayer(ins, openids);
     return 0;
 }
@@ -30,7 +30,7 @@ inline void *(*orig_BeginReport)(int pullType, uint8_t moveState, void *clientPo
 inline void *hook_BeginReport(int pullType, uint8_t moveState, void *clientPos,
                               void *serverPos, int hitCount, uint8_t lineHitCount,
                               void *hitPosition) {
-    if (Config.ExtraMenu.BlockReportEvidence) { report_block::g_pullsSeen++; return nullptr; }
+    if (g_premiumFeaturesEnabled && Config.ExtraMenu.BlockReportEvidence) { report_block::g_pullsSeen++; return nullptr; }
     if (orig_BeginReport)
         return orig_BeginReport(pullType, moveState, clientPos, serverPos, hitCount,
                                 lineHitCount, hitPosition);
@@ -39,7 +39,7 @@ inline void *hook_BeginReport(int pullType, uint8_t moveState, void *clientPos,
 
 inline void (*orig_EndReport)(void *request) = nullptr;
 inline void hook_EndReport(void *request) {
-    if (Config.ExtraMenu.BlockReportEvidence) { report_block::g_sendsDropped++; return; }
+    if (g_premiumFeaturesEnabled && Config.ExtraMenu.BlockReportEvidence) { report_block::g_sendsDropped++; return; }
     if (orig_EndReport) orig_EndReport(request);
 }
 
@@ -69,7 +69,7 @@ namespace report_block
     inline void (*orig_FillPlayerFullData)(void *instance, void *request) = nullptr;
     inline void hook_FillPlayerFullData(void *instance, void *request)
     {
-        if (!Config.ExtraMenu.BlockReportEvidence)
+        if (!g_premiumFeaturesEnabled || !Config.ExtraMenu.BlockReportEvidence)
         {
             if (orig_FillPlayerFullData) orig_FillPlayerFullData(instance, request);
             return;
@@ -93,7 +93,7 @@ namespace report_block
 
     inline void *ScrubAceBlob(void *arrayObj)
     {
-        if (!Config.ExtraMenu.BlockAceReport)
+        if (!g_premiumFeaturesEnabled || !Config.ExtraMenu.BlockAceReport)
             return arrayObj;
         if (arrayObj == nullptr || !Tools::IsPtrValid(arrayObj))
             return arrayObj;

@@ -113,7 +113,7 @@ inline void *(*g_placableListGetter)(void *game) = nullptr;
 
 inline bool PlacableEspOn()
 {
-    return Config.ESPMenu.Placables;
+    return g_premiumFeaturesEnabled && Config.ESPMenu.Placables;
 }
 
 inline bool PlacableReadBool(uintptr_t base, uintptr_t offset, bool &out)

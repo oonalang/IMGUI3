@@ -47,7 +47,8 @@ namespace raspody
     void  SectionLabel(const char* text);
     void  ContentShadow(ImVec2 min, ImVec2 max, bool top);
 
-    bool Checkbox(const char* label, const char* description, bool* value, bool settings = false);
+    bool Checkbox(const char* label, const char* description, bool* value, bool settings = false,
+                  bool locked = false);
     void CheckboxSettings(const char* label, bool* option1, const char* option1Label,
                           bool* option2 = nullptr, const char* option2Label = nullptr);
     bool SliderFloat(const char* label, const char* description, float* value,
@@ -98,7 +99,7 @@ namespace raspody
         float searchAnim = 0.0f;
         char  search[64] = { 0 };
         char  newProfile[64] = { 0 };
-        std::string activeProfile = "ethnir";
+        std::string activeProfile;
         std::string configStatus = "Ready";
         float blackout = 0.0f;
         bool  scrollToTop = false;

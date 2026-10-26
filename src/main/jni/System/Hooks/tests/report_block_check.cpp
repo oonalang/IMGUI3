@@ -53,7 +53,10 @@ int main()
     armOriginals();
     resetCounters();
 
-    CHECK(Config.ExtraMenu.BlockReportEvidence == true);
+    CHECK(Config.ExtraMenu.BlockReportEvidence == false);
+
+    g_premiumFeaturesEnabled = true;
+    Config.ExtraMenu.BlockReportEvidence = true;
 
     hook_DoReport((void *)1);
     CHECK(hook_DoReportPlayer((void *)1, nullptr) == 0);

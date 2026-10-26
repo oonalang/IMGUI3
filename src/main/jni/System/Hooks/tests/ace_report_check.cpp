@@ -82,6 +82,8 @@ int main()
 {
     CHECK(Config.ExtraMenu.BlockAceReport == false);
 
+    g_premiumFeaturesEnabled = true;
+
     report_block::orig_AceGetReportData  = fakeGet1;
     report_block::orig_AceGetReportData2 = fakeGet2;
     report_block::orig_AceGetReportData3 = fakeGet3;

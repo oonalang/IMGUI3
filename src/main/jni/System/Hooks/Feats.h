@@ -551,7 +551,7 @@ inline float DisperseBase(void * instance) {
 inline bool (*orig_IsUnlocked)(void *instance) = nullptr;
 inline bool IsUnlocked(void *instance) {
 
-    if (Config.ExtraMenu.MythicAttachments)
+    if (g_premiumFeaturesEnabled && Config.ExtraMenu.MythicAttachments)
         return true;
     return orig_IsUnlocked != nullptr ? orig_IsUnlocked(instance) : false;
 }
@@ -562,7 +562,8 @@ inline bool IsUnlocked(void *instance) {
 
 inline bool (*orig_IsWeaponSkinUnlock)(void *instance, uint32_t skinId) = nullptr;
 inline bool IsWeaponSkinUnlock(void *instance, uint32_t skinId) {
-    if (Config.ExtraMenu.MythicAttachments || Config.ExtraMenu.Attachment)
+    if (Config.ExtraMenu.Attachment ||
+        (g_premiumFeaturesEnabled && Config.ExtraMenu.MythicAttachments))
         return true;
     return orig_IsWeaponSkinUnlock != nullptr
          ? orig_IsWeaponSkinUnlock(instance, skinId)

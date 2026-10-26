@@ -949,7 +949,7 @@ static void ApplyMenuFeaturePatches()
     }
 
     static bool s_appliedNoCrouch = false;
-    const bool wantNoCrouch = Config.NewFeaturesMenu.NoCrouch;
+    const bool wantNoCrouch = g_premiumFeaturesEnabled && Config.NewFeaturesMenu.NoCrouch;
     if (wantNoCrouch != s_appliedNoCrouch) {
         const bool ok = wantNoCrouch ? Patches.NoCrouch.Modify() : Patches.NoCrouch.Restore();
         if (ok) s_appliedNoCrouch = wantNoCrouch;
@@ -995,11 +995,11 @@ static void ApplyMenuFeaturePatches()
     }
 
     static bool s_appliedNoHipfireDelay = false;
-    if (Config.NewFeaturesMenu.NoHipfireDelay && !s_appliedNoHipfireDelay) {
+    if (g_premiumFeaturesEnabled && Config.NewFeaturesMenu.NoHipfireDelay && !s_appliedNoHipfireDelay) {
         const bool ok = Patches.NoHipfireUseGetReadyTime.Modify()
                      && Patches.NoHipfireSpringFireGetReady.Modify();
         if (ok) s_appliedNoHipfireDelay = true;
-    } else if (!Config.NewFeaturesMenu.NoHipfireDelay && s_appliedNoHipfireDelay) {
+    } else if ((!g_premiumFeaturesEnabled || !Config.NewFeaturesMenu.NoHipfireDelay) && s_appliedNoHipfireDelay) {
         const bool ok = Patches.NoHipfireUseGetReadyTime.Restore()
                      && Patches.NoHipfireSpringFireGetReady.Restore();
         if (ok) s_appliedNoHipfireDelay = false;
@@ -1072,7 +1072,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         Config.ExtraMenu.StretchAspect = 1.7778f;
 
         Config.ExtraMenu.Attachment = true;
-        Config.ExtraMenu.BlockReportEvidence = true;
         Config.Crosshair.Enabled = true;
         Config.Crosshair.Color[0] = 1.0f;
         Config.Crosshair.Color[1] = 1.0f;
@@ -1089,6 +1088,20 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
         Config.Aim.By = EAim::Distance;
         Config.Bline = 2.0f;
         Config.Pline = 2.0f;
+
+        const std::string startupProfile = GetAutoLoadProfile();
+        if (!startupProfile.empty())
+        {
+            if (LoadConfiguration(startupProfile))
+            {
+                raspody::ui.activeProfile = startupProfile;
+                raspody::ui.configStatus = "Auto-loaded " + startupProfile + ".json";
+            }
+            else
+            {
+                raspody::ui.configStatus = "Failed to auto-load " + startupProfile + ".json";
+            }
+        }
         g_App = true;
     }
 

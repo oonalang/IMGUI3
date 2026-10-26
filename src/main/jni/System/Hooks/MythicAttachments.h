@@ -10,7 +10,8 @@ namespace mythic_attachments
 
     inline bool AttachmentsUnlocked()
     {
-        return Config.ExtraMenu.Attachment || Config.ExtraMenu.MythicAttachments;
+        return Config.ExtraMenu.Attachment ||
+               (g_premiumFeaturesEnabled && Config.ExtraMenu.MythicAttachments);
     }
 }
 
