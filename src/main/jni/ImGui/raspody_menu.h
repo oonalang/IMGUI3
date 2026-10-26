@@ -227,42 +227,22 @@ namespace raspody
                         Col(clr.separator, 0.55f), 1.0f);
         }
 
-        const float cx = pos.x + width * 0.5f + ImClamp(Config.Crosshair.OffsetX * 0.25f * g_scale,
+        const float cx = pos.x + width * 0.5f + ImClamp(Config.Crosshair.OffsetX,
                                                         -width * 0.40f, width * 0.40f);
-        const float cy = pos.y + height * 0.5f + ImClamp(Config.Crosshair.OffsetY * 0.25f * g_scale,
+        const float cy = pos.y + height * 0.5f + ImClamp(Config.Crosshair.OffsetY,
                                                         -height * 0.40f, height * 0.40f);
-        const float radius = ImClamp(Config.Crosshair.Size * 0.5f * g_scale * 0.7f, 1.5f, S(10));
 
-        if (Config.Crosshair.Enabled)
-        {
-            const ImVec4 reticle(Config.Crosshair.Color[0], Config.Crosshair.Color[1],
-                                 Config.Crosshair.Color[2], 1.0f);
-            if (Config.Crosshair.Style == ReticleCross)
-            {
-                const float arm = radius * 2.0f;
-                const float gap = ImMax(S(2), radius * 0.5f);
-                const float thickness = ImMax(S(1.2f), radius * 0.32f);
-                const ImVec2 arms[4][2] = {
-                    { ImVec2(cx - arm, cy), ImVec2(cx - gap, cy) },
-                    { ImVec2(cx + gap, cy), ImVec2(cx + arm, cy) },
-                    { ImVec2(cx, cy - arm), ImVec2(cx, cy - gap) },
-                    { ImVec2(cx, cy + gap), ImVec2(cx, cy + arm) },
-                };
-                for (const auto& armPair : arms)
-                    dl->AddLine(armPair[0], armPair[1], Col(clr.black, 0.35f), thickness + S(2));
-                for (const auto& armPair : arms)
-                    dl->AddLine(armPair[0], armPair[1], Col(reticle), thickness);
-            }
-            else
-            {
-                dl->AddCircleFilled(ImVec2(cx, cy), radius + S(0.5f), Col(clr.black, 0.35f), 20);
-                dl->AddCircleFilled(ImVec2(cx, cy), radius, Col(reticle), 20);
-            }
-        }
+        // Drawn at the real pixel size through the same renderer the overlay uses,
+        // so the preview cannot disagree with what the game draws. Clipped to the
+        // panel so a large reticle cannot spill over the card.
+        dl->PushClipRect(pos, ImVec2(pos.x + width, pos.y + height), true);
+        if (CrosshairVisible())
+            DrawReticle(dl, cx, cy);
+        dl->PopClipRect();
 
         DrawText(dl, fonts::small ? fonts::small : ImGui::GetFont(), 16.0f,
                  ImVec2(pos.x + S(14), pos.y + S(13)), Col(clr.text2),
-                 Config.Crosshair.Enabled ? "LIVE RETICLE" : "RETICLE DISABLED", ImVec2(0.0f, 0.5f));
+                 CrosshairVisible() ? "LIVE RETICLE" : "RETICLE DISABLED", ImVec2(0.0f, 0.5f));
 
         ImGui::Dummy(ImVec2(width, height + S(8)));
     }
@@ -411,9 +391,13 @@ namespace raspody
             });
 
             AddPageCard(p, 1, "Trigger zone", [&] {
-                InfoRow("Trigger point", "Reticle + body width");
-                InfoRow("Reticle state", Config.Crosshair.Enabled ? "Enabled" : "Disabled");
-                ParagraphRow("The zone is the larger of the reticle and trigger size, plus body width. With Dot off, a shot can land beside the reticle.");
+                InfoRow("Trigger point", "Reticle size + body width");
+
+                char zoneBuffer[32];
+                snprintf(zoneBuffer, sizeof(zoneBuffer), "%.0f px", Config.Crosshair.Size);
+                InfoRow("Reticle size", zoneBuffer);
+
+                ParagraphRow("The zone is the larger of the reticle size and trigger size, plus body width. The reticle is only drawn when it is enabled in Crosshair settings. With Dot off, a shot can land beside the reticle.");
                 if (Selectable("Open crosshair settings", false))
                 {
                     if (var.tab.stored != Tab_Scripts)
@@ -548,7 +532,6 @@ namespace raspody
                 Checkbox("Yellow wallhack", "Render players through walls.", &Config.ExtraMenu.WallHack);
                 Checkbox("Red wallhack", "Render targets through walls in red.",
                          &Config.ExtraMenu.RedWallhack);
-                Checkbox("Display crosshair", "Draw the selected reticle.", &Config.ESPMenu.Crosshair);
                 SliderFloat("Vehicle scale", "Vehicle render scale.",
                             &Config.ExtraMenu.VehicleScale, 0.5f, 3.0f, "%.2fx");
             });
@@ -622,8 +605,6 @@ namespace raspody
 
     inline void ScriptsPage(PageLayout& p, int subtab)
     {
-        static const char* reticleTypes[] = { "Dot", "Crosshair" };
-
         if (subtab == 0)
         {
             AddPageCard(p, 0, "Firing timing", [&] {
@@ -670,17 +651,38 @@ namespace raspody
         else
         {
             AddPageCard(p, 0, "Crosshair", [&] {
-                Dropdown("Reticle", "Dot or crosshair.",
-                         &Config.Crosshair.Style, reticleTypes, IM_ARRAYSIZE(reticleTypes));
-                Checkbox("Enabled", "Show reticle and use as trigger zone.",
+                Checkbox("Enable crosshair", "Draw the reticle. Runs on its own, with the triggerbot on or off.",
                          &Config.Crosshair.Enabled);
-                SliderFloat("Size", "Reticle size and trigger diameter.",
-                            &Config.Crosshair.Size, 1.0f, 40.0f, "%.0f px");
-                SliderFloat("Opacity", "Reticle opacity.", &Config.Crosshair.Color[3], 0.0f, 1.0f, "%.2f");
-                ParagraphRow("The reticle radius is the triggerbot zone, so a smaller reticle tightens the trigger.");
+                Dropdown("Style", "Reticle shape.",
+                         &Config.Crosshair.Style, ReticleStyleNames(), ReticleStyleCount);
             });
 
-            AddPageCard(p, 1, "Offset", [&] {
+            AddPageCard(p, 1, "Preview", [&] {
+                DrawCrosshairPreview();
+            });
+
+            AddPageCard(p, 0, "Appearance", [&] {
+                SliderFloat("Size", "Reticle diameter in pixels.",
+                            &Config.Crosshair.Size, 2.0f, 40.0f, "%.0f px");
+
+                // Only the controls the selected style actually uses are shown.
+                if (ReticleUsesThickness(Config.Crosshair.Style))
+                    SliderFloat("Thickness", "Stroke width.",
+                                &Config.Crosshair.Thickness, 1.0f, 6.0f, "%.1f px");
+                if (ReticleUsesGap(Config.Crosshair.Style))
+                    SliderFloat("Gap", "Space between the centre and the arms.",
+                                &Config.Crosshair.Gap, 0.0f, 20.0f, "%.0f px");
+                Checkbox("Outline", "Dark outline behind the reticle.",
+                         &Config.Crosshair.Outline);
+                if (Config.Crosshair.Outline)
+                    SliderFloat("Outline width", "Outline thickness.",
+                                &Config.Crosshair.OutlineThickness, 1.0f, 4.0f, "%.1f px");
+                SliderFloat("Opacity", "Reticle opacity.",
+                            &Config.Crosshair.Color[3], 0.0f, 1.0f, "%.2f");
+                ColorRow("Colour", "Reticle colour.", Config.Crosshair.Color);
+            });
+
+            AddPageCard(p, 1, "Position", [&] {
                 SliderFloat("Horizontal", "Pixels right of centre.",
                             &Config.Crosshair.OffsetX, -400.0f, 400.0f, "%.0f px");
                 SliderFloat("Vertical", "Pixels below centre.",
@@ -690,12 +692,16 @@ namespace raspody
                     Config.Crosshair.OffsetX = 0.0f;
                     Config.Crosshair.OffsetY = 0.0f;
                 }
+                ParagraphRow("Offsets move the reticle and the triggerbot's aim point together, as before.");
             });
 
-            AddPageCard(p, 0, "Colour", [&] {
-                ColorRow("Crosshair colour", "Reticle colour.",
-                         Config.Crosshair.Color);
-                DrawCrosshairPreview();
+            AddPageCard(p, 0, "Defaults", [&] {
+                if (Selectable("Reset crosshair to defaults", false))
+                {
+                    CrosshairApplyDefaults();
+                    ui.configStatus = "Crosshair reset to defaults";
+                }
+                ParagraphRow("Off by default. The triggerbot is a separate switch and keeps its own Trigger size and Dot ray gate.");
             });
         }
     }
@@ -868,12 +874,9 @@ namespace raspody
                         ? "Loaded " + ui.activeProfile + ".json"
                         : ui.activeProfile + ".json not found";
                 }
-                if (Selectable("Reset targeting", false))
+                if (Selectable("Reset crosshair", false))
                 {
-                    Config.Crosshair.OffsetX = 0.0f;
-                    Config.Crosshair.OffsetY = 0.0f;
-                    Config.Crosshair.Size = 6.0f;
-                    Config.Crosshair.Color[3] = 0.95f;
+                    CrosshairApplyDefaults();
                     ui.configStatus = "Crosshair reset to defaults";
                 }
                 if (Selectable("Open settings", false))

@@ -101,6 +101,10 @@ void SaveConfiguration(const std::string& filename) {
     config["Crosshair"]["Enabled"] = Config.Crosshair.Enabled;
     config["Crosshair"]["Style"] = Config.Crosshair.Style;
     config["Crosshair"]["Size"] = Config.Crosshair.Size;
+    config["Crosshair"]["Thickness"] = Config.Crosshair.Thickness;
+    config["Crosshair"]["Gap"] = Config.Crosshair.Gap;
+    config["Crosshair"]["Outline"] = Config.Crosshair.Outline;
+    config["Crosshair"]["OutlineThickness"] = Config.Crosshair.OutlineThickness;
     config["Crosshair"]["OffsetX"] = Config.Crosshair.OffsetX;
     config["Crosshair"]["OffsetY"] = Config.Crosshair.OffsetY;
     config["Crosshair"]["Opacity"] = Config.Crosshair.Color[3];
@@ -196,31 +200,41 @@ bool LoadConfiguration(const std::string& filename) {
                 Config.ExtraMenu.BlockAceReport = config["ExtraMenu"]["BlockAceReport"].get<bool>();
             if (config["ExtraMenu"].contains("AntiLogin"))
                 Config.ExtraMenu.AntiLogin = config["ExtraMenu"]["AntiLogin"].get<bool>();
-    if (config.contains("NewFeatures")) {
-        if (config["NewFeatures"].contains("NoCrouch")) Config.NewFeaturesMenu.NoCrouch = config["NewFeatures"]["NoCrouch"].get<bool>();
-        if (config["NewFeatures"].contains("Triggerbot")) Config.NewFeaturesMenu.Triggerbot = config["NewFeatures"]["Triggerbot"].get<bool>();
-        if (config["NewFeatures"].contains("TriggerbotMode")) Config.NewFeaturesMenu.TriggerbotMode = config["NewFeatures"]["TriggerbotMode"].get<int>();
-        if (config["NewFeatures"].contains("TriggerbotDelay")) Config.NewFeaturesMenu.TriggerbotDelay = config["NewFeatures"]["TriggerbotDelay"].get<int>();
-        if (config["NewFeatures"].contains("TriggerbotRadius")) Config.NewFeaturesMenu.TriggerbotRadius = config["NewFeatures"]["TriggerbotRadius"].get<int>();
-        if (config["NewFeatures"].contains("TriggerbotDotRay")) Config.NewFeaturesMenu.TriggerbotDotRay = config["NewFeatures"]["TriggerbotDotRay"].get<bool>();
-        if (config["NewFeatures"].contains("NoHitFlinch")) Config.NewFeaturesMenu.NoHitFlinch = config["NewFeatures"]["NoHitFlinch"].get<bool>();
-        if (config["NewFeatures"].contains("NoDrift")) Config.NewFeaturesMenu.NoDrift = config["NewFeatures"]["NoDrift"].get<bool>();
-        if (config["NewFeatures"].contains("NoSlideFatigue")) Config.NewFeaturesMenu.NoSlideFatigue = config["NewFeatures"]["NoSlideFatigue"].get<bool>();
-        if (config["NewFeatures"].contains("NoSprintToFireDelay")) Config.NewFeaturesMenu.NoSprintToFireDelay = config["NewFeatures"]["NoSprintToFireDelay"].get<bool>();
-        if (config["NewFeatures"].contains("NoHipfireDelay")) Config.NewFeaturesMenu.NoHipfireDelay = config["NewFeatures"]["NoHipfireDelay"].get<bool>();
-    }
+        }
+
+        // Each group stands on its own: a profile that carries only some of them
+        // still restores those, instead of being skipped because another key is
+        // missing.
+        if (config.contains("NewFeatures")) {
+            if (config["NewFeatures"].contains("NoCrouch")) Config.NewFeaturesMenu.NoCrouch = config["NewFeatures"]["NoCrouch"].get<bool>();
+            if (config["NewFeatures"].contains("Triggerbot")) Config.NewFeaturesMenu.Triggerbot = config["NewFeatures"]["Triggerbot"].get<bool>();
+            if (config["NewFeatures"].contains("TriggerbotMode")) Config.NewFeaturesMenu.TriggerbotMode = config["NewFeatures"]["TriggerbotMode"].get<int>();
+            if (config["NewFeatures"].contains("TriggerbotDelay")) Config.NewFeaturesMenu.TriggerbotDelay = config["NewFeatures"]["TriggerbotDelay"].get<int>();
+            if (config["NewFeatures"].contains("TriggerbotRadius")) Config.NewFeaturesMenu.TriggerbotRadius = config["NewFeatures"]["TriggerbotRadius"].get<int>();
+            if (config["NewFeatures"].contains("TriggerbotDotRay")) Config.NewFeaturesMenu.TriggerbotDotRay = config["NewFeatures"]["TriggerbotDotRay"].get<bool>();
+            if (config["NewFeatures"].contains("NoHitFlinch")) Config.NewFeaturesMenu.NoHitFlinch = config["NewFeatures"]["NoHitFlinch"].get<bool>();
+            if (config["NewFeatures"].contains("NoDrift")) Config.NewFeaturesMenu.NoDrift = config["NewFeatures"]["NoDrift"].get<bool>();
+            if (config["NewFeatures"].contains("NoSlideFatigue")) Config.NewFeaturesMenu.NoSlideFatigue = config["NewFeatures"]["NoSlideFatigue"].get<bool>();
+            if (config["NewFeatures"].contains("NoSprintToFireDelay")) Config.NewFeaturesMenu.NoSprintToFireDelay = config["NewFeatures"]["NoSprintToFireDelay"].get<bool>();
+            if (config["NewFeatures"].contains("NoHipfireDelay")) Config.NewFeaturesMenu.NoHipfireDelay = config["NewFeatures"]["NoHipfireDelay"].get<bool>();
+        }
 
         if (config.contains("Crosshair")) {
             if (config["Crosshair"].contains("Enabled")) Config.Crosshair.Enabled = config["Crosshair"]["Enabled"].get<bool>();
             if (config["Crosshair"].contains("Style")) Config.Crosshair.Style = config["Crosshair"]["Style"].get<int>();
             if (config["Crosshair"].contains("Size")) Config.Crosshair.Size = config["Crosshair"]["Size"].get<float>();
+            // Added with the style expansion; older files simply do not have them
+            // and keep the built-in defaults.
+            if (config["Crosshair"].contains("Thickness")) Config.Crosshair.Thickness = config["Crosshair"]["Thickness"].get<float>();
+            if (config["Crosshair"].contains("Gap")) Config.Crosshair.Gap = config["Crosshair"]["Gap"].get<float>();
+            if (config["Crosshair"].contains("Outline")) Config.Crosshair.Outline = config["Crosshair"]["Outline"].get<bool>();
+            if (config["Crosshair"].contains("OutlineThickness")) Config.Crosshair.OutlineThickness = config["Crosshair"]["OutlineThickness"].get<float>();
             if (config["Crosshair"].contains("OffsetX")) Config.Crosshair.OffsetX = config["Crosshair"]["OffsetX"].get<float>();
             if (config["Crosshair"].contains("OffsetY")) Config.Crosshair.OffsetY = config["Crosshair"]["OffsetY"].get<float>();
             if (config["Crosshair"].contains("Opacity")) Config.Crosshair.Color[3] = config["Crosshair"]["Opacity"].get<float>();
             if (config["Crosshair"].contains("ColorR")) Config.Crosshair.Color[0] = config["Crosshair"]["ColorR"].get<float>();
             if (config["Crosshair"].contains("ColorG")) Config.Crosshair.Color[1] = config["Crosshair"]["ColorG"].get<float>();
             if (config["Crosshair"].contains("ColorB")) Config.Crosshair.Color[2] = config["Crosshair"]["ColorB"].get<float>();
-        }
         }
 
         if (config.contains("isJumpAdjustmentEnabled"))

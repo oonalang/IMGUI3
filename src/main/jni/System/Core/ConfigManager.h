@@ -38,7 +38,6 @@ void LoadConfig() {
         else if (key == "ESPMenu.Name") Config.ESPMenu.Name = (valueStr == "1");
         else if (key == "ESPMenu.Distance") Config.ESPMenu.Distance = (valueStr == "1");
         else if (key == "ESPMenu.Count") Config.ESPMenu.Count = (valueStr == "1");
-        else if (key == "ESPMenu.Crosshair") Config.ESPMenu.Crosshair = (valueStr == "1");
         else if (key == "ESPMenu.Aimline") Config.ESPMenu.Aimline = (valueStr == "1");
         else if (key == "ESPMenu.Target") Config.ESPMenu.Target = static_cast<LineTarget>(std::stoi(valueStr));
         else if (key == "ESPMenu.BoxType") Config.ESPMenu.BoxType = static_cast<EspBoxType>(std::stoi(valueStr));
@@ -90,6 +89,10 @@ void LoadConfig() {
         else if (key == "Crosshair.Enabled") Config.Crosshair.Enabled = (valueStr == "1");
         else if (key == "Crosshair.Style") Config.Crosshair.Style = std::stoi(valueStr);
         else if (key == "Crosshair.Size") Config.Crosshair.Size = std::stof(valueStr);
+        else if (key == "Crosshair.Thickness") Config.Crosshair.Thickness = std::stof(valueStr);
+        else if (key == "Crosshair.Gap") Config.Crosshair.Gap = std::stof(valueStr);
+        else if (key == "Crosshair.Outline") Config.Crosshair.Outline = (valueStr == "1");
+        else if (key == "Crosshair.OutlineThickness") Config.Crosshair.OutlineThickness = std::stof(valueStr);
         else if (key == "Crosshair.OffsetX") Config.Crosshair.OffsetX = std::stof(valueStr);
         else if (key == "Crosshair.OffsetY") Config.Crosshair.OffsetY = std::stof(valueStr);
         else if (key == "Crosshair.Opacity") Config.Crosshair.Color[3] = std::stof(valueStr);
@@ -116,7 +119,6 @@ void SaveConfig() {
     file << "ESPMenu.Name " << Config.ESPMenu.Name << "\n";
     file << "ESPMenu.Distance " << Config.ESPMenu.Distance << "\n";
     file << "ESPMenu.Count " << Config.ESPMenu.Count << "\n";
-    file << "ESPMenu.Crosshair " << Config.ESPMenu.Crosshair << "\n";
     file << "ESPMenu.Aimline " << Config.ESPMenu.Aimline << "\n";
     file << "ESPMenu.Target " << Config.ESPMenu.Target << "\n";
     file << "ESPMenu.BoxType " << Config.ESPMenu.BoxType << "\n";
@@ -167,6 +169,10 @@ void SaveConfig() {
     file << "Crosshair.Enabled " << Config.Crosshair.Enabled << "\n";
     file << "Crosshair.Style " << Config.Crosshair.Style << "\n";
     file << "Crosshair.Size " << Config.Crosshair.Size << "\n";
+    file << "Crosshair.Thickness " << Config.Crosshair.Thickness << "\n";
+    file << "Crosshair.Gap " << Config.Crosshair.Gap << "\n";
+    file << "Crosshair.Outline " << Config.Crosshair.Outline << "\n";
+    file << "Crosshair.OutlineThickness " << Config.Crosshair.OutlineThickness << "\n";
     file << "Crosshair.OffsetX " << Config.Crosshair.OffsetX << "\n";
     file << "Crosshair.OffsetY " << Config.Crosshair.OffsetY << "\n";
     file << "Crosshair.Opacity " << Config.Crosshair.Color[3] << "\n";
