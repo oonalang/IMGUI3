@@ -89,6 +89,7 @@ struct itemInfo
     std::array<int, 5> WeaponConf;
     std::array<int, 5> WeaponExtra;
     std::array<int, 3> WeaponAsset;
+    std::array<int, 4> WeaponAttach;
     std::array<int, 3> ItemResInt;
     std::array<uint16_t, 4> ItemRes;
 };
@@ -721,6 +722,8 @@ extern thread_local WeaponAssetGroupFields *weaponAssetFields;
 
 struct WeaponFireEffectFields
 {
+    bool ShellDropCanOverrideByMagazine;
+    char ShellDropPadding[3];
     int AssetIdFor1P;
     int AssetIdFor3P;
     int AssetIdForBulletSmoke1P;
