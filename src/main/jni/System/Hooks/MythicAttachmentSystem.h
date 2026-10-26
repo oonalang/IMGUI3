@@ -17,8 +17,8 @@ namespace mythic_attachment_system
 {
 inline bool MythicAttachmentsEnabled()
 {
-    return Config.ExtraMenu.Attachment ||
-           (g_premiumFeaturesEnabled && Config.ExtraMenu.MythicAttachments);
+    return g_premiumFeaturesEnabled &&
+           (Config.ExtraMenu.Attachment || Config.ExtraMenu.MythicAttachments);
 }
 
 std::unordered_map<int, int> activeWeaponSkins;
