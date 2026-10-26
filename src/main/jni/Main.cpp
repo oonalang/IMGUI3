@@ -1257,6 +1257,10 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         err.clear();
                         g_LoginButton = login_screen::ButtonState::Success;
                         g_LoginSuccessAt = ImGui::GetTime();
+                        // The paid feature set follows the licence, not the build.
+                        // A free key signing into this build still gets the trial
+                        // gates it would get from the trial build.
+                        g_premiumFeaturesEnabled = isVipKey(g_LoginRequest.requestedKey);
                         ui_media::SetVideo(ui_media::VideoKind::Loading);
                     } else {
                         err = g_LoginRequest.response;

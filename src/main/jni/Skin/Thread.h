@@ -178,6 +178,27 @@ VehicleItemConfCtor orig_VehicleItemConfCtor = nullptr;
 
 std::mutex g_dataMutex;
 
+// This project's Il2CppArray declares max_length as a 32-bit int, while the
+// native IL2CPP layout has a pointer-sized length on arm64. m_Items therefore
+// sits four bytes early in our wrapper and logical item i is m_Items[i + 1].
+// Reading m_Items[i] directly returns the entry before the one asked for, so the
+// "last element" reads below have to go through these two helpers.
+inline int ArrayLogicalAt(Array<int> *a, int i)
+{
+    if (!a || !Tools::IsPtrValid(a)) return 0;
+    const int len = a->getLength();
+    if (i < 0 || i >= len || len > 4096) return 0;
+    return a->m_Items[i + 1];
+}
+
+inline int ArrayLogicalLast(Array<int> *a)
+{
+    if (!a || !Tools::IsPtrValid(a)) return 0;
+    const int len = a->getLength();
+    if (len <= 0) return 0;
+    return ArrayLogicalAt(a, len - 1);
+}
+
 inline size_t ItemDataCount()
 {
     std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -423,61 +444,70 @@ std::string GetNameString(uintptr_t off, void *getadd)
     return "";
 }
 
-int (*orig_GetCurrentWeaponKillEffect)(Weapon);
+int (*orig_GetCurrentWeaponKillEffect)(Weapon) = nullptr;
 int _GetCurrentWeaponKillEffect(Weapon weapon) {
     Pawn* localPawn = GamePlay::get_LocalPawn();
-    if (!localPawn) return 0;
-    Weapon* currentWeapon = localPawn->get_CurrentWeapon();
-    if (!currentWeapon) return 0;
-    int currentID = currentWeapon->get_WeaponID();
-    std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
-    auto it = activeKillEffects.find(currentID);
-    if (it != activeKillEffects.end()) {
-        return it->second;
+    Weapon* currentWeapon = localPawn ? localPawn->get_CurrentWeapon() : nullptr;
+    if (currentWeapon) {
+        const int currentID = currentWeapon->get_WeaponID();
+        std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
+        auto it = activeKillEffects.find(currentID);
+        if (it != activeKillEffects.end() && it->second > 0)
+            return it->second;
     }
-    return 0;
+    // No override for the held weapon, so the game's own answer has to survive.
+    // Returning 0 here silently cleared the equipped kill effect.
+    return orig_GetCurrentWeaponKillEffect != nullptr
+         ? orig_GetCurrentWeaponKillEffect(weapon)
+         : 0;
 }
 
-int (*orig_GetCurrentBulletTrackEffect)(Weapon);
+int (*orig_GetCurrentBulletTrackEffect)(Weapon) = nullptr;
 int _GetCurrentBulletTrackEffect(Weapon weapon) {
     Pawn* localPawn = GamePlay::get_LocalPawn();
-    if (!localPawn) return 0;
-    Weapon* currentWeapon = localPawn->get_CurrentWeapon();
-    if (!currentWeapon) return 0;
-    int currentID = currentWeapon->get_WeaponID();
-    auto it = activeBulletTrackEffects.find(currentID);
-    if (it != activeBulletTrackEffects.end()) {
-        return it->second;
+    Weapon* currentWeapon = localPawn ? localPawn->get_CurrentWeapon() : nullptr;
+    if (currentWeapon) {
+        const int currentID = currentWeapon->get_WeaponID();
+        std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
+        auto it = activeBulletTrackEffects.find(currentID);
+        if (it != activeBulletTrackEffects.end() && it->second > 0)
+            return it->second;
     }
-    return 0;
+    return orig_GetCurrentBulletTrackEffect != nullptr
+         ? orig_GetCurrentBulletTrackEffect(weapon)
+         : 0;
 }
 
-int (*orig_GetCurrentWeaponFireEffect)(Weapon);
+int (*orig_GetCurrentWeaponFireEffect)(Weapon) = nullptr;
 int _GetCurrentWeaponFireEffect(Weapon weapon) {
     Pawn* localPawn = GamePlay::get_LocalPawn();
-    if (!localPawn) return 0;
-    Weapon* currentWeapon = localPawn->get_CurrentWeapon();
-    if (!currentWeapon) return 0;
-    int currentID = currentWeapon->get_WeaponID();
-    auto it = activeWeaponFireEffects.find(currentID);
-    if (it != activeWeaponFireEffects.end()) {
-        return it->second;
+    Weapon* currentWeapon = localPawn ? localPawn->get_CurrentWeapon() : nullptr;
+    if (currentWeapon) {
+        const int currentID = currentWeapon->get_WeaponID();
+        std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
+        auto it = activeWeaponFireEffects.find(currentID);
+        if (it != activeWeaponFireEffects.end() && it->second > 0)
+            return it->second;
     }
-    return 0;
+    return orig_GetCurrentWeaponFireEffect != nullptr
+         ? orig_GetCurrentWeaponFireEffect(weapon)
+         : 0;
 }
 
-int (*orig_GetCurrentWeaponBrocast)(Weapon);
+int (*orig_GetCurrentWeaponBrocast)(Weapon) = nullptr;
 int _GetCurrentWeaponBrocast(Weapon weapon) {
     Pawn* localPawn = GamePlay::get_LocalPawn();
-    if (!localPawn) return 0;
-    Weapon* currentWeapon = localPawn->get_CurrentWeapon();
-    if (!currentWeapon) return 0;
-    int currentID = currentWeapon->get_WeaponID();
-    auto it = activeWeaponBrocast.find(currentID);
-    if (it != activeWeaponBrocast.end()) {
-        return it->second;
+    Weapon* currentWeapon = localPawn ? localPawn->get_CurrentWeapon() : nullptr;
+    if (currentWeapon) {
+        const int currentID = currentWeapon->get_WeaponID();
+        std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
+        auto it = activeWeaponBrocast.find(currentID);
+        if (it != activeWeaponBrocast.end() && it->second > 0)
+            return it->second;
     }
-    return 0;
+    return orig_GetCurrentWeaponBrocast != nullptr
+         ? orig_GetCurrentWeaponBrocast(weapon)
+         : 0;
 }
 
 static bool FindInMapExtra(const std::unordered_map<int, int> &m, void *extraInfo, int &outVal) {
@@ -612,7 +642,7 @@ void LoadKillIcons() {
         const int len = equipArray->getLength();
         const int rank = rankByIconId[id];
         for (int i = 0; i < len; i++) {
-            const int weaponID = equipArray->m_Items[i];
+            const int weaponID = ArrayLogicalAt(equipArray, i);
             if (weaponID <= 0) continue;
             auto best = bestIconForWeapon.find(weaponID);
             if (best == bestIconForWeapon.end()) {
@@ -1251,10 +1281,9 @@ void LoadWeaponSkins() {
         if (!Tools::IsPtrValid(mythicsightFields)) continue;
         auto* equipArray = *(Array<int>**)((uintptr_t)sight + 0x38);
         if (equipArray && Tools::IsPtrValid(equipArray) && equipArray->getLength() > 0) {
-            int lastIndex = equipArray->getLength() - 1;
-            int weaponID = equipArray->m_Items[lastIndex];
+            int weaponID = ArrayLogicalLast(equipArray);
             int sightID = *(int*)((uintptr_t)sight + 0x14);
-            mythicSightByWeapon[weaponID] = sightID;
+            if (weaponID > 0) mythicSightByWeapon[weaponID] = sightID;
         }
     }
 
@@ -1264,13 +1293,11 @@ void LoadWeaponSkins() {
         if (!Tools::IsPtrValid(killeffectFields)) continue;
         auto* equipArray = *(Array<int>**)((uintptr_t)kill + 0x90);
         if (equipArray && Tools::IsPtrValid(equipArray) && equipArray->getLength() > 0) {
-            int lastIndex = equipArray->getLength() - 1;
-            int weaponID = equipArray->m_Items[lastIndex];
+            int weaponID = ArrayLogicalLast(equipArray);
 
             auto* realAssetIDs = *(Array<int>**)((uintptr_t)kill + 0x10);
             if (realAssetIDs && Tools::IsPtrValid(realAssetIDs) && realAssetIDs->getLength() > 0) {
-                int lastAssetIndex = realAssetIDs->getLength() - 1;
-                int lastAssetID = realAssetIDs->m_Items[lastAssetIndex];
+                int lastAssetID = ArrayLogicalLast(realAssetIDs);
                 killEffectByWeapon[weaponID] = lastAssetID;
 
                 const int effectItemID = *(int *)((uintptr_t)kill + 0x2C);
@@ -1362,6 +1389,22 @@ void LoadWeaponSkins() {
                                 }
                             }
                         }
+                    }
+                }
+
+                // Fire-effect attachment assets (AttachAssetIdFor1P/3P/Hip1P/Hip3P)
+                // carried by the selected fire-effect config. The reference build
+                // stores these on the skin row and writes them onto the live fire
+                // effect on apply.
+                int attachAsset1P = 0, attachAsset3P = 0, attachAssetHip1P = 0, attachAssetHip3P = 0;
+                if (fireIds > 0) {
+                    auto itAttach = weaponFireByID.find(fireIds);
+                    if (itAttach != weaponFireByID.end()) {
+                        void* attachConf = itAttach->second;
+                        attachAsset1P   = *(int*)((uintptr_t)attachConf + 0x64);
+                        attachAsset3P   = *(int*)((uintptr_t)attachConf + 0x68);
+                        attachAssetHip1P = *(int*)((uintptr_t)attachConf + 0x6C);
+                        attachAssetHip3P = *(int*)((uintptr_t)attachConf + 0x70);
                     }
                 }
 
@@ -1459,6 +1502,7 @@ void LoadWeaponSkins() {
                     {confBaseSkin, confColor, confID, confBrocastID, confBluePrintID},
                     {extraOrig, mythicArmor, sightMythic, deadReplay, killEffect},
                     {assetIds, fireIds, fireIds2},
+                    {attachAsset1P, attachAsset3P, attachAssetHip1P, attachAssetHip3P},
                     {xItem1, xItem2, xItem3},
                     {spr1, spr2, spr3, spr4}});
             }
