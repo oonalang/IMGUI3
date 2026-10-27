@@ -841,53 +841,77 @@ inline void InitializeAllHooks() {
           (void *)&hook_GameObjectSetActive,
           (void **)&orig_GameObjectSetActive);
 
-    DobbyHook((void *)getAbsoluteAddress("libunity.so", ThrowAlertCfg::TickRva),
-          (void *)&hook_WeaponProjectileTick,
-          (void **)&orig_WeaponProjectileTick);
+    void *tickAddr = getAbsoluteAddress("libunity.so", ThrowAlertCfg::TickRva);
+    if (Tools::IsPtrValid(tickAddr))
+        DobbyHook(tickAddr, (void *)&hook_WeaponProjectileTick,
+                  (void **)&orig_WeaponProjectileTick);
 
-    DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::StickTickRva),
-          (void *)&hook_StickTick,
-          (void **)&orig_StickTick);
-    DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::TripMineTickRva),
-          (void *)&hook_TripMineTick,
-          (void **)&orig_TripMineTick);
-    DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::TrapChipTickRva),
-          (void *)&hook_TrapChipTick,
-          (void **)&orig_TrapChipTick);
-    DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::TripWireTickRva),
-          (void *)&hook_TripWireTick,
-          (void **)&orig_TripWireTick);
+    void *stickAddr = getAbsoluteAddress("libunity.so", PlacableCfg::StickTickRva);
+    if (Tools::IsPtrValid(stickAddr))
+        DobbyHook(stickAddr, (void *)&hook_StickTick,
+                  (void **)&orig_StickTick);
+    void *tripMineAddr = getAbsoluteAddress("libunity.so", PlacableCfg::TripMineTickRva);
+    if (Tools::IsPtrValid(tripMineAddr))
+        DobbyHook(tripMineAddr, (void *)&hook_TripMineTick,
+                  (void **)&orig_TripMineTick);
+    void *trapChipAddr = getAbsoluteAddress("libunity.so", PlacableCfg::TrapChipTickRva);
+    if (Tools::IsPtrValid(trapChipAddr))
+        DobbyHook(trapChipAddr, (void *)&hook_TrapChipTick,
+                  (void **)&orig_TrapChipTick);
+    void *tripWireAddr = getAbsoluteAddress("libunity.so", PlacableCfg::TripWireTickRva);
+    if (Tools::IsPtrValid(tripWireAddr))
+        DobbyHook(tripWireAddr, (void *)&hook_TripWireTick,
+                  (void **)&orig_TripWireTick);
 
     NotePlacableHookLanded(PlcHookStick,    orig_StickTick    != nullptr);
     NotePlacableHookLanded(PlcHookTripMine, orig_TripMineTick != nullptr);
     NotePlacableHookLanded(PlcHookTrapChip, orig_TrapChipTick != nullptr);
     NotePlacableHookLanded(PlcHookTripWire, orig_TripWireTick != nullptr);
 
-    DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::PushProjectileRva),
-          (void *)&hook_PushProjectile,
-          (void **)&orig_PushProjectile);
-    DobbyHook((void *)getAbsoluteAddress("libunity.so", PlacableCfg::RemoveProjectileRva),
-          (void *)&hook_RemoveWeaponProjectile,
-          (void **)&orig_RemoveWeaponProjectile);
+    void *pushAddr = getAbsoluteAddress("libunity.so", PlacableCfg::PushProjectileRva);
+    if (Tools::IsPtrValid(pushAddr))
+        DobbyHook(pushAddr, (void *)&hook_PushProjectile,
+                  (void **)&orig_PushProjectile);
+    void *removeAddr = getAbsoluteAddress("libunity.so", PlacableCfg::RemoveProjectileRva);
+    if (Tools::IsPtrValid(removeAddr))
+        DobbyHook(removeAddr, (void *)&hook_RemoveWeaponProjectile,
+                  (void **)&orig_RemoveWeaponProjectile);
     NotePlacablePushLanded(orig_PushProjectile != nullptr);
 
     g_placableProjectileTickSink = &PlacableOnProjectileTick;
 
-    DobbyHook((void *)getAbsoluteAddress("libunity.so", 0xAE2E1B0),
-          (void *)&hook_SetGrassShowState,
-          (void **)&orig_SetGrassShowState);
+    void *grassShowAddr = getAbsoluteAddress("libunity.so", 0xAE2E1B0);
+    if (Tools::IsPtrValid(grassShowAddr))
+        DobbyHook(grassShowAddr, (void *)&hook_SetGrassShowState,
+                  (void **)&orig_SetGrassShowState);
 
-    DobbyHook((void *)getAbsoluteAddress("libunity.so", 0x7B4E290),
-          (void *)&hook_SetGrassLODBias,
-          (void **)&orig_SetGrassLODBias);
+    void *grassLodAddr = getAbsoluteAddress("libunity.so", 0x7B4E290);
+    if (Tools::IsPtrValid(grassLodAddr))
+        DobbyHook(grassLodAddr, (void *)&hook_SetGrassLODBias,
+                  (void **)&orig_SetGrassLODBias);
 
-    DobbyHook((void*)getAbsoluteAddress("libunity.so", 0x9FDEE28), (void*)hooked_SetUltraFrameRateDeviceInfo, (void**)&orig_SetUltraFrameRateDeviceInfo);
+    void *ultraFpsAddr = getAbsoluteAddress("libunity.so", 0x9FDEE28);
+    if (Tools::IsPtrValid(ultraFpsAddr))
+        DobbyHook(ultraFpsAddr, (void*)hooked_SetUltraFrameRateDeviceInfo,
+                  (void**)&orig_SetUltraFrameRateDeviceInfo);
 
-    DobbyHook((void *) getAbsoluteAddress("libunity.so", 0x51D31BC), (void *)  &Pawn_GetCurrentDistToWaterSurface, (void **) &oPawn_GetCurrentDistToWaterSurface);
-    DobbyHook((void *) getAbsoluteAddress("libunity.so", 0x54BC450), (void *)  &PlayerPawn_IsUnderWaterSurface, (void **) &oPlayerPawn_IsUnderWaterSurface);
-    DobbyHook((void *) getAbsoluteAddress("libunity.so", 0x757162C), (void *)  &CheckInWaterComponent_get_CurrentWaterSurfaceHeight, (void **) &oCheckInWaterComponent_get_CurrentWaterSurfaceHeight);
+    void *waterDistAddr = getAbsoluteAddress("libunity.so", 0x51D31BC);
+    if (Tools::IsPtrValid(waterDistAddr))
+        DobbyHook(waterDistAddr, (void *)  &Pawn_GetCurrentDistToWaterSurface,
+                  (void **) &oPawn_GetCurrentDistToWaterSurface);
+    void *waterSurfAddr = getAbsoluteAddress("libunity.so", 0x54BC450);
+    if (Tools::IsPtrValid(waterSurfAddr))
+        DobbyHook(waterSurfAddr, (void *)  &PlayerPawn_IsUnderWaterSurface,
+                  (void **) &oPlayerPawn_IsUnderWaterSurface);
+    void *waterHeightAddr = getAbsoluteAddress("libunity.so", 0x757162C);
+    if (Tools::IsPtrValid(waterHeightAddr))
+        DobbyHook(waterHeightAddr, (void *)  &CheckInWaterComponent_get_CurrentWaterSurfaceHeight,
+                  (void **) &oCheckInWaterComponent_get_CurrentWaterSurfaceHeight);
 
-  DobbyHook((void *) getAbsoluteAddress("libunity.so", 0xC347950), (void *)  &InputSettingConfig_Instant_GetMainCameraFov_3p, (void **) &oInputSettingConfig_Instant_GetMainCameraFov_3p);
+    void *cameraFovAddr = getAbsoluteAddress("libunity.so", 0xC347950);
+    if (Tools::IsPtrValid(cameraFovAddr))
+        DobbyHook(cameraFovAddr, (void *)  &InputSettingConfig_Instant_GetMainCameraFov_3p,
+                  (void **) &oInputSettingConfig_Instant_GetMainCameraFov_3p);
 
     HOOK_LIB("libunity.so", "0x901F988", IsUnlocked, orig_IsUnlocked);
 
