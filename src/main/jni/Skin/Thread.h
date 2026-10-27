@@ -1,6 +1,7 @@
 #include <cstdio>
 
 #include "System/Core/CrashReporter.h"
+#include "System/Core/FaultGuard.h"
 
 std::unordered_map<std::string, bool> sBool;
 
@@ -468,6 +469,23 @@ std::string GetNameString(uintptr_t off, void *getadd)
     return "";
 }
 
+// The four current-weapon effect getters hand the game's own answer back when no
+// override is selected, which is a new call into the game from inside a hook and
+// therefore a step this mod can guard: a fault there returns the pre-fix answer
+// (0) instead of taking the process down with it. The call is made outside the
+// override lock so a longjmp out of it can never leave that mutex held.
+inline int GuardedEffectGetter(int (*fn)(Weapon), Weapon weapon)
+{
+    if (fn == nullptr) return 0;
+
+    int original = 0;
+    if (!fault_guard::Run([&] { original = fn(weapon); })) {
+        crash_report::Note("skin: effect getter faulted");
+        return 0;
+    }
+    return original;
+}
+
 int (*orig_GetCurrentWeaponKillEffect)(Weapon) = nullptr;
 int _GetCurrentWeaponKillEffect(Weapon weapon) {
     Pawn* localPawn = GamePlay::get_LocalPawn();
@@ -481,9 +499,7 @@ int _GetCurrentWeaponKillEffect(Weapon weapon) {
     }
     // No override for the held weapon, so the game's own answer has to survive.
     // Returning 0 here silently cleared the equipped kill effect.
-    return orig_GetCurrentWeaponKillEffect != nullptr
-         ? orig_GetCurrentWeaponKillEffect(weapon)
-         : 0;
+    return GuardedEffectGetter(orig_GetCurrentWeaponKillEffect, weapon);
 }
 
 int (*orig_GetCurrentBulletTrackEffect)(Weapon) = nullptr;
@@ -497,9 +513,7 @@ int _GetCurrentBulletTrackEffect(Weapon weapon) {
         if (it != activeBulletTrackEffects.end() && it->second > 0)
             return it->second;
     }
-    return orig_GetCurrentBulletTrackEffect != nullptr
-         ? orig_GetCurrentBulletTrackEffect(weapon)
-         : 0;
+    return GuardedEffectGetter(orig_GetCurrentBulletTrackEffect, weapon);
 }
 
 int (*orig_GetCurrentWeaponFireEffect)(Weapon) = nullptr;
@@ -513,9 +527,7 @@ int _GetCurrentWeaponFireEffect(Weapon weapon) {
         if (it != activeWeaponFireEffects.end() && it->second > 0)
             return it->second;
     }
-    return orig_GetCurrentWeaponFireEffect != nullptr
-         ? orig_GetCurrentWeaponFireEffect(weapon)
-         : 0;
+    return GuardedEffectGetter(orig_GetCurrentWeaponFireEffect, weapon);
 }
 
 int (*orig_GetCurrentWeaponBrocast)(Weapon) = nullptr;
@@ -529,9 +541,7 @@ int _GetCurrentWeaponBrocast(Weapon weapon) {
         if (it != activeWeaponBrocast.end() && it->second > 0)
             return it->second;
     }
-    return orig_GetCurrentWeaponBrocast != nullptr
-         ? orig_GetCurrentWeaponBrocast(weapon)
-         : 0;
+    return GuardedEffectGetter(orig_GetCurrentWeaponBrocast, weapon);
 }
 
 static bool FindInMapExtra(const std::unordered_map<int, int> &m, void *extraInfo, int &outVal) {
@@ -1376,13 +1386,13 @@ void LoadWeaponSkins() {
                 int originalFireID = 0;
 
                 auto itAsset = weaponAssetByID.find(itemIDskin2);
-                if (itAsset != weaponAssetByID.end()) {
+                if (itAsset != weaponAssetByID.end() && Tools::IsPtrValid(itAsset->second)) {
                     void* asset = itAsset->second;
                     int fireEffectID = *(int*)((uintptr_t)asset + 0x40);
                     assetIds = itemIDskin2;
 
                     auto itFire = weaponFireByID.find(fireEffectID);
-                    if (itFire != weaponFireByID.end()) {
+                    if (itFire != weaponFireByID.end() && Tools::IsPtrValid(itFire->second)) {
                         void* fireConf = itFire->second;
                         int fireID = *(int*)((uintptr_t)fireConf + 0x80);
                         int assetIdBulletSmoke = *(int*)((uintptr_t)fireConf + 0x1C);
@@ -1397,7 +1407,7 @@ void LoadWeaponSkins() {
                                     bool found = false;
                                     for (int i = 0; i < 10; i++) {
                                         auto itNext = weaponFireByID.find(nextFireID);
-                                        if (itNext != weaponFireByID.end()) {
+                                        if (itNext != weaponFireByID.end() && Tools::IsPtrValid(itNext->second)) {
                                             void* nextFireConf = itNext->second;
                                             int nextAssetIdBulletSmoke = *(int*)((uintptr_t)nextFireConf + 0x1C);
                                             if (nextAssetIdBulletSmoke != 0) {
@@ -1423,7 +1433,7 @@ void LoadWeaponSkins() {
                 int attachAsset1P = 0, attachAsset3P = 0, attachAssetHip1P = 0, attachAssetHip3P = 0;
                 if (fireIds > 0) {
                     auto itAttach = weaponFireByID.find(fireIds);
-                    if (itAttach != weaponFireByID.end()) {
+                    if (itAttach != weaponFireByID.end() && Tools::IsPtrValid(itAttach->second)) {
                         void* attachConf = itAttach->second;
                         attachAsset1P   = *(int*)((uintptr_t)attachConf + 0x64);
                         attachAsset3P   = *(int*)((uintptr_t)attachConf + 0x68);

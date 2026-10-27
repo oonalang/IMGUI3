@@ -911,6 +911,8 @@ static std::string err;
 static std::string storedKey = "";
 static char s[256];
 static bool g_LoginTextLoaded = false;
+static bool g_RememberLoginKey = true;
+static bool g_RememberLoginKeyRead = false;
 struct LoginRequest {
     std::atomic<bool> finished{false};
     bool inFlight = false;
@@ -1208,8 +1210,14 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
     if (isMenuVisible && !windowCollapsed) {
         if (!g_RuntimeClearDisplayInit) { Config.ExtraMenu.ClearDisplay = true; g_RuntimeClearDisplayInit = true; }
+        if (!g_RememberLoginKeyRead && VM != nullptr) {
+            g_RememberLoginKey = LoadLoginRememberFromFile();
+            g_RememberLoginKeyRead = true;
+        }
         if (!g_LoginTextLoaded && VM != nullptr) {
-            if (LoadTextFromFile() && logintext[0] != '\0') {
+            if (!g_RememberLoginKey) {
+                g_LoginTextLoaded = true;   // nothing was kept, so nothing to fill in
+            } else if (LoadTextFromFile() && logintext[0] != '\0') {
                 strncpy(s, logintext, sizeof(s) - 1);
                 s[sizeof(s) - 1] = '\0';
                 g_LoginTextLoaded = true;
@@ -1255,7 +1263,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
                 ImGuiWindowFlags_NoMove)) {
                 static bool revealKey = false;
-                static bool rememberKey = true;
 
                 if (g_LoginRequest.inFlight &&
                     g_LoginRequest.finished.load(std::memory_order_acquire)) {
@@ -1263,7 +1270,11 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     if (g_LoginRequest.response == "OK") {
                         strncpy(logintext, g_LoginRequest.requestedKey.c_str(), sizeof(logintext) - 1);
                         logintext[sizeof(logintext) - 1] = '\0';
-                        SaveLoginTextToFile(logintext);
+                        if (g_RememberLoginKey) {
+                            SaveLoginTextToFile(logintext);
+                        } else {
+                            ForgetLoginTextFile();
+                        }
                         g_LoginTextLoaded = true;
                         err.clear();
                         g_LoginButton = login_screen::ButtonState::Success;
@@ -1289,7 +1300,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 lp.key = s;
                 lp.keySize = (int)sizeof(s);
                 lp.reveal = &revealKey;
-                lp.remember = &rememberKey;
+                lp.remember = &g_RememberLoginKey;
                 lp.error = err.c_str();
 
                 const bool liveArt = g_LoginButton != login_screen::ButtonState::Success &&
@@ -1299,7 +1310,13 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 lp.artH = liveArt ? ui_media::g_videoH : loginArtH;
                 lp.buttonState = g_LoginButton;
 
+                const bool rememberWas = g_RememberLoginKey;
                 const login_screen::Result loginUi = login_screen::Render(lp);
+
+                if (rememberWas != g_RememberLoginKey) {
+                    SaveLoginRememberToFile(g_RememberLoginKey);
+                    if (!g_RememberLoginKey) ForgetLoginTextFile();
+                }
 
                 if (loginUi.close) {
                     windowCollapsed = true;
