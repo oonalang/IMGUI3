@@ -1495,14 +1495,25 @@ size_t hook_strlen(const char *thread) {
     return strlen(thread);
 }
 
-void Init_Thread2() { InstallStealth(); InitializeProtection(); }
+void Init_Thread2() {
+    crash_report::Stage stage("init: native protection setup");
+    InstallStealth();
+    InitializeProtection();
+}
 void Init_SwapHook() {}
 
 void Init_Thread() {
-    crash_report::Install();
+    crash_report::OpenLog();
 
-    while (!m_unity) { m_unity = Tools::GetBaseAddress("libunity.so"); sleep(1); }
-    LOGI("libunity.so: %p", m_unity);
+    while (!m_unity.load(std::memory_order_acquire)) {
+        const uintptr_t base = Tools::GetBaseAddress("libunity.so");
+        if (base) {
+            m_unity.store(base, std::memory_order_release);
+            break;
+        }
+        sleep(1);
+    }
+    LOGI("libunity.so: %p", reinterpret_cast<void*>(m_unity.load(std::memory_order_acquire)));
     crash_report::Note("init: libunity.so found");
 
     crash_report::AddModule("libunity.so", m_unity, Tools::GetEndAddress("libunity.so"));
@@ -1572,7 +1583,10 @@ void Init_Thread() {
     InitializeAllHooks();
     crash_report::Note("init: game hooks installed");
 
-    InitializeProtection();
+    {
+        crash_report::Stage stage("init: native protection setup");
+        InitializeProtection();
+    }
 
     auto swapBuffers = ((uintptr_t)DobbySymbolResolver(OBFUSCATE("libunity.so"), OBFUSCATE("eglSwapBuffers")));
     KittyMemory::ProtectAddr((void *)swapBuffers, sizeof(swapBuffers), PROT_READ | PROT_WRITE | PROT_EXEC);
@@ -1589,6 +1603,7 @@ __attribute__((constructor))
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     jvm = vm; VM = vm;
     ZEL_SetVM(vm);
+    crash_report::Install();
     std::thread(Init_Thread).detach();
     std::thread(Init_Thread2).detach();
     std::thread(Skins_Thread).detach();
