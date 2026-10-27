@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string>
 
+#include "System/Hooks/LongExecute.h"
+
 extern bool SnowB;
 extern float SnowBsize;
 extern bool isSpeedHackEnabled;
@@ -688,8 +690,11 @@ inline bool CalculateObstacleTop_Hook(void* instance, Vector3 pawnPos) {
     return orig_CalculateObstacleTop(instance, pawnPos);
 }
 
-int (*oCheckTargetIsValid)(void *ins, void* tempPawn, float distance);
-int CheckTargetIsValid(void *ins, void* tempPawn, float distance) {
+// The dump declares CheckTargetIsValid(Pawn tempPawn, out float distance), so the
+// third argument is a pointer the game writes the measured distance through. It was
+// declared as a float here, which passed whatever was in x2 instead of the out pointer.
+int (*oCheckTargetIsValid)(void *ins, void* tempPawn, float* distance);
+int CheckTargetIsValid(void *ins, void* tempPawn, float* distance) {
     if ( ins != nullptr ) {
         if (isExecute) {
             return (int)true;
@@ -901,4 +906,7 @@ inline void InitializeAllHooks() {
     report_block::InstallReportBlockHooks();
 
     anti_login::InstallAntiLoginHooks();
+
+    HOOK_LIB("libunity.so", "0x5947460", long_execute::Hook_CheckTargetIsValid,
+             long_execute::orig_CheckTargetIsValid);
 }

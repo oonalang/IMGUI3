@@ -60,6 +60,8 @@ void LoadConfig() {
         else if (key == "ExtraMenu.OutfitTintR") Config.ExtraMenu.OutfitTint[0] = std::stof(valueStr);
         else if (key == "ExtraMenu.OutfitTintG") Config.ExtraMenu.OutfitTint[1] = std::stof(valueStr);
         else if (key == "ExtraMenu.OutfitTintB") Config.ExtraMenu.OutfitTint[2] = std::stof(valueStr);
+        else if (key == "ExtraMenu.LongExecute") Config.ExtraMenu.LongExecute = (valueStr == "1");
+        else if (key == "ExtraMenu.LongExecuteRange") Config.ExtraMenu.LongExecuteRange = std::stof(valueStr);
         else if (key == "ExtraMenu.OutfitTintA") Config.ExtraMenu.OutfitTint[3] = std::stof(valueStr);
         else if (key == "ExtraMenu.BlockReportEvidence") Config.ExtraMenu.BlockReportEvidence = (valueStr == "1");
         else if (key == "ExtraMenu.Recoil") Config.ExtraMenu.Recoil = (valueStr == "1");
@@ -135,6 +137,8 @@ void SaveConfig() {
     file << "ExtraMenu.Kinetic " << Config.ExtraMenu.Kinetic << "\n";
     file << "ExtraMenu.MythicAttachments " << Config.ExtraMenu.MythicAttachments << "\n";
     file << "ExtraMenu.Attachment " << Config.ExtraMenu.Attachment << "\n";
+    file << "ExtraMenu.LongExecute " << Config.ExtraMenu.LongExecute << "\n";
+    file << "ExtraMenu.LongExecuteRange " << Config.ExtraMenu.LongExecuteRange << "\n";
     file << "ExtraMenu.HideOutfit " << Config.ExtraMenu.HideOutfit << "\n";
     file << "ExtraMenu.OutfitScale " << Config.ExtraMenu.OutfitScale << "\n";
     file << "ExtraMenu.OutfitTintBypass " << Config.ExtraMenu.OutfitTintBypass << "\n";

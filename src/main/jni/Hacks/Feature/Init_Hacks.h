@@ -237,6 +237,9 @@ sColorsESPBOT sColorsESPBOT{0};
 		bool WallHack;
 		bool Kinetic;
 
+        bool LongExecute = false;
+        float LongExecuteRange = 8.0f;
+
         bool StretchScreen;
         float StretchAspect = 1.7778f;
 

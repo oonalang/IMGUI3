@@ -574,6 +574,14 @@ namespace raspody
                          &Config.ExtraMenu.Attachment);
                 Checkbox("Smart reload", "Reload only when safe.", &Config.ExtraMenu.SmartReload);
             });
+
+            AddPageCard(p, 0, "Execution", [&] {
+                Checkbox("Long execute", "Run a finisher from further away.",
+                         &Config.ExtraMenu.LongExecute);
+                SliderFloat("Execute range", "Maximum finisher distance.",
+                            &Config.ExtraMenu.LongExecuteRange, 2.0f, 25.0f, "%.1f m");
+                ParagraphRow("The game's own target and obstacle checks stay in place. Only the maximum distance and the search range of a finisher that already exists are widened.");
+            });
         }
         else
         {
