@@ -51,8 +51,14 @@ Memory_Status KittyMemory::memWrite(void *addr, const void *buffer, size_t len) 
     if (!ProtectAddr(addr, len, _PROT_RWX_))
         return INV_PROT;
 
-    if (memcpy(addr, buffer, len) != NULL && ProtectAddr(addr, len, _PROT_RX_))
-        return SUCCESS;
+    if (memcpy(addr, buffer, len) != NULL) {
+        // ARM64 instruction caches are not coherent with data writes. Publish
+        // the new instructions before a thread executes the patched function:
+        // the menu applies these patches to libunity while the game runs.
+        __builtin___clear_cache(static_cast<char *>(addr), static_cast<char *>(addr) + len);
+        if (ProtectAddr(addr, len, _PROT_RX_))
+            return SUCCESS;
+    }
 
     return FAILED;
 }
