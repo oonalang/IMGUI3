@@ -2159,8 +2159,19 @@ namespace NewFeatures
     // call the scan would make on its next line.
     inline bool A_FireInMatch()
     {
+        // A live local pawn is the cheapest honest answer to "is a match
+        // running": the front-end has none, and a pawn the game has already
+        // destroyed fails the same check, so the walk below stays out of the
+        // lobby and out of a teardown even when the switch was restored from a
+        // saved profile. It is also the same call the scan would make on its
+        // next line. A match container (MatchGame) is required as well: the
+        // front-end may expose a pawn-like object, but only a real match has a
+        // MatchGame, so without one the scan never runs on a non-match scene.
         Pawn *local = A_FireLocalPawnFast();
-        return local != nullptr && A_FireObjectAlive((void *)local);
+        if (local == nullptr || !A_FireObjectAlive((void *)local)) return false;
+        if (fn_GameGetMatchGame == nullptr) return false;
+        void *game = fn_GameGetMatchGame();
+        return game != nullptr && Tools::IsPtrValid(game);
     }
 
     // The tick hooks stay installed for the whole session and the game ticks
