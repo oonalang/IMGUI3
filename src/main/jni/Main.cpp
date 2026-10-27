@@ -1092,6 +1092,26 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
             Config.Bline = 2.0f;
             Config.Pline = 2.0f;
 
+            // The memset above wiped these four as well, and the re-applicable
+            // defaults only listed a handful of settings, so they came out of
+            // it as zero: Long Execute disabled with a range of 0.0, a
+            // triggerbot delay of 0, and 0.0 outfit and vehicle scale where the
+            // slider is meant to start at 1.0. They are reloaded from the same
+            // declarations the menu uses, so there is one value for each.
+            Config.ExtraMenu.LongExecuteRange = kDefaultLongExecuteRange;
+            Config.ExtraMenu.OutfitScale      = kDefaultOutfitScale;
+            Config.ExtraMenu.VehicleScale     = kDefaultVehicleScale;
+            Config.NewFeaturesMenu.TriggerbotDelay = kDefaultTriggerbotDelay;
+
+            // Resolve where this install can actually store files before
+            // anything reads or writes them: the game's own external directory
+            // on a plain install, the container's mount of it under GSpace or
+            // ParallelSpace otherwise, and the app's private directory if
+            // neither is usable. The profiles, the autoload pointer and the
+            // feedback log all follow this root.
+            androidFilesDir = GetDataRoot() + "/";
+            LOGI("[data] profile dir: %sconfigs/", androidFilesDir.c_str());
+
             const std::string startupProfile = GetAutoLoadProfile();
             if (!startupProfile.empty())
             {
