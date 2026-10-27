@@ -909,4 +909,20 @@ inline void InitializeAllHooks() {
 
     HOOK_LIB("libunity.so", "0x5947460", long_execute::Hook_CheckTargetIsValid,
              long_execute::orig_CheckTargetIsValid);
+
+    // RefreshConfigData is the other half of Long Execute: it refills the
+    // component from the execute config, so a range raised only at
+    // CheckTargetIsValid would be put back to the game's own value every time
+    // that runs. Widening after both keeps the chosen range standing whichever
+    // of the two the game reads first.
+    HOOK_LIB("libunity.so", "0x5946A40", long_execute::Hook_RefreshConfigData,
+             long_execute::orig_RefreshConfigData);
+
+    // "It does nothing" on a device can mean the hook never installed or that
+    // the range never moved, and only the first is visible from here, so both
+    // landings are reported to logcat and to the crash note.
+    long_execute::NoteInstall("CheckTargetIsValid 0x5947460",
+                              long_execute::orig_CheckTargetIsValid != nullptr);
+    long_execute::NoteInstall("RefreshConfigData 0x5946A40",
+                              long_execute::orig_RefreshConfigData != nullptr);
 }
