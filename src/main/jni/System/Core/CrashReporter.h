@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
+#include <string>
 #include <cstdlib>
 #include <cstring>
 
@@ -41,7 +43,7 @@ namespace crash_report
     inline volatile int     g_noteSeq = 0;
     inline volatile sig_atomic_t g_inHandler = 0;
 
-    inline int  g_fd = -1;
+    inline std::atomic<int> g_fd{-1};
     inline bool g_installed = false;
 
     inline int  g_sigNum[kSignals] = { SIGSEGV, SIGBUS, SIGILL, SIGABRT };
@@ -92,8 +94,8 @@ namespace crash_report
     inline void WriteLine(const char *text, int len)
     {
         if (len <= 0) return;
-        if (g_fd >= 0) {
-            const ssize_t ignored = ::write(g_fd, text, (size_t)len);
+        if (const int fd = g_fd.load(std::memory_order_relaxed); fd >= 0) {
+            const ssize_t ignored = ::write(fd, text, (size_t)len);
             (void)ignored;
         }
 #if defined(__ANDROID__)
@@ -246,21 +248,26 @@ namespace crash_report
         m.name[i] = '\0';
     }
 
-    inline void OpenLog()
+    inline void OpenLog(const char* filesDirectory = nullptr)
     {
+        if (g_fd.load(std::memory_order_acquire) >= 0) return;
+        std::string preferred = filesDirectory ? filesDirectory : "";
+        while (preferred.size() > 1 && preferred.back() == '/') preferred.pop_back();
+        if (!preferred.empty()) preferred += "/ethnir_crash.txt";
+
         const char *fromEnv = getenv(kLogEnv);
-        const char *paths[4] = {
+        const char *paths[] = {
+            preferred.empty() ? nullptr : preferred.c_str(),
             fromEnv,
             "/sdcard/Download/ethnir_crash.txt",
             "/sdcard/ethnir_crash.txt",
             "/data/local/tmp/ethnir_crash.txt"
         };
-
-        for (int i = 0; i < 4; ++i) {
-            if (paths[i] == nullptr || paths[i][0] == '\0') continue;
-            const int fd = ::open(paths[i], O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
+        for (const char* file : paths) {
+            if (!file || !file[0]) continue;
+            const int fd = ::open(file, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
             if (fd >= 0) {
-                g_fd = fd;
+                g_fd.store(fd, std::memory_order_release);
                 break;
             }
         }
@@ -270,7 +277,6 @@ namespace crash_report
     {
         if (g_installed) return;
         g_installed = true;
-        OpenLog();
 
         struct sigaction sa {};
         sa.sa_sigaction = &OnSignal;
