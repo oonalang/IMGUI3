@@ -8,6 +8,7 @@
 #include <jni.h>
 #include "Includes/Logger.h"
 #include "Includes/Jni_Stuff.h"
+#include "System/Core/LoginRemember.h"
 
 extern JavaVM* VM;
 extern char logintext[4096];
@@ -111,6 +112,53 @@ bool SaveLoginTextToFile(const char* logintext) {
     file << logintext;
     file.close();
     return true;
+}
+
+// The saved key is only kept while the "Remember me" box asks for it, so the two
+// reads and writes below always go through the same names and the same rule.
+bool SaveLoginRememberToFile(bool remember) {
+    std::string filesDir = GetFilesDirPath(VM);
+    if (filesDir.empty()) {
+        return false;
+    }
+
+    std::ofstream file((filesDir + "/" + login_remember::kFlagFile).c_str(),
+                       std::ios::out | std::ios::trunc);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    file << login_remember::StoredFlagText(remember);
+    file.close();
+    return true;
+}
+
+bool LoadLoginRememberFromFile() {
+    std::string filesDir = GetFilesDirPath(VM);
+    if (filesDir.empty()) {
+        return true;
+    }
+
+    std::ifstream file((filesDir + "/" + login_remember::kFlagFile).c_str());
+    if (!file.is_open()) {
+        return true;
+    }
+
+    std::string flag;
+    std::getline(file, flag);
+    file.close();
+    return login_remember::FlagFromStoredText(flag);
+}
+
+bool ForgetLoginTextFile() {
+    std::string filesDir = GetFilesDirPath(VM);
+    if (filesDir.empty()) {
+        return false;
+    }
+
+    std::ofstream file((filesDir + "/" + login_remember::kKeyFile).c_str(),
+                       std::ios::out | std::ios::trunc);
+    return file.is_open();
 }
 
 bool LoadTextFromFile() {
