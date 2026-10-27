@@ -2172,8 +2172,16 @@ namespace NewFeatures
     // switch, a held press or a Test Fire asks for a tick.
     inline bool A_FireActive()
     {
-        if (!A_FireInMatch()) return false;
-        return Config.NewFeaturesMenu.Triggerbot || g_afireHoldingFire || g_testFireRequest;
+        // With every switch off there is nothing for the tick hooks to do, so
+        // do not call into the game at all: no LocalPawn, no MatchGame, no
+        // per-match walk. This path runs for the whole match with no features
+        // enabled, so it must not touch the scene.
+        if (!Config.NewFeaturesMenu.Triggerbot && !g_afireHoldingFire && !g_testFireRequest)
+            return false;
+        // A switch, a held press or a Test Fire asks for a tick: only proceed
+        // for a live match so the scan stays out of the lobby and out of a
+        // teardown whatever a saved profile says.
+        return A_FireInMatch();
     }
 
     inline void A_FireTick(void *tickInstance)
