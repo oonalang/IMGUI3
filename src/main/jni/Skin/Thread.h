@@ -1,8 +1,3 @@
-#include <cstdio>
-
-#include "System/Core/CrashReporter.h"
-#include "System/Core/FaultGuard.h"
-
 std::unordered_map<std::string, bool> sBool;
 
 inline std::mutex g_killDecoMapMutex;
@@ -107,7 +102,7 @@ uintptr_t CharacterModelAddress = 0xB1A9738;
 uintptr_t BRDeadboxSkinAddress = 0x6FF3160;
 uintptr_t BRDropPlaneSkinAddress = 0xB1981D4;
 uintptr_t WeaponAssetGroupAddress = 0xAF7A080;
-uintptr_t MythicArmorConfigAddress = 0x90DD884;
+uintptr_t MythicArmorConfigAddress = 0x5C90E84;
 uintptr_t MythicSightConfigAddress = 0x90DDEEC;
 uintptr_t KillEffectItemConfConfigAddress = 0x90C54CC;
 uintptr_t SPKillIconItemConfConfigAddress = 0xAF67F1C;
@@ -183,27 +178,6 @@ VehicleItemConfCtor orig_VehicleItemConfCtor = nullptr;
 
 std::mutex g_dataMutex;
 
-// This project's Il2CppArray declares max_length as a 32-bit int, while the
-// native IL2CPP layout has a pointer-sized length on arm64. m_Items therefore
-// sits four bytes early in our wrapper and logical item i is m_Items[i + 1].
-// Reading m_Items[i] directly returns the entry before the one asked for, so the
-// "last element" reads below have to go through these two helpers.
-inline int ArrayLogicalAt(Array<int> *a, int i)
-{
-    if (!a || !Tools::IsPtrValid(a)) return 0;
-    const int len = a->getLength();
-    if (i < 0 || i >= len || len > 4096) return 0;
-    return a->m_Items[i + 1];
-}
-
-inline int ArrayLogicalLast(Array<int> *a)
-{
-    if (!a || !Tools::IsPtrValid(a)) return 0;
-    const int len = a->getLength();
-    if (len <= 0) return 0;
-    return ArrayLogicalAt(a, len - 1);
-}
-
 inline size_t ItemDataCount()
 {
     std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -245,7 +219,6 @@ bool g_killEffectItemHookInstalled = false;
 bool g_killEffectGroupHookInstalled = false;
 
 void my_Item2InventoryCtor(void* instance) {
-    if (orig_Item2InventoryCtor == nullptr) return;
     orig_Item2InventoryCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -254,7 +227,6 @@ void my_Item2InventoryCtor(void* instance) {
 }
 
 void my_WeaponConfExtraCtor(void* instance) {
-    if (orig_WeaponConfExtraCtor == nullptr) return;
     orig_WeaponConfExtraCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -263,7 +235,6 @@ void my_WeaponConfExtraCtor(void* instance) {
 }
 
 void my_WeaponFireEffectCtor(void* instance) {
-    if (orig_WeaponFireEffectCtor == nullptr) return;
     orig_WeaponFireEffectCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -272,7 +243,6 @@ void my_WeaponFireEffectCtor(void* instance) {
 }
 
 void my_WeaponConfCtor(void* instance) {
-    if (orig_WeaponConfCtor == nullptr) return;
     orig_WeaponConfCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -281,7 +251,6 @@ void my_WeaponConfCtor(void* instance) {
 }
 
 void my_WeaponAssetGroupCtor(void* instance) {
-    if (orig_WeaponAssetGroupCtor == nullptr) return;
     orig_WeaponAssetGroupCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -290,7 +259,6 @@ void my_WeaponAssetGroupCtor(void* instance) {
 }
 
 void my_MythicArmorCtor(void* instance) {
-    if (orig_MythicArmorCtor == nullptr) return;
     orig_MythicArmorCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -299,7 +267,6 @@ void my_MythicArmorCtor(void* instance) {
 }
 
 void my_MythicSightCtor(void* instance) {
-    if (orig_MythicSightCtor == nullptr) return;
     orig_MythicSightCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -308,7 +275,6 @@ void my_MythicSightCtor(void* instance) {
 }
 
 void my_WeaponSkinCtor(void* instance) {
-    if (orig_WeaponSkinCtor == nullptr) return;
     orig_WeaponSkinCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -317,7 +283,6 @@ void my_WeaponSkinCtor(void* instance) {
 }
 
 void my_WeaponCamosCtor(void* instance) {
-    if (orig_WeaponCamosCtor == nullptr) return;
     orig_WeaponCamosCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -326,7 +291,6 @@ void my_WeaponCamosCtor(void* instance) {
 }
 
 void my_KillEffectItemCtor(void* instance) {
-    if (orig_KillEffectItemCtor == nullptr) return;
     orig_KillEffectItemCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -335,7 +299,6 @@ void my_KillEffectItemCtor(void* instance) {
 }
 
 void my_SPKillIconCtor(void* instance) {
-    if (orig_SPKillIconCtor == nullptr) return;
     orig_SPKillIconCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -344,7 +307,6 @@ void my_SPKillIconCtor(void* instance) {
 }
 
 void my_ItemResourceCtor(void* instance) {
-    if (orig_ItemResourceCtor == nullptr) return;
     orig_ItemResourceCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -353,7 +315,6 @@ void my_ItemResourceCtor(void* instance) {
 }
 
 void my_CharacterModelCtor(void* instance) {
-    if (orig_CharacterModelCtor == nullptr) return;
     orig_CharacterModelCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -362,7 +323,6 @@ void my_CharacterModelCtor(void* instance) {
 }
 
 void my_RoleConfCtor(void* instance) {
-    if (orig_RoleConfCtor == nullptr) return;
     orig_RoleConfCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -371,7 +331,6 @@ void my_RoleConfCtor(void* instance) {
 }
 
 void my_RoleSkinCtor(void* instance) {
-    if (orig_RoleSkinCtor == nullptr) return;
     orig_RoleSkinCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -380,7 +339,6 @@ void my_RoleSkinCtor(void* instance) {
 }
 
 void my_RolePackConfCtor(void* instance) {
-    if (orig_RolePackConfCtor == nullptr) return;
     orig_RolePackConfCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -389,7 +347,6 @@ void my_RolePackConfCtor(void* instance) {
 }
 
 void my_BRDeadboxSkinCtor(void* instance) {
-    if (orig_BRDeadboxSkinCtor == nullptr) return;
     orig_BRDeadboxSkinCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -398,7 +355,6 @@ void my_BRDeadboxSkinCtor(void* instance) {
 }
 
 void my_BRDropPlaneSkinCtor(void* instance) {
-    if (orig_BRDropPlaneSkinCtor == nullptr) return;
     orig_BRDropPlaneSkinCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -407,7 +363,6 @@ void my_BRDropPlaneSkinCtor(void* instance) {
 }
 
 void my_VehicleSkinConfCtor(void* instance) {
-    if (orig_VehicleSkinConfCtor == nullptr) return;
     orig_VehicleSkinConfCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -416,7 +371,6 @@ void my_VehicleSkinConfCtor(void* instance) {
 }
 
 void my_VehicleItemConfCtor(void* instance) {
-    if (orig_VehicleItemConfCtor == nullptr) return;
     orig_VehicleItemConfCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -469,79 +423,61 @@ std::string GetNameString(uintptr_t off, void *getadd)
     return "";
 }
 
-// The four current-weapon effect getters hand the game's own answer back when no
-// override is selected, which is a new call into the game from inside a hook and
-// therefore a step this mod can guard: a fault there returns the pre-fix answer
-// (0) instead of taking the process down with it. The call is made outside the
-// override lock so a longjmp out of it can never leave that mutex held.
-inline int GuardedEffectGetter(int (*fn)(Weapon), Weapon weapon)
-{
-    if (fn == nullptr) return 0;
-
-    int original = 0;
-    if (!fault_guard::Run([&] { original = fn(weapon); })) {
-        crash_report::Note("skin: effect getter faulted");
-        return 0;
-    }
-    return original;
-}
-
-int (*orig_GetCurrentWeaponKillEffect)(Weapon) = nullptr;
+int (*orig_GetCurrentWeaponKillEffect)(Weapon);
 int _GetCurrentWeaponKillEffect(Weapon weapon) {
     Pawn* localPawn = GamePlay::get_LocalPawn();
-    Weapon* currentWeapon = localPawn ? localPawn->get_CurrentWeapon() : nullptr;
-    if (currentWeapon) {
-        const int currentID = currentWeapon->get_WeaponID();
-        std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
-        auto it = activeKillEffects.find(currentID);
-        if (it != activeKillEffects.end() && it->second > 0)
-            return it->second;
+    if (!localPawn) return 0;
+    Weapon* currentWeapon = localPawn->get_CurrentWeapon();
+    if (!currentWeapon) return 0;
+    int currentID = currentWeapon->get_WeaponID();
+    std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
+    auto it = activeKillEffects.find(currentID);
+    if (it != activeKillEffects.end()) {
+        return it->second;
     }
-    // No override for the held weapon, so the game's own answer has to survive.
-    // Returning 0 here silently cleared the equipped kill effect.
-    return GuardedEffectGetter(orig_GetCurrentWeaponKillEffect, weapon);
+    return 0;
 }
 
-int (*orig_GetCurrentBulletTrackEffect)(Weapon) = nullptr;
+int (*orig_GetCurrentBulletTrackEffect)(Weapon);
 int _GetCurrentBulletTrackEffect(Weapon weapon) {
     Pawn* localPawn = GamePlay::get_LocalPawn();
-    Weapon* currentWeapon = localPawn ? localPawn->get_CurrentWeapon() : nullptr;
-    if (currentWeapon) {
-        const int currentID = currentWeapon->get_WeaponID();
-        std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
-        auto it = activeBulletTrackEffects.find(currentID);
-        if (it != activeBulletTrackEffects.end() && it->second > 0)
-            return it->second;
+    if (!localPawn) return 0;
+    Weapon* currentWeapon = localPawn->get_CurrentWeapon();
+    if (!currentWeapon) return 0;
+    int currentID = currentWeapon->get_WeaponID();
+    auto it = activeBulletTrackEffects.find(currentID);
+    if (it != activeBulletTrackEffects.end()) {
+        return it->second;
     }
-    return GuardedEffectGetter(orig_GetCurrentBulletTrackEffect, weapon);
+    return 0;
 }
 
-int (*orig_GetCurrentWeaponFireEffect)(Weapon) = nullptr;
+int (*orig_GetCurrentWeaponFireEffect)(Weapon);
 int _GetCurrentWeaponFireEffect(Weapon weapon) {
     Pawn* localPawn = GamePlay::get_LocalPawn();
-    Weapon* currentWeapon = localPawn ? localPawn->get_CurrentWeapon() : nullptr;
-    if (currentWeapon) {
-        const int currentID = currentWeapon->get_WeaponID();
-        std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
-        auto it = activeWeaponFireEffects.find(currentID);
-        if (it != activeWeaponFireEffects.end() && it->second > 0)
-            return it->second;
+    if (!localPawn) return 0;
+    Weapon* currentWeapon = localPawn->get_CurrentWeapon();
+    if (!currentWeapon) return 0;
+    int currentID = currentWeapon->get_WeaponID();
+    auto it = activeWeaponFireEffects.find(currentID);
+    if (it != activeWeaponFireEffects.end()) {
+        return it->second;
     }
-    return GuardedEffectGetter(orig_GetCurrentWeaponFireEffect, weapon);
+    return 0;
 }
 
-int (*orig_GetCurrentWeaponBrocast)(Weapon) = nullptr;
+int (*orig_GetCurrentWeaponBrocast)(Weapon);
 int _GetCurrentWeaponBrocast(Weapon weapon) {
     Pawn* localPawn = GamePlay::get_LocalPawn();
-    Weapon* currentWeapon = localPawn ? localPawn->get_CurrentWeapon() : nullptr;
-    if (currentWeapon) {
-        const int currentID = currentWeapon->get_WeaponID();
-        std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
-        auto it = activeWeaponBrocast.find(currentID);
-        if (it != activeWeaponBrocast.end() && it->second > 0)
-            return it->second;
+    if (!localPawn) return 0;
+    Weapon* currentWeapon = localPawn->get_CurrentWeapon();
+    if (!currentWeapon) return 0;
+    int currentID = currentWeapon->get_WeaponID();
+    auto it = activeWeaponBrocast.find(currentID);
+    if (it != activeWeaponBrocast.end()) {
+        return it->second;
     }
-    return GuardedEffectGetter(orig_GetCurrentWeaponBrocast, weapon);
+    return 0;
 }
 
 static bool FindInMapExtra(const std::unordered_map<int, int> &m, void *extraInfo, int &outVal) {
@@ -676,7 +612,7 @@ void LoadKillIcons() {
         const int len = equipArray->getLength();
         const int rank = rankByIconId[id];
         for (int i = 0; i < len; i++) {
-            const int weaponID = ArrayLogicalAt(equipArray, i);
+            const int weaponID = equipArray->m_Items[i];
             if (weaponID <= 0) continue;
             auto best = bestIconForWeapon.find(weaponID);
             if (best == bestIconForWeapon.end()) {
@@ -1250,10 +1186,6 @@ void LoadWeaponSkins() {
     std::vector<void*> weaponConfs, itemInvs, weaponAssets, weaponFires, weaponExtras, killEffects, mythicArmors, mythicSights, itemRes;
     {
         std::lock_guard<std::mutex> lock(g_dataMutex);
-        // The pass builds itemData incrementally and only sets loadskinhack at
-        // the end, so a faulted pass has always pushed partial rows. Clearing
-        // here makes a retry rebuild from zero instead of appending duplicates.
-        itemData.clear();
         weaponConfs = weaponConfInstance;
         itemInvs = itemInventoryInstance;
         weaponAssets = weaponAssetGroupInstance;
@@ -1319,9 +1251,10 @@ void LoadWeaponSkins() {
         if (!Tools::IsPtrValid(mythicsightFields)) continue;
         auto* equipArray = *(Array<int>**)((uintptr_t)sight + 0x38);
         if (equipArray && Tools::IsPtrValid(equipArray) && equipArray->getLength() > 0) {
-            int weaponID = ArrayLogicalLast(equipArray);
+            int lastIndex = equipArray->getLength() - 1;
+            int weaponID = equipArray->m_Items[lastIndex];
             int sightID = *(int*)((uintptr_t)sight + 0x14);
-            if (weaponID > 0) mythicSightByWeapon[weaponID] = sightID;
+            mythicSightByWeapon[weaponID] = sightID;
         }
     }
 
@@ -1331,11 +1264,13 @@ void LoadWeaponSkins() {
         if (!Tools::IsPtrValid(killeffectFields)) continue;
         auto* equipArray = *(Array<int>**)((uintptr_t)kill + 0x90);
         if (equipArray && Tools::IsPtrValid(equipArray) && equipArray->getLength() > 0) {
-            int weaponID = ArrayLogicalLast(equipArray);
+            int lastIndex = equipArray->getLength() - 1;
+            int weaponID = equipArray->m_Items[lastIndex];
 
             auto* realAssetIDs = *(Array<int>**)((uintptr_t)kill + 0x10);
             if (realAssetIDs && Tools::IsPtrValid(realAssetIDs) && realAssetIDs->getLength() > 0) {
-                int lastAssetID = ArrayLogicalLast(realAssetIDs);
+                int lastAssetIndex = realAssetIDs->getLength() - 1;
+                int lastAssetID = realAssetIDs->m_Items[lastAssetIndex];
                 killEffectByWeapon[weaponID] = lastAssetID;
 
                 const int effectItemID = *(int *)((uintptr_t)kill + 0x2C);
@@ -1390,13 +1325,13 @@ void LoadWeaponSkins() {
                 int originalFireID = 0;
 
                 auto itAsset = weaponAssetByID.find(itemIDskin2);
-                if (itAsset != weaponAssetByID.end() && Tools::IsPtrValid(itAsset->second)) {
+                if (itAsset != weaponAssetByID.end()) {
                     void* asset = itAsset->second;
                     int fireEffectID = *(int*)((uintptr_t)asset + 0x40);
                     assetIds = itemIDskin2;
 
                     auto itFire = weaponFireByID.find(fireEffectID);
-                    if (itFire != weaponFireByID.end() && Tools::IsPtrValid(itFire->second)) {
+                    if (itFire != weaponFireByID.end()) {
                         void* fireConf = itFire->second;
                         int fireID = *(int*)((uintptr_t)fireConf + 0x80);
                         int assetIdBulletSmoke = *(int*)((uintptr_t)fireConf + 0x1C);
@@ -1411,7 +1346,7 @@ void LoadWeaponSkins() {
                                     bool found = false;
                                     for (int i = 0; i < 10; i++) {
                                         auto itNext = weaponFireByID.find(nextFireID);
-                                        if (itNext != weaponFireByID.end() && Tools::IsPtrValid(itNext->second)) {
+                                        if (itNext != weaponFireByID.end()) {
                                             void* nextFireConf = itNext->second;
                                             int nextAssetIdBulletSmoke = *(int*)((uintptr_t)nextFireConf + 0x1C);
                                             if (nextAssetIdBulletSmoke != 0) {
@@ -1427,22 +1362,6 @@ void LoadWeaponSkins() {
                                 }
                             }
                         }
-                    }
-                }
-
-                // Fire-effect attachment assets (AttachAssetIdFor1P/3P/Hip1P/Hip3P)
-                // carried by the selected fire-effect config. The reference build
-                // stores these on the skin row and writes them onto the live fire
-                // effect on apply.
-                int attachAsset1P = 0, attachAsset3P = 0, attachAssetHip1P = 0, attachAssetHip3P = 0;
-                if (fireIds > 0) {
-                    auto itAttach = weaponFireByID.find(fireIds);
-                    if (itAttach != weaponFireByID.end() && Tools::IsPtrValid(itAttach->second)) {
-                        void* attachConf = itAttach->second;
-                        attachAsset1P   = *(int*)((uintptr_t)attachConf + 0x64);
-                        attachAsset3P   = *(int*)((uintptr_t)attachConf + 0x68);
-                        attachAssetHip1P = *(int*)((uintptr_t)attachConf + 0x6C);
-                        attachAssetHip3P = *(int*)((uintptr_t)attachConf + 0x70);
                     }
                 }
 
@@ -1540,7 +1459,6 @@ void LoadWeaponSkins() {
                     {confBaseSkin, confColor, confID, confBrocastID, confBluePrintID},
                     {extraOrig, mythicArmor, sightMythic, deadReplay, killEffect},
                     {assetIds, fireIds, fireIds2},
-                    {attachAsset1P, attachAsset3P, attachAssetHip1P, attachAssetHip3P},
                     {xItem1, xItem2, xItem3},
                     {spr1, spr2, spr3, spr4}});
             }
@@ -1777,30 +1695,6 @@ void LoadCamos() {
     }
 }
 
-inline bool HookCtorAt(uintptr_t rva, void *hook, void **orig, const char *name)
-{
-    void *target = (void *)getRealOffset(rva);
-    if (!Tools::IsPtrValid(target))
-    {
-        char note[80];
-        snprintf(note, sizeof(note), "ctor hook unresolved: %s", name);
-        crash_report::Note(note);
-        LOGE("[skin] %s did not resolve at 0x%lx", name, (unsigned long)rva);
-        return false;
-    }
-
-    DobbyHook(target, hook, orig);
-    if (*orig == nullptr)
-    {
-        char note[80];
-        snprintf(note, sizeof(note), "ctor hook failed: %s", name);
-        crash_report::Note(note);
-        LOGE("[skin] %s failed to install at 0x%lx", name, (unsigned long)rva);
-        return false;
-    }
-    return true;
-}
-
 void Skins_Thread()
 {
     while (!m_unity)
@@ -1808,26 +1702,26 @@ void Skins_Thread()
         sleep(1);
     }
 
-    HookCtorAt(Item2InventoryAddress, (void*)my_Item2InventoryCtor, (void**)&orig_Item2InventoryCtor, "Item2Inventory");
-    HookCtorAt(WeaponConfExtraAddress, (void*)my_WeaponConfExtraCtor, (void**)&orig_WeaponConfExtraCtor, "WeaponConfExtra");
-    HookCtorAt(WeaponFireEffectAddress, (void*)my_WeaponFireEffectCtor, (void**)&orig_WeaponFireEffectCtor, "WeaponFireEffect");
-    HookCtorAt(WeaponConfAddress, (void*)my_WeaponConfCtor, (void**)&orig_WeaponConfCtor, "WeaponConf");
-    HookCtorAt(WeaponAssetGroupAddress, (void*)my_WeaponAssetGroupCtor, (void**)&orig_WeaponAssetGroupCtor, "WeaponAssetGroup");
-    HookCtorAt(MythicArmorConfigAddress, (void*)my_MythicArmorCtor, (void**)&orig_MythicArmorCtor, "MythicArmor");
-    HookCtorAt(MythicSightConfigAddress, (void*)my_MythicSightCtor, (void**)&orig_MythicSightCtor, "MythicSight");
-    HookCtorAt(WeaponSkinAddress, (void*)my_WeaponSkinCtor, (void**)&orig_WeaponSkinCtor, "WeaponSkin");
-    HookCtorAt(WeaponCamosAddress, (void*)my_WeaponCamosCtor, (void**)&orig_WeaponCamosCtor, "WeaponCamos");
-    HookCtorAt(KillEffectItemConfConfigAddress, (void*)my_KillEffectItemCtor, (void**)&orig_KillEffectItemCtor, "KillEffectItem");
-    HookCtorAt(SPKillIconItemConfConfigAddress, (void*)my_SPKillIconCtor, (void**)&orig_SPKillIconCtor, "SPKillIcon");
-    HookCtorAt(ItemResourceAddress, (void*)my_ItemResourceCtor, (void**)&orig_ItemResourceCtor, "ItemResource");
-    HookCtorAt(CharacterModelAddress, (void*)my_CharacterModelCtor, (void**)&orig_CharacterModelCtor, "CharacterModel");
-    HookCtorAt(RoleConfAddress, (void*)my_RoleConfCtor, (void**)&orig_RoleConfCtor, "RoleConf");
-    HookCtorAt(RoleSkinAddress, (void*)my_RoleSkinCtor, (void**)&orig_RoleSkinCtor, "RoleSkin");
-    HookCtorAt(RolePackConfAddress, (void*)my_RolePackConfCtor, (void**)&orig_RolePackConfCtor, "RolePackConf");
-    HookCtorAt(BRDeadboxSkinAddress, (void*)my_BRDeadboxSkinCtor, (void**)&orig_BRDeadboxSkinCtor, "BRDeadboxSkin");
-    HookCtorAt(BRDropPlaneSkinAddress, (void*)my_BRDropPlaneSkinCtor, (void**)&orig_BRDropPlaneSkinCtor, "BRDropPlaneSkin");
-    HookCtorAt(VehicleSkinConfAddress, (void*)my_VehicleSkinConfCtor, (void**)&orig_VehicleSkinConfCtor, "VehicleSkinConf");
-    HookCtorAt(VehicleItemConfAddress, (void*)my_VehicleItemConfCtor, (void**)&orig_VehicleItemConfCtor, "VehicleItemConf");
+    DobbyHook((void*)getRealOffset(Item2InventoryAddress), (void*)my_Item2InventoryCtor, (void**)&orig_Item2InventoryCtor);
+    DobbyHook((void*)getRealOffset(WeaponConfExtraAddress), (void*)my_WeaponConfExtraCtor, (void**)&orig_WeaponConfExtraCtor);
+    DobbyHook((void*)getRealOffset(WeaponFireEffectAddress), (void*)my_WeaponFireEffectCtor, (void**)&orig_WeaponFireEffectCtor);
+    DobbyHook((void*)getRealOffset(WeaponConfAddress), (void*)my_WeaponConfCtor, (void**)&orig_WeaponConfCtor);
+    DobbyHook((void*)getRealOffset(WeaponAssetGroupAddress), (void*)my_WeaponAssetGroupCtor, (void**)&orig_WeaponAssetGroupCtor);
+    DobbyHook((void*)getRealOffset(MythicArmorConfigAddress), (void*)my_MythicArmorCtor, (void**)&orig_MythicArmorCtor);
+    DobbyHook((void*)getRealOffset(MythicSightConfigAddress), (void*)my_MythicSightCtor, (void**)&orig_MythicSightCtor);
+    DobbyHook((void*)getRealOffset(WeaponSkinAddress), (void*)my_WeaponSkinCtor, (void**)&orig_WeaponSkinCtor);
+    DobbyHook((void*)getRealOffset(WeaponCamosAddress), (void*)my_WeaponCamosCtor, (void**)&orig_WeaponCamosCtor);
+    DobbyHook((void*)getRealOffset(KillEffectItemConfConfigAddress), (void*)my_KillEffectItemCtor, (void**)&orig_KillEffectItemCtor);
+    DobbyHook((void*)getRealOffset(SPKillIconItemConfConfigAddress), (void*)my_SPKillIconCtor, (void**)&orig_SPKillIconCtor);
+    DobbyHook((void*)getRealOffset(ItemResourceAddress), (void*)my_ItemResourceCtor, (void**)&orig_ItemResourceCtor);
+    DobbyHook((void*)getRealOffset(CharacterModelAddress), (void*)my_CharacterModelCtor, (void**)&orig_CharacterModelCtor);
+    DobbyHook((void*)getRealOffset(RoleConfAddress), (void*)my_RoleConfCtor, (void**)&orig_RoleConfCtor);
+    DobbyHook((void*)getRealOffset(RoleSkinAddress), (void*)my_RoleSkinCtor, (void**)&orig_RoleSkinCtor);
+    DobbyHook((void*)getRealOffset(RolePackConfAddress), (void*)my_RolePackConfCtor, (void**)&orig_RolePackConfCtor);
+    DobbyHook((void*)getRealOffset(BRDeadboxSkinAddress), (void*)my_BRDeadboxSkinCtor, (void**)&orig_BRDeadboxSkinCtor);
+    DobbyHook((void*)getRealOffset(BRDropPlaneSkinAddress), (void*)my_BRDropPlaneSkinCtor, (void**)&orig_BRDropPlaneSkinCtor);
+    DobbyHook((void*)getRealOffset(VehicleSkinConfAddress), (void*)my_VehicleSkinConfCtor, (void**)&orig_VehicleSkinConfCtor);
+    DobbyHook((void*)getRealOffset(VehicleItemConfAddress), (void*)my_VehicleItemConfCtor, (void**)&orig_VehicleItemConfCtor);
 
     while (!Tools::GetBaseAddress("libRoosterNN.so"))
     {
@@ -1890,17 +1784,12 @@ void Skins_Thread()
 
     while (true)
     {
-        // Boot opens every game config before the menu ever draws, and the
-        // loaders deref thousands of collected pointers each tick. A stale or
-        // half-initialized conf pointer faulted in one of those derefs and the
-        // process died before the menu appeared. Guard each pass: on a fault
-        // the pass is skipped, noted, and retried on the next tick.
-        if (!fault_guard::Run(LoadCharacterSkins)) crash_report::Note("skin pass fault: characters");
-        if (!fault_guard::Run(LoadWeaponSkins))    crash_report::Note("skin pass fault: weapons");
-        if (!fault_guard::Run(LoadPlaneSkins))     crash_report::Note("skin pass fault: planes");
-        if (!fault_guard::Run(LoadSnowboardSkins)) crash_report::Note("skin pass fault: snowboards");
-        if (!fault_guard::Run(LoadCamos))          crash_report::Note("skin pass fault: camos");
-        if (!fault_guard::Run(LoadKillIcons))      crash_report::Note("skin pass fault: kill icons");
+        LoadCharacterSkins();
+        LoadWeaponSkins();
+        LoadPlaneSkins();
+        LoadSnowboardSkins();
+        LoadCamos();
+        LoadKillIcons();
         g_killDecorationDiag.killEffectWeapons = (int)killEffectByWeapon.size();
         g_killDecorationDiag.killEffectItemIDs = (int)killEffectItemByAssetId.size();
 

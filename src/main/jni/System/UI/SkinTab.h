@@ -18,7 +18,6 @@
 #include "../Skin/Fields.h"
 #include "../Skin/Thread.h"
 #include "../Skin/Camo.h"
-#include "../System/Hooks/MythicAttachmentSystem.h"
 
 extern float menu[4];
 extern char searchQuery[256];
@@ -702,46 +701,6 @@ case 3:
                     mythic_attachment_system::BuildMythicAttach(
                         skinID, baseID,
                         DetectSkinTier(getitem.itemName) == SkinTier::Mythic));
-                // The selected blueprint owns three of the effects the game asks for
-                // per shot, not just the kill effect. These tables are the only source
-                // the current-weapon getters read, so leaving them empty meant a
-                // selected skin could never change the tracer or the broadcast.
-                {
-                    const int selectedFire = getitem.WeaponAsset[1];
-                    const int broadcast = getitem.WeaponConf[3];
-                    std::lock_guard<std::mutex> lock(g_killDecoMapMutex);
-                    for (int key : effectKeys)
-                    {
-                        if (selectedFire > 0)
-                        {
-                            activeWeaponFireEffects[key] = selectedFire;
-                            activeBulletTrackEffects[key] = selectedFire;
-                        }
-                        if (broadcast > 0)
-                            activeWeaponBrocast[key] = broadcast;
-                    }
-                }
-
-                // AttachAssetIdFor1P/3P/Hip1P/Hip3P carried by the selected fire
-                // effect, written onto the live fire-effect entries this weapon uses.
-                if (getitem.WeaponAttach[0] != 0 || getitem.WeaponAttach[1] != 0 ||
-                        getitem.WeaponAttach[2] != 0 || getitem.WeaponAttach[3] != 0)
-                {
-                    for (auto fireConf : fireEffects)
-                    {
-                        if (!fireConf || !Tools::IsPtrValid(fireConf))
-                            continue;
-                        const int fireConfID = *(int *)((uintptr_t)fireConf + 0x80);
-                        if (fireConfID != getitem.WeaponAsset[1] &&
-                                fireConfID != getitem.WeaponAsset[2])
-                            continue;
-                        *(int *)((uintptr_t)fireConf + 0x64) = getitem.WeaponAttach[0];
-                        *(int *)((uintptr_t)fireConf + 0x68) = getitem.WeaponAttach[1];
-                        *(int *)((uintptr_t)fireConf + 0x6C) = getitem.WeaponAttach[2];
-                        *(int *)((uintptr_t)fireConf + 0x70) = getitem.WeaponAttach[3];
-                    }
-                }
-
                 if (getitem.WeaponExtra[4] > 0)
                 {
                     const int effectAssetID = getitem.WeaponExtra[4];
@@ -876,16 +835,13 @@ case 3:
                         {
                             *(float *)((uintptr_t)fireConf + 0x84) = 0.1f;
                             *(float *)((uintptr_t)fireConf + 0x88) = 0.1f;
-                            // Logical item i is m_Items[i + 1] in this wrapper (see
-                            // Skin/Thread.h), so the zero fill has to skip slot 0 or it
-                            // overwrites the array length and misses the last entry.
                             auto *killCountArray = *(Array<int> **)((uintptr_t)fireConf + 0x118);
                             if (killCountArray && Tools::IsPtrValid(killCountArray) &&
                                     killCountArray->getLength() > 0 && killCountArray->getLength() < 512)
                             {
                                 for (int i = 0; i < killCountArray->getLength(); ++i)
                                 {
-                                    killCountArray->m_Items[i + 1] = 0;
+                                    killCountArray->m_Items[i] = 0;
                                 }
                             }
                             auto *killCountArrayKing = *(Array<int> **)((uintptr_t)fireConf + 0x120);
@@ -894,7 +850,7 @@ case 3:
                             {
                                 for (int i = 0; i < killCountArrayKing->getLength(); ++i)
                                 {
-                                    killCountArrayKing->m_Items[i + 1] = 0;
+                                    killCountArrayKing->m_Items[i] = 0;
                                 }
                             }
                             break;

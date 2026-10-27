@@ -102,7 +102,7 @@ int main()
 
     ui_loading::Start();
     Check("the loader is active", ui_loading::IsActive());
-    Check("the loading duration is seven seconds", ui_loading::g_Duration == 7.0f);
+    Check("the loading duration is three seconds", ui_loading::g_Duration == 3.0f);
 
     const MenuWindow win = ComputeMenuWindow(io.DisplaySize);
     std::vector<Cmd> cmds;
@@ -190,22 +190,11 @@ int main()
           win.pos.y + win.size.y <= io.DisplaySize.y + 0.5f);
 
     ui_loading::Start();
-    for (int i = 0; i < 419; ++i) Frame(kStill);
-    Check("the loader remains active before seven seconds", ui_loading::IsActive());
+    for (int i = 0; i < 179; ++i) Frame(kStill);
+    Check("the loader remains active before three seconds", ui_loading::IsActive());
     Frame(kStill);
     Frame(kStill);
-    Check("the loader finishes at seven seconds within one frame", !ui_loading::IsActive());
-
-    ui_loading::Start();
-    const ImVec2 skipPos(win.pos.x + win.size.x - 124.0f, win.pos.y + 22.0f);
-    io.MousePos = ImVec2(skipPos.x + 50.0f, skipPos.y + 21.0f);
-    io.MouseDown[0] = false;
-    Frame(nullptr);
-    io.MouseDown[0] = true;
-    Frame(nullptr);
-    io.MouseDown[0] = false;
-    Frame(nullptr);
-    Check("tapping Skip dismisses the loader before seven seconds", !ui_loading::IsActive());
+    Check("the loader finishes at three seconds within one frame", !ui_loading::IsActive());
 
     ImGui::DestroyContext();
 

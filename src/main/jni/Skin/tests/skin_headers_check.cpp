@@ -12,7 +12,6 @@
 #include "Includes/obfuscate.h"
 #include "Includes/Utils.h"
 #include "IL2CppSDKGenerator/BasicStructs/Vector3.hpp"
-#include "IL2CppSDKGenerator/BasicStructs/Vector2.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Il2Cpp.h"
 #include "IL2CppSDKGenerator/IL2Cpp/Tools.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
@@ -21,9 +20,9 @@
 #include <mutex>
 #include "Hacks/StructGame/StructGame.h"
 
-// SkinTab.h now includes MythicAttachmentSystem.h, which needs the project's real
-// sConfig. The old local stub would collide with it.
-#include "Hacks/Feature/Init_Hacks.h"
+struct Skin_ExtraMenuStub { bool CamoTest; int CamoTestMode; };
+struct Skin_ConfigStub { Skin_ExtraMenuStub ExtraMenu; };
+static Skin_ConfigStub Config;
 
 float menu[4];
 bool showKeyboard = false;

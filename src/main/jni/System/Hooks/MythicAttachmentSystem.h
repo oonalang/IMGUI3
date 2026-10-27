@@ -21,24 +21,22 @@ inline bool MythicAttachmentsEnabled()
            (Config.ExtraMenu.Attachment || Config.ExtraMenu.MythicAttachments);
 }
 
-// Every definition here is inline so the header stays safe to include from
-// more than one translation unit; the module state must remain single-instance.
-inline std::unordered_map<int, int> activeWeaponSkins;
-inline std::unordered_map<int, std::array<int, 31>> activeMythicAttachments;
-inline std::array<int, 31> activeMythicAttachFallback{};
-inline std::unordered_map<uint, uint> runtimeAttachMythicById;
-inline std::unordered_map<uint64_t, int> runtimeAttachResolveCache;
-inline std::unordered_map<uint64_t, bool> loadoutPreviewTiles;
-inline std::unordered_map<uint, int> attachmentTypeCache;
-inline std::unordered_map<uint64_t, void*> weaponPartConfCache;
-inline size_t attachTypeIndexed = 0;
-inline size_t partConfIndexed = 0;
-inline uint runtimeAttachWeaponId = 0;
-inline uint runtimeAttachSkinId = 0;
+std::unordered_map<int, int> activeWeaponSkins;
+std::unordered_map<int, std::array<int, 31>> activeMythicAttachments;
+std::array<int, 31> activeMythicAttachFallback{};
+std::unordered_map<uint, uint> runtimeAttachMythicById;
+std::unordered_map<uint64_t, int> runtimeAttachResolveCache;
+std::unordered_map<uint64_t, bool> loadoutPreviewTiles;
+std::unordered_map<uint, int> attachmentTypeCache;
+std::unordered_map<uint64_t, void*> weaponPartConfCache;
+size_t attachTypeIndexed = 0;
+size_t partConfIndexed = 0;
+uint runtimeAttachWeaponId = 0;
+uint runtimeAttachSkinId = 0;
 
-inline std::vector<void*> weaponPartAssetInstance;
-inline std::vector<void*> weaponSkinConfigInstance;
-inline std::vector<void*> attachmentConfInstance;
+std::vector<void*> weaponPartAssetInstance;
+std::vector<void*> weaponSkinConfigInstance;
+std::vector<void*> attachmentConfInstance;
 inline std::unordered_set<void*> weaponPartAssetSeen;
 inline std::unordered_set<void*> attachmentConfSeen;
 inline std::mutex mythicCollectorMutex;
@@ -60,21 +58,21 @@ inline std::vector<void*> SnapshotWeaponPartAssets() {
     return weaponPartAssetInstance;
 }
 
-inline uintptr_t WeaponPartAssetAddress = 0xAF85628;
-inline uintptr_t WeaponSkinAddress = 0xAF8B4D4;
-inline uintptr_t AttachmentConfAddress = 0x6FE9168;
-inline uintptr_t AttachmentGroupNewCtorAddress = 0x8719E4C;
-inline uintptr_t AttachmentGroupNewItemCtorAddress = 0x871A270;
-inline uintptr_t AttachmentGroupNewGetColorIdAddress = 0x871A5D8;
-inline uintptr_t BRWeaponAttachItemDataCtorAddress = 0x99811C0;
-inline uintptr_t AttachItemCtorAddress = 0x8449500;
-inline uintptr_t AttachItemSetDataAddress = 0x8449544;
-inline uintptr_t AttachItemSetMythicSkinIdAddress = 0x844988C;
-inline uintptr_t AttachItemCopyEquippedAddress = 0x84498F0;
-inline uintptr_t AttachItemGetModelAttachIdAddress = 0x844A18C;
-inline uintptr_t AttachSkinDataCtorAddress = 0x75D7DE4;
-inline uintptr_t LoadoutAttachItemSetDataAddress = 0xB83F1C0;
-inline uintptr_t WeaponInitPartAddress = 0x517C4D0;
+uintptr_t WeaponPartAssetAddress = 0xAF85628;
+uintptr_t WeaponSkinAddress = 0xAF8B4D4;
+uintptr_t AttachmentConfAddress = 0x6FE9168;
+uintptr_t AttachmentGroupNewCtorAddress = 0x8719E4C;
+uintptr_t AttachmentGroupNewItemCtorAddress = 0x871A270;
+uintptr_t AttachmentGroupNewGetColorIdAddress = 0x871A5D8;
+uintptr_t BRWeaponAttachItemDataCtorAddress = 0x99811C0;
+uintptr_t AttachItemCtorAddress = 0x8449500;
+uintptr_t AttachItemSetDataAddress = 0x8449544;
+uintptr_t AttachItemSetMythicSkinIdAddress = 0x844988C;
+uintptr_t AttachItemCopyEquippedAddress = 0x84498F0;
+uintptr_t AttachItemGetModelAttachIdAddress = 0x844A18C;
+uintptr_t AttachSkinDataCtorAddress = 0x75D7DE4;
+uintptr_t LoadoutAttachItemSetDataAddress = 0xB83F1C0;
+uintptr_t WeaponInitPartAddress = 0x517C4D0;
 
 inline void (*orig_AttachmentGroupNew_Ctor)(
     void* instance,

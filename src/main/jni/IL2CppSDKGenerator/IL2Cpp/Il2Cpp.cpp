@@ -4,7 +4,6 @@
 #include <unistd.h>
 #include <mutex>
 #include "Il2Cpp.h"
-#include "Utf16Text.h"
 #include "Fake_dlfcn.h"
 #include "Tools.h"
 //#include "Includes/obfuscate.h"
@@ -56,7 +55,9 @@ UTF32 surrogate_to_utf32(UTF16 high, UTF16 low) {
 }
 
 const char* utf16_to_utf8(const UTF16* source, size_t len) {
-    return il2cpp_text::CString(source, len);
+    std::u16string s(source, source + len);
+    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
+    return convert.to_bytes(s).c_str();
 }
 
 const wchar_t* utf16_to_utf32(const UTF16* source, size_t len) {
@@ -80,8 +81,7 @@ const wchar_t* utf16_to_utf32(const UTF16* source, size_t len) {
 }
 // =========================================================================== //
 const char* Il2CppString::CString() {
-    if (this->length < 0) return "";
-    return utf16_to_utf8(&this->start_char, static_cast<size_t>(this->length));
+    return utf16_to_utf8(&this->start_char, this->length);
 }
 
 const wchar_t* Il2CppString::WCString() {

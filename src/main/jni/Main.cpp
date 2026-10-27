@@ -9,8 +9,6 @@
 #include "IL2CppSDKGenerator/IL2Cpp/Call_IL2Cpp.h"
 #include "Hacks/Hacks.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
-#include "System/Core/CrashReporter.h"
-#include "System/Core/FaultGuard.h"
 #include "AstralPrtctn/AntiHook.h"
 #include "foxcheats/include/ScanEngine.hpp"
 #include "Includes/Jni_Stuff.h"
@@ -859,7 +857,6 @@ namespace font {
 
 static int g_GlWidth, g_GlHeight;
 static bool g_App = false;
-static bool g_overlayDisabled = false;
 static std::mutex g_imguiInitMutex;
 static EGLDisplay g_imguiDisplay = EGL_NO_DISPLAY;
 static EGLContext g_imguiContext = EGL_NO_CONTEXT;
@@ -911,8 +908,6 @@ static std::string err;
 static std::string storedKey = "";
 static char s[256];
 static bool g_LoginTextLoaded = false;
-static bool g_RememberLoginKey = true;
-static bool g_RememberLoginKeyRead = false;
 struct LoginRequest {
     std::atomic<bool> finished{false};
     bool inFlight = false;
@@ -1027,114 +1022,86 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     g_GlWidth = qw; g_GlHeight = qh;
 
     if (!g_App) {
-        if (g_overlayDisabled) return old_eglSwapBuffers(dpy, surface);
+        ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO();
+        io.IniFilename = NULL; io.LogFilename = NULL;
+        io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+        io.MouseDoubleClickTime = 0.3f; io.MouseDragThreshold = 2.f;
+        g_imguiBackendReady = ImGui_ImplOpenGL3_Init("#version 300 es");
+        if (!g_imguiBackendReady) { ImGui::DestroyContext(); return old_eglSwapBuffers(dpy, surface); }
+        g_imguiDisplay = dpy; g_imguiContext = currentContext; g_imguiSurface = surface;
 
-        const bool initRan = fault_guard::Run([&] {
-            ImGui::CreateContext();
-            ImGuiIO& io = ImGui::GetIO();
-            io.IniFilename = NULL; io.LogFilename = NULL;
-            io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-            io.MouseDoubleClickTime = 0.3f; io.MouseDragThreshold = 2.f;
-            g_imguiBackendReady = ImGui_ImplOpenGL3_Init("#version 300 es");
-            if (!g_imguiBackendReady) { ImGui::DestroyContext(); return; }
-            g_imguiDisplay = dpy; g_imguiContext = currentContext; g_imguiSurface = surface;
+        ImFontConfig ilc; ilc.MergeMode = false; ilc.PixelSnapH = true; ilc.FontDataOwnedByAtlas = false;
+        font::icomoon_logo = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 20.f, &ilc);
 
-            ImFontConfig ilc; ilc.MergeMode = false; ilc.PixelSnapH = true; ilc.FontDataOwnedByAtlas = false;
-            font::icomoon_logo = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 20.f, &ilc);
+        ImFontConfig ic; ic.MergeMode = false; ic.PixelSnapH = true; ic.FontDataOwnedByAtlas = false;
+        font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)inter_semibold, sizeof(inter_semibold), 16.f, &ic);
 
-            ImFontConfig ic; ic.MergeMode = false; ic.PixelSnapH = true; ic.FontDataOwnedByAtlas = false;
-            font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)inter_semibold, sizeof(inter_semibold), 16.f, &ic);
+        ImFontConfig pc; pc.MergeMode = false; pc.PixelSnapH = true; pc.FontDataOwnedByAtlas = false;
+        font::icomoon_page = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 18.f, &pc);
 
-            ImFontConfig pc; pc.MergeMode = false; pc.PixelSnapH = true; pc.FontDataOwnedByAtlas = false;
-            font::icomoon_page = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 18.f, &pc);
+        static const ImWchar icons_ranges[] = { 0xe000, 0xf8ff, 0 };
+        ImFontConfig iconsCfg; iconsCfg.MergeMode = true; iconsCfg.PixelSnapH = true;
+        iconsCfg.OversampleH = 2.5f; iconsCfg.OversampleV = 2.5f; iconsCfg.FontDataOwnedByAtlas = false;
+        F107 = io.Fonts->AddFontFromMemoryCompressedTTF((void*)font_awesome_data1, (int)font_awesome_size1, 25.0f, &iconsCfg, icons_ranges);
+        F50 = io.Fonts->AddFontFromMemoryTTF((void *)F50_data, F50_size, 30.0f, NULL, io.Fonts->GetGlyphRangesDefault());
+        if (!F107) F107 = font::inter_semibold;
+        if (font::inter_semibold) io.FontDefault = font::inter_semibold;
 
-            static const ImWchar icons_ranges[] = { 0xe000, 0xf8ff, 0 };
-            ImFontConfig iconsCfg; iconsCfg.MergeMode = true; iconsCfg.PixelSnapH = true;
-            iconsCfg.OversampleH = 2.5f; iconsCfg.OversampleV = 2.5f; iconsCfg.FontDataOwnedByAtlas = false;
-            F107 = io.Fonts->AddFontFromMemoryCompressedTTF((void*)font_awesome_data1, (int)font_awesome_size1, 25.0f, &iconsCfg, icons_ranges);
-            F50 = io.Fonts->AddFontFromMemoryTTF((void *)F50_data, F50_size, 30.0f, NULL, io.Fonts->GetGlyphRangesDefault());
-            if (!F107) F107 = font::inter_semibold;
-            if (font::inter_semibold) io.FontDefault = font::inter_semibold;
+        login_screen::LoadFonts(io);
+        raspody::LoadFonts();
+        raspody::Style();
+        io.Fonts->Build();
+        ImGui_ImplOpenGL3_CreateFontsTexture();
 
-            login_screen::LoadFonts(io);
-            raspody::LoadFonts();
-            raspody::Style();
-            io.Fonts->Build();
-            ImGui_ImplOpenGL3_CreateFontsTexture();
+        memset(&Config, 0, sizeof(sConfig));
+        Config.sColorsESPPLAYER.LinePLAYER = CREATE_COLOR(255, 0, 0, 255);
+        Config.sColorsESPPLAYER.BoxPLAYER = CREATE_COLOR(255, 0, 0, 255);
+        Config.sColorsESPPLAYER.NamePLAYER = CREATE_COLOR(255, 0, 0, 255);
+        Config.sColorsESPPLAYER.DistancePLAYER = CREATE_COLOR(255, 0, 0, 255);
+        Config.sColorsESPPLAYER.HealthPLAYER = CREATE_COLOR(255, 0, 0, 255);
+        Config.sColorsESPPLAYER.SkeletonPLAYER = CREATE_COLOR(255, 0, 0, 255);
+        Config.sColorsESPBOT.LineBOT = CREATE_COLOR(0, 255, 0, 180);
+        Config.sColorsESPBOT.BoxBOT = CREATE_COLOR(0, 255, 0, 180);
+        Config.sColorsESPBOT.NameBOT = CREATE_COLOR(0, 255, 0, 180);
+        Config.sColorsESPBOT.HealthBOT = CREATE_COLOR(0, 255, 0, 180);
+        Config.sColorsESPBOT.DistanceBOT = CREATE_COLOR(0, 255, 0, 180);
+        Config.sColorsESPBOT.SkeletonBOT = CREATE_COLOR(0, 255, 0, 180);
+        Config.sColorsESPOTHERS.PovOTHERS = CREATE_COLOR(225, 0, 0, 180);
+        Config.ExtraMenu.NoGravityScale = 1.0f;
+        Config.ExtraMenu.StretchAspect = 1.7778f;
 
-            memset(&Config, 0, sizeof(sConfig));
-            Config.sColorsESPPLAYER.LinePLAYER = CREATE_COLOR(255, 0, 0, 255);
-            Config.sColorsESPPLAYER.BoxPLAYER = CREATE_COLOR(255, 0, 0, 255);
-            Config.sColorsESPPLAYER.NamePLAYER = CREATE_COLOR(255, 0, 0, 255);
-            Config.sColorsESPPLAYER.DistancePLAYER = CREATE_COLOR(255, 0, 0, 255);
-            Config.sColorsESPPLAYER.HealthPLAYER = CREATE_COLOR(255, 0, 0, 255);
-            Config.sColorsESPPLAYER.SkeletonPLAYER = CREATE_COLOR(255, 0, 0, 255);
-            Config.sColorsESPBOT.LineBOT = CREATE_COLOR(0, 255, 0, 180);
-            Config.sColorsESPBOT.BoxBOT = CREATE_COLOR(0, 255, 0, 180);
-            Config.sColorsESPBOT.NameBOT = CREATE_COLOR(0, 255, 0, 180);
-            Config.sColorsESPBOT.HealthBOT = CREATE_COLOR(0, 255, 0, 180);
-            Config.sColorsESPBOT.DistanceBOT = CREATE_COLOR(0, 255, 0, 180);
-            Config.sColorsESPBOT.SkeletonBOT = CREATE_COLOR(0, 255, 0, 180);
-            Config.sColorsESPOTHERS.PovOTHERS = CREATE_COLOR(225, 0, 0, 180);
-            Config.ExtraMenu.NoGravityScale = 1.0f;
-            Config.ExtraMenu.StretchAspect = 1.7778f;
+        Config.ExtraMenu.Attachment = true;
+        Config.Crosshair.Enabled = true;
+        Config.Crosshair.Color[0] = 1.0f;
+        Config.Crosshair.Color[1] = 1.0f;
+        Config.Crosshair.Color[2] = 1.0f;
+        Config.Crosshair.Color[3] = 0.95f;
+        Config.Crosshair.Size = 6.0f;
+        Config.NewFeaturesMenu.TriggerbotRadius = 40;
+        Config.NewFeaturesMenu.TriggerbotDotRay = true;
+        Config.Aim.FpsLevelUltra1 = 240.0f;
+        Config.Aim.AimAssistSize = 0.0f;
+        Config.Aim.Cross = 45.0f;
+        Config.Aim.Target = EAimTarget::Heads;
+        Config.Aim.Trigger = EAimTrigger::None;
+        Config.Aim.By = EAim::Distance;
+        Config.Bline = 2.0f;
+        Config.Pline = 2.0f;
 
-            Config.ExtraMenu.Attachment = true;
-            CrosshairApplyDefaults();
-            Config.NewFeaturesMenu.TriggerbotRadius = 40;
-            Config.NewFeaturesMenu.TriggerbotDotRay = true;
-            Config.Aim.FpsLevelUltra1 = 240.0f;
-            Config.Aim.AimAssistSize = 0.0f;
-            Config.Aim.Cross = 45.0f;
-            Config.Aim.Target = EAimTarget::Heads;
-            Config.Aim.Trigger = EAimTrigger::None;
-            Config.Aim.By = EAim::Distance;
-            Config.Bline = 2.0f;
-            Config.Pline = 2.0f;
-
-            // The memset above wiped these four as well, and the re-applicable
-            // defaults only listed a handful of settings, so they came out of
-            // it as zero: Long Execute disabled with a range of 0.0, a
-            // triggerbot delay of 0, and 0.0 outfit and vehicle scale where the
-            // slider is meant to start at 1.0. They are reloaded from the same
-            // declarations the menu uses, so there is one value for each.
-            Config.ExtraMenu.LongExecuteRange = kDefaultLongExecuteRange;
-            Config.ExtraMenu.OutfitScale      = kDefaultOutfitScale;
-            Config.ExtraMenu.VehicleScale     = kDefaultVehicleScale;
-            Config.NewFeaturesMenu.TriggerbotDelay = kDefaultTriggerbotDelay;
-
-            // Resolve where this install can actually store files before
-            // anything reads or writes them: the game's own external directory
-            // on a plain install, the container's mount of it under GSpace or
-            // ParallelSpace otherwise, and the app's private directory if
-            // neither is usable. The profiles, the autoload pointer and the
-            // feedback log all follow this root.
-            androidFilesDir = GetDataRoot() + "/";
-            LOGI("[data] profile dir: %sconfigs/", androidFilesDir.c_str());
-
-            const std::string startupProfile = GetAutoLoadProfile();
-            if (!startupProfile.empty())
-            {
-                if (LoadConfiguration(startupProfile))
-                {
-                    raspody::ui.activeProfile = startupProfile;
-                    raspody::ui.configStatus = "Auto-loaded " + startupProfile + ".json";
-                }
-                else
-                {
-                    raspody::ui.configStatus = "Failed to auto-load " + startupProfile + ".json";
-                }
-            }
-        });
-
-        if (!initRan)
+        const std::string startupProfile = GetAutoLoadProfile();
+        if (!startupProfile.empty())
         {
-            crash_report::Note("overlay: first-frame init faulted");
-            LOGE("[overlay] first-frame init faulted; the menu stays off this session");
-            g_overlayDisabled = true;
-            return old_eglSwapBuffers(dpy, surface);
+            if (LoadConfiguration(startupProfile))
+            {
+                raspody::ui.activeProfile = startupProfile;
+                raspody::ui.configStatus = "Auto-loaded " + startupProfile + ".json";
+            }
+            else
+            {
+                raspody::ui.configStatus = "Failed to auto-load " + startupProfile + ".json";
+            }
         }
-        if (!g_imguiBackendReady) return old_eglSwapBuffers(dpy, surface);
         g_App = true;
     }
 
@@ -1148,7 +1115,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
     DrawESP(ImGui::GetBackgroundDrawList(), screenWidth, screenHeight, get_dpi());
 
-    DrawCrosshair(ImGui::GetBackgroundDrawList(), screenWidth, screenHeight);
+    DrawDotCrosshair(ImGui::GetBackgroundDrawList(), screenWidth, screenHeight);
 
     KillDecoration_ApplyLocalInventoryInfo();
     floating_info::Render(draw, screenWidth, screenHeight);
@@ -1230,14 +1197,8 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 
     if (isMenuVisible && !windowCollapsed) {
         if (!g_RuntimeClearDisplayInit) { Config.ExtraMenu.ClearDisplay = true; g_RuntimeClearDisplayInit = true; }
-        if (!g_RememberLoginKeyRead && VM != nullptr) {
-            g_RememberLoginKey = LoadLoginRememberFromFile();
-            g_RememberLoginKeyRead = true;
-        }
         if (!g_LoginTextLoaded && VM != nullptr) {
-            if (!g_RememberLoginKey) {
-                g_LoginTextLoaded = true;   // nothing was kept, so nothing to fill in
-            } else if (LoadTextFromFile() && logintext[0] != '\0') {
+            if (LoadTextFromFile() && logintext[0] != '\0') {
                 strncpy(s, logintext, sizeof(s) - 1);
                 s[sizeof(s) - 1] = '\0';
                 g_LoginTextLoaded = true;
@@ -1283,6 +1244,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
                 ImGuiWindowFlags_NoMove)) {
                 static bool revealKey = false;
+                static bool rememberKey = true;
 
                 if (g_LoginRequest.inFlight &&
                     g_LoginRequest.finished.load(std::memory_order_acquire)) {
@@ -1290,16 +1252,11 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     if (g_LoginRequest.response == "OK") {
                         strncpy(logintext, g_LoginRequest.requestedKey.c_str(), sizeof(logintext) - 1);
                         logintext[sizeof(logintext) - 1] = '\0';
-                        if (g_RememberLoginKey) {
-                            SaveLoginTextToFile(logintext);
-                        } else {
-                            ForgetLoginTextFile();
-                        }
+                        SaveLoginTextToFile(logintext);
                         g_LoginTextLoaded = true;
                         err.clear();
                         g_LoginButton = login_screen::ButtonState::Success;
                         g_LoginSuccessAt = ImGui::GetTime();
-                        crash_report::Note("login: accepted, loading the menu");
                         ui_media::SetVideo(ui_media::VideoKind::Loading);
                     } else {
                         err = g_LoginRequest.response;
@@ -1310,7 +1267,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     const double elapsed = ImGui::GetTime() - g_LoginSuccessAt;
 
                     if (elapsed >= 0.85 && (ui_media::VideoReady() || elapsed >= 3.0))
-                        ui_loading::Start();
+                        ui_loading::Start(3.0f);
                 }
 
                 login_screen::Params lp;
@@ -1320,7 +1277,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 lp.key = s;
                 lp.keySize = (int)sizeof(s);
                 lp.reveal = &revealKey;
-                lp.remember = &g_RememberLoginKey;
+                lp.remember = &rememberKey;
                 lp.error = err.c_str();
 
                 const bool liveArt = g_LoginButton != login_screen::ButtonState::Success &&
@@ -1330,13 +1287,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                 lp.artH = liveArt ? ui_media::g_videoH : loginArtH;
                 lp.buttonState = g_LoginButton;
 
-                const bool rememberWas = g_RememberLoginKey;
                 const login_screen::Result loginUi = login_screen::Render(lp);
-
-                if (rememberWas != g_RememberLoginKey) {
-                    SaveLoginRememberToFile(g_RememberLoginKey);
-                    if (!g_RememberLoginKey) ForgetLoginTextFile();
-                }
 
                 if (loginUi.close) {
                     windowCollapsed = true;
@@ -1491,43 +1442,13 @@ size_t hook_strlen(const char *thread) {
     return strlen(thread);
 }
 
-void Init_Thread2() {
-    crash_report::Note("init: native protection setup");
-    InstallStealth();
-    InitializeProtection();
-}
+void Init_Thread2() { InstallStealth(); InitializeProtection(); }
 void Init_SwapHook() {}
 
 void Init_Thread() {
-    crash_report::OpenLog();
-
-    while (!m_unity.load(std::memory_order_acquire)) {
-        const uintptr_t base = Tools::GetBaseAddress("libunity.so");
-        if (base) {
-            m_unity.store(base, std::memory_order_release);
-            break;
-        }
-        sleep(1);
-    }
-    LOGI("libunity.so: %p", reinterpret_cast<void*>(m_unity.load(std::memory_order_acquire)));
-    crash_report::Note("init: libunity.so found");
-
-    crash_report::AddModule("libunity.so", m_unity, Tools::GetEndAddress("libunity.so"));
-    crash_report::AddModule("libV2.so",
-                            Tools::GetBaseAddress("libV2.so"),
-                            Tools::GetEndAddress("libV2.so"));
-    crash_report::AddModule("libil2cpp.so",
-                            Tools::GetBaseAddress("libil2cpp.so"),
-                            Tools::GetEndAddress("libil2cpp.so"));
-    crash_report::AddModule("libanogs.so",
-                            Tools::GetBaseAddress("libanogs.so"),
-                            Tools::GetEndAddress("libanogs.so"));
-    crash_report::AddModule("libc.so",
-                            Tools::GetBaseAddress("libc.so"),
-                            Tools::GetEndAddress("libc.so"));
-
+    while (!m_unity) { m_unity = Tools::GetBaseAddress("libunity.so"); sleep(1); }
+    LOGI("libunity.so: %p", m_unity);
     UpdateAllOffset();
-    crash_report::Note("init: offsets updated");
 
     Patches.A1 = MemoryPatch::createWithHex("libunity.so", 0x8D781DC, "1F 20 03 D5 E0 03 13 AA");
     Patches.NoCrouch = MemoryPatch::createWithHex("libunity.so", 0x511F50C, "00 00 80 D2 C0 03 5F D6");
@@ -1573,23 +1494,17 @@ void Init_Thread() {
     }
 
     NewFeatures::InstallHooks();
-    crash_report::Note("init: triggerbot hooks installed");
 
     InstallBRClassEspConfigHook();
     InitializeAllHooks();
-    crash_report::Note("init: game hooks installed");
 
-    {
-        crash_report::Note("init: native protection setup");
-        InitializeProtection();
-    }
+    InitializeProtection();
 
     auto swapBuffers = ((uintptr_t)DobbySymbolResolver(OBFUSCATE("libunity.so"), OBFUSCATE("eglSwapBuffers")));
     KittyMemory::ProtectAddr((void *)swapBuffers, sizeof(swapBuffers), PROT_READ | PROT_WRITE | PROT_EXEC);
     xhook_enable_debug(0);
     xhook_register(OBFUSCATE(".*libunity\\.so$"), OBFUSCATE("eglSwapBuffers"), (void*)hook_eglSwapBuffers, (void**)&old_eglSwapBuffers);
     if (xhook_refresh(0) == 0) xhook_clear();
-    crash_report::Note("init: swap hook registered");
 }
 
 __attribute__((constructor))
@@ -1599,7 +1514,6 @@ __attribute__((constructor))
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     jvm = vm; VM = vm;
     ZEL_SetVM(vm);
-    crash_report::Install();
     std::thread(Init_Thread).detach();
     std::thread(Init_Thread2).detach();
     std::thread(Skins_Thread).detach();

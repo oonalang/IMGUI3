@@ -159,21 +159,6 @@ namespace NewFeatures
         return Tools::IsPtrValid(cached);
     }
 
-    constexpr size_t AF_OBJ_KLASS = 0x0;
-
-    inline void *A_FireObjectKind(void *obj)
-    {
-        if (!Tools::IsPtrValid(obj)) return nullptr;
-        void *klass = *(void **)((uintptr_t)obj + AF_OBJ_KLASS);
-        return Tools::IsPtrValid(klass) ? klass : nullptr;
-    }
-
-    inline bool A_FireSameObjectKind(void *obj, void *kind)
-    {
-        if (kind == nullptr) return true;
-        return A_FireObjectKind(obj) == kind;
-    }
-
     inline bool A_FireClassNameContains(void *obj, const char *needle)
     {
         if (needle == nullptr || needle[0] == '\0') return false;
@@ -972,8 +957,6 @@ namespace NewFeatures
 
     inline bool     g_afireHoldingFire       = false;
     inline void    *g_afireFiringOn          = nullptr;
-    inline void    *g_afireFiringOnKind      = nullptr;
-    inline void    *g_afireHeldKind          = nullptr;
     inline double   g_afireLastPressTime     = -1000.0;
 
     inline void    *g_afireLastPressWeapon   = nullptr;
@@ -1069,7 +1052,6 @@ namespace NewFeatures
 
         int    reasserts;
         int    scanFaults;
-        int    kindSkips;
 
         float  zonePx;
         int    weaponClass;
@@ -2050,8 +2032,6 @@ namespace NewFeatures
         d.heldWeapon = (void *)held;
         if (!A_FireObjectAlive((void *)held)) return FireBlock::NoWeapon;
 
-        g_afireHeldKind = A_FireObjectKind((void *)held);
-
         d.switching = A_FireWeaponSwitching(held);
         if (d.switching) {
             if (!A_FireWeaponSwitching(held))
@@ -2107,16 +2087,12 @@ namespace NewFeatures
         if (!g_afireHoldingFire) return;
         if (instance == nullptr || instance == g_afireFiringOn) {
 
-            const bool alive  = A_FireObjectAlive(g_afireFiringOn);
-            const bool kindOk = A_FireSameObjectKind(g_afireFiringOn, g_afireFiringOnKind);
-            if (fn_Weapon_StopFire != nullptr && alive && kindOk &&
-                A_FireStillHoldsWeapon(g_afireFiringOn))
+            if (fn_Weapon_StopFire != nullptr &&
+                A_FireStillHoldsWeapon(g_afireFiringOn) &&
+                A_FireObjectAlive(g_afireFiringOn))
                 fn_Weapon_StopFire(g_afireFiringOn, false);
-            else if (fn_Weapon_StopFire != nullptr && alive && !kindOk)
-                g_triggerDiag.kindSkips++;
             g_afireHoldingFire = false;
             g_afireFiringOn = nullptr;
-            g_afireFiringOnKind = nullptr;
         }
     }
 
@@ -2143,7 +2119,7 @@ namespace NewFeatures
 
         Weapon *held = local->get_CurrentWeapon();
         d.heldWeapon = (void *)held;
-        if (!A_FireObjectAlive((void *)held)) { d.testFireStatus = 3; return; }
+        if (!Tools::IsPtrValid((void *)held)) { d.testFireStatus = 3; return; }
 
         if (fn_Weapon_StartFire == nullptr) { d.testFireStatus = 4; return; }
 
@@ -2152,56 +2128,17 @@ namespace NewFeatures
         d.testFireStatus = 1;
     }
 
-    // A live local pawn is the cheapest honest answer to "is a match running":
-    // the front-end has none, and a pawn the game has already destroyed fails the
-    // same check, so the walk below stays out of the lobby and out of a teardown
-    // even when the switch was restored from a saved profile. It is also the same
-    // call the scan would make on its next line.
-    inline bool A_FireInMatch()
-    {
-        Pawn *local = A_FireLocalPawnFast();
-        if (local == nullptr || !A_FireObjectAlive((void *)local)) return false;
-        if (fn_GameGetMatchGame == nullptr) return false;
-        void *game = fn_GameGetMatchGame();
-        return game != nullptr && Tools::IsPtrValid(game);
-    }
-
-    // The tick hooks stay installed for the whole session and the game ticks
-    // every pawn and every weapon about sixty times a second, in the lobby as
-    // well as in a match. Nothing below the tick gate may run outside a match:
-    // the lobby is exactly where a game call or a stale scene pointer does the
-    // most damage, and a saved profile can turn the switch on before the menu is
-    // even drawn. So the hooks run only for a live match, and then only when a
-    // switch, a held press or a Test Fire asks for a tick.
-    inline bool A_FireActive()
-    {
-        // With every switch off there is nothing for the tick hooks to do, so
-        // do not call into the game at all: no LocalPawn, no MatchGame, no
-        // per-match walk. This path runs for the whole match with no features
-        // enabled, so it must not touch the scene.
-        if (!Config.NewFeaturesMenu.Triggerbot && !g_afireHoldingFire && !g_testFireRequest)
-            return false;
-        // A switch, a held press or a Test Fire asks for a tick: only proceed
-        // for a live match so the scan stays out of the lobby and out of a
-        // teardown whatever a saved profile says.
-        return A_FireInMatch();
-    }
-
     inline void A_FireTick(void *tickInstance)
     {
         TriggerbotDiag &d = g_triggerDiag;
         const double now = A_FireNow();
         d.lastTickTime = now;
 
-        if (!A_FireActive()) {
+        if (!Config.NewFeaturesMenu.Triggerbot &&
+            !g_afireHoldingFire && !g_testFireRequest) {
             if (now - g_afireOffDiagStamp < 0.1) return;
             g_afireOffDiagStamp = now;
-            // The switch can be on and the walk still be sitting out, which is
-            // the difference between "you turned it off" and "you are not in a
-            // match". The on-device line has to say which one it is.
-            const bool asked = Config.NewFeaturesMenu.Triggerbot ||
-                               g_afireHoldingFire || g_testFireRequest;
-            A_FireReportBlock(asked ? FireBlock::NoMatch : FireBlock::FeatureOff);
+            A_FireReportBlock(FireBlock::FeatureOff);
             s_dbgTriggerState = 0;
             return;
         }
@@ -2281,9 +2218,7 @@ namespace NewFeatures
         s_dbgTriggerState = 1;
 
         Weapon *held = (Weapon *)d.heldWeapon;
-        const bool heldAlive = A_FireObjectAlive((void *)held);
-        if (!heldAlive || !A_FireSameObjectKind((void *)held, g_afireHeldKind)) {
-            if (heldAlive) g_triggerDiag.kindSkips++;
+        if (!A_FireObjectAlive((void *)held)) {
             A_FireReleaseTriggerDeferred(nullptr);
             g_afireInTick = false;
             return;
@@ -2373,7 +2308,6 @@ namespace NewFeatures
 
         g_afireHoldingFire    = true;
         g_afireFiringOn       = (void *)held;
-        g_afireFiringOnKind   = g_afireHeldKind;
         g_afireTargetPawn     = (void *)target.pawn;
         g_afireLastPressWeapon = (void *)held;
         g_afireLastPressTime  = now;
@@ -2403,8 +2337,6 @@ namespace NewFeatures
         g_afireHoldingFire = false;
         g_afireTargetPawn  = nullptr;
         g_afireFiringOn    = nullptr;
-        g_afireFiringOnKind = nullptr;
-        g_afireHeldKind    = nullptr;
         g_afireLastPressTime = -1000.0;
         g_afireLastPressWeapon = nullptr;
         g_afireCanFireLast   = false;
@@ -2449,11 +2381,6 @@ namespace NewFeatures
     inline void A_FirePawnTicked(void *pawnInstance)
     {
         TriggerbotDiag &d = g_triggerDiag;
-
-        // Nothing below this line runs with the triggerbot off: no LocalPawn
-        // call, no MatchGame call, no per-match reset. See A_FireActive().
-        if (!A_FireActive()) return;
-
         d.pawnTicks++;
 
         if (A_FireLocalPawnFast() == (Pawn *)pawnInstance) {
@@ -2461,7 +2388,6 @@ namespace NewFeatures
             if (g_afireLastLocalPawn != nullptr && g_afireLastLocalPawn != pawnInstance) {
                 LOGI("[NewFeatures] triggerbot: local pawn %p replaced %p, per-match state cleared",
                      pawnInstance, g_afireLastLocalPawn);
-                crash_report::Note("match: local pawn replaced");
                 A_FireResetForNewMatch();
             }
             g_afireLastLocalPawn = pawnInstance;
@@ -2471,7 +2397,6 @@ namespace NewFeatures
                 if (g_afireLastMatchGame != nullptr && g_afireLastMatchGame != mg) {
                     LOGI("[NewFeatures] triggerbot: match game %p replaced %p, per-match state cleared",
                          mg, g_afireLastMatchGame);
-                    crash_report::Note("match: match game replaced");
                     A_FireResetForNewMatch();
                 }
                 g_afireLastMatchGame = mg;
@@ -2493,7 +2418,6 @@ namespace NewFeatures
             orig_Weapon_Tick(instance, deltaTime);
 
         if (instance == nullptr) return;
-        if (!A_FireActive()) return;
 
         g_triggerDiag.weaponTicks++;
         A_FireTick(instance);

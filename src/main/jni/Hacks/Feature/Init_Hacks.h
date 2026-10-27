@@ -86,26 +86,7 @@ enum EAimTrigger {
 enum ReticleStyle {
     ReticleDot = 0,
     ReticleCross = 1,
-    ReticleGapCross = 2,
-    ReticleCircle = 3,
-    ReticleCircleDot = 4,
-    ReticleTShape = 5,
-    ReticleChevron = 6,
-    ReticleXShape = 7,
-    ReticleBrackets = 8,
-    ReticleStyleCount = 9
 };
-
-// The overlay's first frame memsets Config to zero, which wipes the member
-// defaults below, and only some of them are put back by hand in Main.cpp. These
-// four must come back, named here so the restore and the declaration cannot drift
-// apart: a zeroed LongExecuteRange is clamped to the minimum range and the feature
-// then never widens anything, a zeroed OutfitScale or VehicleScale scales the
-// model away, and a zeroed TriggerbotDelay fires with no delay at all.
-constexpr float kDefaultLongExecuteRange = 8.0f;
-constexpr float kDefaultOutfitScale      = 1.0f;
-constexpr float kDefaultVehicleScale     = 1.0f;
-constexpr int   kDefaultTriggerbotDelay  = 120;
 
 struct sConfig {
         float Pline;
@@ -166,6 +147,7 @@ struct sWeaponAim {
         bool Distance;
         bool Skeleton;
         bool ShowFov;
+        bool Crosshair;
         bool Aimline;
     };
     sESPMenu ESPMenu{0};
@@ -204,7 +186,7 @@ sColorsESPBOT sColorsESPBOT{0};
         bool Execute;
         bool NoSmoke;
         bool UnliAmmo;
-        float VehicleScale = kDefaultVehicleScale;
+        float VehicleScale = 1.0f;
         bool SpeedhackX;
         bool CameraPov;
         float CameraPovSize;
@@ -248,14 +230,11 @@ sColorsESPBOT sColorsESPBOT{0};
 		bool WallHack;
 		bool Kinetic;
 
-        bool LongExecute = false;
-        float LongExecuteRange = kDefaultLongExecuteRange;
-
         bool StretchScreen;
         float StretchAspect = 1.7778f;
 
         bool HideOutfit = false;
-        float OutfitScale = kDefaultOutfitScale;
+        float OutfitScale = 1.0f;
         float OutfitTint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
         bool OutfitTintBypass = false;
     };
@@ -272,7 +251,7 @@ sColorsESPBOT sColorsESPBOT{0};
         bool Triggerbot = false;
         int TriggerbotMode = 0;
 
-        int TriggerbotDelay = kDefaultTriggerbotDelay;
+        int TriggerbotDelay = 120;
         int TriggerbotRadius = 80;
         bool TriggerbotDotRay = true;
 
@@ -287,14 +266,10 @@ sColorsESPBOT sColorsESPBOT{0};
 
     struct sCrosshair
     {
-        bool  Enabled = false;
+        bool  Enabled = true;
         int   Style = ReticleDot;
         float Color[4] = {1.0f, 1.0f, 1.0f, 0.95f};
         float Size = 6.0f;
-        float Thickness = 1.5f;
-        float Gap = 3.0f;
-        bool  Outline = false;
-        float OutlineThickness = 1.0f;
         float OffsetX = 0.0f;
         float OffsetY = 0.0f;
     };

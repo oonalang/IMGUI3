@@ -1,11 +1,10 @@
 #pragma once
-#include <atomic>
 
 #define m_UNITYLIB "libunity.so"
 #define m_ANOGSLIB "libanogs.so"
 
 #define SLEEP_TIME 1000LL / 60LL
-std::atomic<uintptr_t> m_unity{0};
+uintptr_t m_unity;
 
 uintptr_t libs;
 uintptr_t Class_Pawn_get_AimRotation;
