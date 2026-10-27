@@ -2152,14 +2152,27 @@ namespace NewFeatures
         d.testFireStatus = 1;
     }
 
+    // A live local pawn is the cheapest honest answer to "is a match running":
+    // the front-end has none, and a pawn the game has already destroyed fails the
+    // same check, so the walk below stays out of the lobby and out of a teardown
+    // even when the switch was restored from a saved profile. It is also the same
+    // call the scan would make on its next line.
+    inline bool A_FireInMatch()
+    {
+        Pawn *local = A_FireLocalPawnFast();
+        return local != nullptr && A_FireObjectAlive((void *)local);
+    }
+
     // The tick hooks stay installed for the whole session and the game ticks
     // every pawn and every weapon about sixty times a second, in the lobby as
-    // well as in a match. With the triggerbot off there is nothing for them to
-    // do, and the lobby is exactly where a game call or a stale scene pointer
-    // does the most damage, so the hooks stop here until a switch, a held press
-    // or a Test Fire asks for a tick.
+    // well as in a match. Nothing below the tick gate may run outside a match:
+    // the lobby is exactly where a game call or a stale scene pointer does the
+    // most damage, and a saved profile can turn the switch on before the menu is
+    // even drawn. So the hooks run only for a live match, and then only when a
+    // switch, a held press or a Test Fire asks for a tick.
     inline bool A_FireActive()
     {
+        if (!A_FireInMatch()) return false;
         return Config.NewFeaturesMenu.Triggerbot || g_afireHoldingFire || g_testFireRequest;
     }
 
@@ -2172,7 +2185,12 @@ namespace NewFeatures
         if (!A_FireActive()) {
             if (now - g_afireOffDiagStamp < 0.1) return;
             g_afireOffDiagStamp = now;
-            A_FireReportBlock(FireBlock::FeatureOff);
+            // The switch can be on and the walk still be sitting out, which is
+            // the difference between "you turned it off" and "you are not in a
+            // match". The on-device line has to say which one it is.
+            const bool asked = Config.NewFeaturesMenu.Triggerbot ||
+                               g_afireHoldingFire || g_testFireRequest;
+            A_FireReportBlock(asked ? FireBlock::NoMatch : FireBlock::FeatureOff);
             s_dbgTriggerState = 0;
             return;
         }
