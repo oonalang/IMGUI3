@@ -10,6 +10,7 @@
 #include "Hacks/Hacks.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
 #include "System/Core/CrashReporter.h"
+#include "System/Core/FaultGuard.h"
 #include "AstralPrtctn/AntiHook.h"
 #include "foxcheats/include/ScanEngine.hpp"
 #include "Includes/Jni_Stuff.h"
@@ -858,6 +859,7 @@ namespace font {
 
 static int g_GlWidth, g_GlHeight;
 static bool g_App = false;
+static bool g_overlayDisabled = false;
 static std::mutex g_imguiInitMutex;
 static EGLDisplay g_imguiDisplay = EGL_NO_DISPLAY;
 static EGLContext g_imguiContext = EGL_NO_CONTEXT;
@@ -1023,81 +1025,94 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
     g_GlWidth = qw; g_GlHeight = qh;
 
     if (!g_App) {
-        ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO();
-        io.IniFilename = NULL; io.LogFilename = NULL;
-        io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-        io.MouseDoubleClickTime = 0.3f; io.MouseDragThreshold = 2.f;
-        g_imguiBackendReady = ImGui_ImplOpenGL3_Init("#version 300 es");
-        if (!g_imguiBackendReady) { ImGui::DestroyContext(); return old_eglSwapBuffers(dpy, surface); }
-        g_imguiDisplay = dpy; g_imguiContext = currentContext; g_imguiSurface = surface;
+        if (g_overlayDisabled) return old_eglSwapBuffers(dpy, surface);
 
-        ImFontConfig ilc; ilc.MergeMode = false; ilc.PixelSnapH = true; ilc.FontDataOwnedByAtlas = false;
-        font::icomoon_logo = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 20.f, &ilc);
+        const bool initRan = fault_guard::Run([&] {
+            ImGui::CreateContext();
+            ImGuiIO& io = ImGui::GetIO();
+            io.IniFilename = NULL; io.LogFilename = NULL;
+            io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+            io.MouseDoubleClickTime = 0.3f; io.MouseDragThreshold = 2.f;
+            g_imguiBackendReady = ImGui_ImplOpenGL3_Init("#version 300 es");
+            if (!g_imguiBackendReady) { ImGui::DestroyContext(); return; }
+            g_imguiDisplay = dpy; g_imguiContext = currentContext; g_imguiSurface = surface;
 
-        ImFontConfig ic; ic.MergeMode = false; ic.PixelSnapH = true; ic.FontDataOwnedByAtlas = false;
-        font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)inter_semibold, sizeof(inter_semibold), 16.f, &ic);
+            ImFontConfig ilc; ilc.MergeMode = false; ilc.PixelSnapH = true; ilc.FontDataOwnedByAtlas = false;
+            font::icomoon_logo = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 20.f, &ilc);
 
-        ImFontConfig pc; pc.MergeMode = false; pc.PixelSnapH = true; pc.FontDataOwnedByAtlas = false;
-        font::icomoon_page = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 18.f, &pc);
+            ImFontConfig ic; ic.MergeMode = false; ic.PixelSnapH = true; ic.FontDataOwnedByAtlas = false;
+            font::inter_semibold = io.Fonts->AddFontFromMemoryTTF((void*)inter_semibold, sizeof(inter_semibold), 16.f, &ic);
 
-        static const ImWchar icons_ranges[] = { 0xe000, 0xf8ff, 0 };
-        ImFontConfig iconsCfg; iconsCfg.MergeMode = true; iconsCfg.PixelSnapH = true;
-        iconsCfg.OversampleH = 2.5f; iconsCfg.OversampleV = 2.5f; iconsCfg.FontDataOwnedByAtlas = false;
-        F107 = io.Fonts->AddFontFromMemoryCompressedTTF((void*)font_awesome_data1, (int)font_awesome_size1, 25.0f, &iconsCfg, icons_ranges);
-        F50 = io.Fonts->AddFontFromMemoryTTF((void *)F50_data, F50_size, 30.0f, NULL, io.Fonts->GetGlyphRangesDefault());
-        if (!F107) F107 = font::inter_semibold;
-        if (font::inter_semibold) io.FontDefault = font::inter_semibold;
+            ImFontConfig pc; pc.MergeMode = false; pc.PixelSnapH = true; pc.FontDataOwnedByAtlas = false;
+            font::icomoon_page = io.Fonts->AddFontFromMemoryTTF((void*)icomoon_page, sizeof(icomoon_page), 18.f, &pc);
 
-        login_screen::LoadFonts(io);
-        raspody::LoadFonts();
-        raspody::Style();
-        io.Fonts->Build();
-        ImGui_ImplOpenGL3_CreateFontsTexture();
+            static const ImWchar icons_ranges[] = { 0xe000, 0xf8ff, 0 };
+            ImFontConfig iconsCfg; iconsCfg.MergeMode = true; iconsCfg.PixelSnapH = true;
+            iconsCfg.OversampleH = 2.5f; iconsCfg.OversampleV = 2.5f; iconsCfg.FontDataOwnedByAtlas = false;
+            F107 = io.Fonts->AddFontFromMemoryCompressedTTF((void*)font_awesome_data1, (int)font_awesome_size1, 25.0f, &iconsCfg, icons_ranges);
+            F50 = io.Fonts->AddFontFromMemoryTTF((void *)F50_data, F50_size, 30.0f, NULL, io.Fonts->GetGlyphRangesDefault());
+            if (!F107) F107 = font::inter_semibold;
+            if (font::inter_semibold) io.FontDefault = font::inter_semibold;
 
-        memset(&Config, 0, sizeof(sConfig));
-        Config.sColorsESPPLAYER.LinePLAYER = CREATE_COLOR(255, 0, 0, 255);
-        Config.sColorsESPPLAYER.BoxPLAYER = CREATE_COLOR(255, 0, 0, 255);
-        Config.sColorsESPPLAYER.NamePLAYER = CREATE_COLOR(255, 0, 0, 255);
-        Config.sColorsESPPLAYER.DistancePLAYER = CREATE_COLOR(255, 0, 0, 255);
-        Config.sColorsESPPLAYER.HealthPLAYER = CREATE_COLOR(255, 0, 0, 255);
-        Config.sColorsESPPLAYER.SkeletonPLAYER = CREATE_COLOR(255, 0, 0, 255);
-        Config.sColorsESPBOT.LineBOT = CREATE_COLOR(0, 255, 0, 180);
-        Config.sColorsESPBOT.BoxBOT = CREATE_COLOR(0, 255, 0, 180);
-        Config.sColorsESPBOT.NameBOT = CREATE_COLOR(0, 255, 0, 180);
-        Config.sColorsESPBOT.HealthBOT = CREATE_COLOR(0, 255, 0, 180);
-        Config.sColorsESPBOT.DistanceBOT = CREATE_COLOR(0, 255, 0, 180);
-        Config.sColorsESPBOT.SkeletonBOT = CREATE_COLOR(0, 255, 0, 180);
-        Config.sColorsESPOTHERS.PovOTHERS = CREATE_COLOR(225, 0, 0, 180);
-        Config.ExtraMenu.NoGravityScale = 1.0f;
-        Config.ExtraMenu.StretchAspect = 1.7778f;
+            login_screen::LoadFonts(io);
+            raspody::LoadFonts();
+            raspody::Style();
+            io.Fonts->Build();
+            ImGui_ImplOpenGL3_CreateFontsTexture();
 
-        Config.ExtraMenu.Attachment = true;
-        CrosshairApplyDefaults();
-        Config.NewFeaturesMenu.TriggerbotRadius = 40;
-        Config.NewFeaturesMenu.TriggerbotDotRay = true;
-        Config.Aim.FpsLevelUltra1 = 240.0f;
-        Config.Aim.AimAssistSize = 0.0f;
-        Config.Aim.Cross = 45.0f;
-        Config.Aim.Target = EAimTarget::Heads;
-        Config.Aim.Trigger = EAimTrigger::None;
-        Config.Aim.By = EAim::Distance;
-        Config.Bline = 2.0f;
-        Config.Pline = 2.0f;
+            memset(&Config, 0, sizeof(sConfig));
+            Config.sColorsESPPLAYER.LinePLAYER = CREATE_COLOR(255, 0, 0, 255);
+            Config.sColorsESPPLAYER.BoxPLAYER = CREATE_COLOR(255, 0, 0, 255);
+            Config.sColorsESPPLAYER.NamePLAYER = CREATE_COLOR(255, 0, 0, 255);
+            Config.sColorsESPPLAYER.DistancePLAYER = CREATE_COLOR(255, 0, 0, 255);
+            Config.sColorsESPPLAYER.HealthPLAYER = CREATE_COLOR(255, 0, 0, 255);
+            Config.sColorsESPPLAYER.SkeletonPLAYER = CREATE_COLOR(255, 0, 0, 255);
+            Config.sColorsESPBOT.LineBOT = CREATE_COLOR(0, 255, 0, 180);
+            Config.sColorsESPBOT.BoxBOT = CREATE_COLOR(0, 255, 0, 180);
+            Config.sColorsESPBOT.NameBOT = CREATE_COLOR(0, 255, 0, 180);
+            Config.sColorsESPBOT.HealthBOT = CREATE_COLOR(0, 255, 0, 180);
+            Config.sColorsESPBOT.DistanceBOT = CREATE_COLOR(0, 255, 0, 180);
+            Config.sColorsESPBOT.SkeletonBOT = CREATE_COLOR(0, 255, 0, 180);
+            Config.sColorsESPOTHERS.PovOTHERS = CREATE_COLOR(225, 0, 0, 180);
+            Config.ExtraMenu.NoGravityScale = 1.0f;
+            Config.ExtraMenu.StretchAspect = 1.7778f;
 
-        const std::string startupProfile = GetAutoLoadProfile();
-        if (!startupProfile.empty())
+            Config.ExtraMenu.Attachment = true;
+            CrosshairApplyDefaults();
+            Config.NewFeaturesMenu.TriggerbotRadius = 40;
+            Config.NewFeaturesMenu.TriggerbotDotRay = true;
+            Config.Aim.FpsLevelUltra1 = 240.0f;
+            Config.Aim.AimAssistSize = 0.0f;
+            Config.Aim.Cross = 45.0f;
+            Config.Aim.Target = EAimTarget::Heads;
+            Config.Aim.Trigger = EAimTrigger::None;
+            Config.Aim.By = EAim::Distance;
+            Config.Bline = 2.0f;
+            Config.Pline = 2.0f;
+
+            const std::string startupProfile = GetAutoLoadProfile();
+            if (!startupProfile.empty())
+            {
+                if (LoadConfiguration(startupProfile))
+                {
+                    raspody::ui.activeProfile = startupProfile;
+                    raspody::ui.configStatus = "Auto-loaded " + startupProfile + ".json";
+                }
+                else
+                {
+                    raspody::ui.configStatus = "Failed to auto-load " + startupProfile + ".json";
+                }
+            }
+        });
+
+        if (!initRan)
         {
-            if (LoadConfiguration(startupProfile))
-            {
-                raspody::ui.activeProfile = startupProfile;
-                raspody::ui.configStatus = "Auto-loaded " + startupProfile + ".json";
-            }
-            else
-            {
-                raspody::ui.configStatus = "Failed to auto-load " + startupProfile + ".json";
-            }
+            crash_report::Note("overlay: first-frame init faulted");
+            LOGE("[overlay] first-frame init faulted; the menu stays off this session");
+            g_overlayDisabled = true;
+            return old_eglSwapBuffers(dpy, surface);
         }
+        if (!g_imguiBackendReady) return old_eglSwapBuffers(dpy, surface);
         g_App = true;
     }
 
