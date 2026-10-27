@@ -9,6 +9,7 @@
 #include "IL2CppSDKGenerator/IL2Cpp/Call_IL2Cpp.h"
 #include "Hacks/Hacks.h"
 #include "IL2CppSDKGenerator/KittyMemory/MemoryPatch.h"
+#include "System/Core/CrashReporter.h"
 #include "AstralPrtctn/AntiHook.h"
 #include "foxcheats/include/ScanEngine.hpp"
 #include "Includes/Jni_Stuff.h"
@@ -1252,6 +1253,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                         err.clear();
                         g_LoginButton = login_screen::ButtonState::Success;
                         g_LoginSuccessAt = ImGui::GetTime();
+                        crash_report::Note("login: accepted, loading the menu");
                         ui_media::SetVideo(ui_media::VideoKind::Loading);
                     } else {
                         err = g_LoginRequest.response;
@@ -1441,9 +1443,28 @@ void Init_Thread2() { InstallStealth(); InitializeProtection(); }
 void Init_SwapHook() {}
 
 void Init_Thread() {
+    crash_report::Install();
+
     while (!m_unity) { m_unity = Tools::GetBaseAddress("libunity.so"); sleep(1); }
     LOGI("libunity.so: %p", m_unity);
+    crash_report::Note("init: libunity.so found");
+
+    crash_report::AddModule("libunity.so", m_unity, Tools::GetEndAddress("libunity.so"));
+    crash_report::AddModule("libV2.so",
+                            Tools::GetBaseAddress("libV2.so"),
+                            Tools::GetEndAddress("libV2.so"));
+    crash_report::AddModule("libil2cpp.so",
+                            Tools::GetBaseAddress("libil2cpp.so"),
+                            Tools::GetEndAddress("libil2cpp.so"));
+    crash_report::AddModule("libanogs.so",
+                            Tools::GetBaseAddress("libanogs.so"),
+                            Tools::GetEndAddress("libanogs.so"));
+    crash_report::AddModule("libc.so",
+                            Tools::GetBaseAddress("libc.so"),
+                            Tools::GetEndAddress("libc.so"));
+
     UpdateAllOffset();
+    crash_report::Note("init: offsets updated");
 
     Patches.A1 = MemoryPatch::createWithHex("libunity.so", 0x8D781DC, "1F 20 03 D5 E0 03 13 AA");
     Patches.NoCrouch = MemoryPatch::createWithHex("libunity.so", 0x511F50C, "00 00 80 D2 C0 03 5F D6");
@@ -1489,9 +1510,11 @@ void Init_Thread() {
     }
 
     NewFeatures::InstallHooks();
+    crash_report::Note("init: triggerbot hooks installed");
 
     InstallBRClassEspConfigHook();
     InitializeAllHooks();
+    crash_report::Note("init: game hooks installed");
 
     InitializeProtection();
 
@@ -1500,6 +1523,7 @@ void Init_Thread() {
     xhook_enable_debug(0);
     xhook_register(OBFUSCATE(".*libunity\\.so$"), OBFUSCATE("eglSwapBuffers"), (void*)hook_eglSwapBuffers, (void**)&old_eglSwapBuffers);
     if (xhook_refresh(0) == 0) xhook_clear();
+    crash_report::Note("init: swap hook registered");
 }
 
 __attribute__((constructor))

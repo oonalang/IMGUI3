@@ -2152,14 +2152,24 @@ namespace NewFeatures
         d.testFireStatus = 1;
     }
 
+    // The tick hooks stay installed for the whole session and the game ticks
+    // every pawn and every weapon about sixty times a second, in the lobby as
+    // well as in a match. With the triggerbot off there is nothing for them to
+    // do, and the lobby is exactly where a game call or a stale scene pointer
+    // does the most damage, so the hooks stop here until a switch, a held press
+    // or a Test Fire asks for a tick.
+    inline bool A_FireActive()
+    {
+        return Config.NewFeaturesMenu.Triggerbot || g_afireHoldingFire || g_testFireRequest;
+    }
+
     inline void A_FireTick(void *tickInstance)
     {
         TriggerbotDiag &d = g_triggerDiag;
         const double now = A_FireNow();
         d.lastTickTime = now;
 
-        if (!Config.NewFeaturesMenu.Triggerbot &&
-            !g_afireHoldingFire && !g_testFireRequest) {
+        if (!A_FireActive()) {
             if (now - g_afireOffDiagStamp < 0.1) return;
             g_afireOffDiagStamp = now;
             A_FireReportBlock(FireBlock::FeatureOff);
@@ -2410,6 +2420,11 @@ namespace NewFeatures
     inline void A_FirePawnTicked(void *pawnInstance)
     {
         TriggerbotDiag &d = g_triggerDiag;
+
+        // Nothing below this line runs with the triggerbot off: no LocalPawn
+        // call, no MatchGame call, no per-match reset. See A_FireActive().
+        if (!A_FireActive()) return;
+
         d.pawnTicks++;
 
         if (A_FireLocalPawnFast() == (Pawn *)pawnInstance) {
@@ -2417,6 +2432,7 @@ namespace NewFeatures
             if (g_afireLastLocalPawn != nullptr && g_afireLastLocalPawn != pawnInstance) {
                 LOGI("[NewFeatures] triggerbot: local pawn %p replaced %p, per-match state cleared",
                      pawnInstance, g_afireLastLocalPawn);
+                crash_report::Note("match: local pawn replaced");
                 A_FireResetForNewMatch();
             }
             g_afireLastLocalPawn = pawnInstance;
@@ -2426,6 +2442,7 @@ namespace NewFeatures
                 if (g_afireLastMatchGame != nullptr && g_afireLastMatchGame != mg) {
                     LOGI("[NewFeatures] triggerbot: match game %p replaced %p, per-match state cleared",
                          mg, g_afireLastMatchGame);
+                    crash_report::Note("match: match game replaced");
                     A_FireResetForNewMatch();
                 }
                 g_afireLastMatchGame = mg;
@@ -2447,6 +2464,7 @@ namespace NewFeatures
             orig_Weapon_Tick(instance, deltaTime);
 
         if (instance == nullptr) return;
+        if (!A_FireActive()) return;
 
         g_triggerDiag.weaponTicks++;
         A_FireTick(instance);
