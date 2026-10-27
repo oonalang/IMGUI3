@@ -159,6 +159,21 @@ namespace NewFeatures
         return Tools::IsPtrValid(cached);
     }
 
+    constexpr size_t AF_OBJ_KLASS = 0x0;
+
+    inline void *A_FireObjectKind(void *obj)
+    {
+        if (!Tools::IsPtrValid(obj)) return nullptr;
+        void *klass = *(void **)((uintptr_t)obj + AF_OBJ_KLASS);
+        return Tools::IsPtrValid(klass) ? klass : nullptr;
+    }
+
+    inline bool A_FireSameObjectKind(void *obj, void *kind)
+    {
+        if (kind == nullptr) return true;
+        return A_FireObjectKind(obj) == kind;
+    }
+
     inline bool A_FireClassNameContains(void *obj, const char *needle)
     {
         if (needle == nullptr || needle[0] == '\0') return false;
@@ -957,6 +972,8 @@ namespace NewFeatures
 
     inline bool     g_afireHoldingFire       = false;
     inline void    *g_afireFiringOn          = nullptr;
+    inline void    *g_afireFiringOnKind      = nullptr;
+    inline void    *g_afireHeldKind          = nullptr;
     inline double   g_afireLastPressTime     = -1000.0;
 
     inline void    *g_afireLastPressWeapon   = nullptr;
@@ -1052,6 +1069,7 @@ namespace NewFeatures
 
         int    reasserts;
         int    scanFaults;
+        int    kindSkips;
 
         float  zonePx;
         int    weaponClass;
@@ -2032,6 +2050,8 @@ namespace NewFeatures
         d.heldWeapon = (void *)held;
         if (!A_FireObjectAlive((void *)held)) return FireBlock::NoWeapon;
 
+        g_afireHeldKind = A_FireObjectKind((void *)held);
+
         d.switching = A_FireWeaponSwitching(held);
         if (d.switching) {
             if (!A_FireWeaponSwitching(held))
@@ -2087,12 +2107,16 @@ namespace NewFeatures
         if (!g_afireHoldingFire) return;
         if (instance == nullptr || instance == g_afireFiringOn) {
 
-            if (fn_Weapon_StopFire != nullptr &&
-                A_FireStillHoldsWeapon(g_afireFiringOn) &&
-                A_FireObjectAlive(g_afireFiringOn))
+            const bool alive  = A_FireObjectAlive(g_afireFiringOn);
+            const bool kindOk = A_FireSameObjectKind(g_afireFiringOn, g_afireFiringOnKind);
+            if (fn_Weapon_StopFire != nullptr && alive && kindOk &&
+                A_FireStillHoldsWeapon(g_afireFiringOn))
                 fn_Weapon_StopFire(g_afireFiringOn, false);
+            else if (fn_Weapon_StopFire != nullptr && alive && !kindOk)
+                g_triggerDiag.kindSkips++;
             g_afireHoldingFire = false;
             g_afireFiringOn = nullptr;
+            g_afireFiringOnKind = nullptr;
         }
     }
 
@@ -2119,7 +2143,7 @@ namespace NewFeatures
 
         Weapon *held = local->get_CurrentWeapon();
         d.heldWeapon = (void *)held;
-        if (!Tools::IsPtrValid((void *)held)) { d.testFireStatus = 3; return; }
+        if (!A_FireObjectAlive((void *)held)) { d.testFireStatus = 3; return; }
 
         if (fn_Weapon_StartFire == nullptr) { d.testFireStatus = 4; return; }
 
@@ -2218,7 +2242,9 @@ namespace NewFeatures
         s_dbgTriggerState = 1;
 
         Weapon *held = (Weapon *)d.heldWeapon;
-        if (!A_FireObjectAlive((void *)held)) {
+        const bool heldAlive = A_FireObjectAlive((void *)held);
+        if (!heldAlive || !A_FireSameObjectKind((void *)held, g_afireHeldKind)) {
+            if (heldAlive) g_triggerDiag.kindSkips++;
             A_FireReleaseTriggerDeferred(nullptr);
             g_afireInTick = false;
             return;
@@ -2308,6 +2334,7 @@ namespace NewFeatures
 
         g_afireHoldingFire    = true;
         g_afireFiringOn       = (void *)held;
+        g_afireFiringOnKind   = g_afireHeldKind;
         g_afireTargetPawn     = (void *)target.pawn;
         g_afireLastPressWeapon = (void *)held;
         g_afireLastPressTime  = now;
@@ -2337,6 +2364,8 @@ namespace NewFeatures
         g_afireHoldingFire = false;
         g_afireTargetPawn  = nullptr;
         g_afireFiringOn    = nullptr;
+        g_afireFiringOnKind = nullptr;
+        g_afireHeldKind    = nullptr;
         g_afireLastPressTime = -1000.0;
         g_afireLastPressWeapon = nullptr;
         g_afireCanFireLast   = false;
