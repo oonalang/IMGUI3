@@ -2160,7 +2160,10 @@ namespace NewFeatures
     inline bool A_FireInMatch()
     {
         Pawn *local = A_FireLocalPawnFast();
-        return local != nullptr && A_FireObjectAlive((void *)local);
+        if (local == nullptr || !A_FireObjectAlive((void *)local)) return false;
+        if (fn_GameGetMatchGame == nullptr) return false;
+        void *game = fn_GameGetMatchGame();
+        return game != nullptr && Tools::IsPtrValid(game);
     }
 
     // The tick hooks stay installed for the whole session and the game ticks
