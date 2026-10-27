@@ -1250,6 +1250,10 @@ void LoadWeaponSkins() {
     std::vector<void*> weaponConfs, itemInvs, weaponAssets, weaponFires, weaponExtras, killEffects, mythicArmors, mythicSights, itemRes;
     {
         std::lock_guard<std::mutex> lock(g_dataMutex);
+        // The pass builds itemData incrementally and only sets loadskinhack at
+        // the end, so a faulted pass has always pushed partial rows. Clearing
+        // here makes a retry rebuild from zero instead of appending duplicates.
+        itemData.clear();
         weaponConfs = weaponConfInstance;
         itemInvs = itemInventoryInstance;
         weaponAssets = weaponAssetGroupInstance;
@@ -1886,12 +1890,17 @@ void Skins_Thread()
 
     while (true)
     {
-        LoadCharacterSkins();
-        LoadWeaponSkins();
-        LoadPlaneSkins();
-        LoadSnowboardSkins();
-        LoadCamos();
-        LoadKillIcons();
+        // Boot opens every game config before the menu ever draws, and the
+        // loaders deref thousands of collected pointers each tick. A stale or
+        // half-initialized conf pointer faulted in one of those derefs and the
+        // process died before the menu appeared. Guard each pass: on a fault
+        // the pass is skipped, noted, and retried on the next tick.
+        if (!fault_guard::Run(LoadCharacterSkins)) crash_report::Note("skin pass fault: characters");
+        if (!fault_guard::Run(LoadWeaponSkins))    crash_report::Note("skin pass fault: weapons");
+        if (!fault_guard::Run(LoadPlaneSkins))     crash_report::Note("skin pass fault: planes");
+        if (!fault_guard::Run(LoadSnowboardSkins)) crash_report::Note("skin pass fault: snowboards");
+        if (!fault_guard::Run(LoadCamos))          crash_report::Note("skin pass fault: camos");
+        if (!fault_guard::Run(LoadKillIcons))      crash_report::Note("skin pass fault: kill icons");
         g_killDecorationDiag.killEffectWeapons = (int)killEffectByWeapon.size();
         g_killDecorationDiag.killEffectItemIDs = (int)killEffectItemByAssetId.size();
 
