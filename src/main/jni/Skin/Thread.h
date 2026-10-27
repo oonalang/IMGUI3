@@ -1,3 +1,7 @@
+#include <cstdio>
+
+#include "System/Core/CrashReporter.h"
+
 std::unordered_map<std::string, bool> sBool;
 
 inline std::mutex g_killDecoMapMutex;
@@ -102,7 +106,7 @@ uintptr_t CharacterModelAddress = 0xB1A9738;
 uintptr_t BRDeadboxSkinAddress = 0x6FF3160;
 uintptr_t BRDropPlaneSkinAddress = 0xB1981D4;
 uintptr_t WeaponAssetGroupAddress = 0xAF7A080;
-uintptr_t MythicArmorConfigAddress = 0x5C90E84;
+uintptr_t MythicArmorConfigAddress = 0x90DD884;
 uintptr_t MythicSightConfigAddress = 0x90DDEEC;
 uintptr_t KillEffectItemConfConfigAddress = 0x90C54CC;
 uintptr_t SPKillIconItemConfConfigAddress = 0xAF67F1C;
@@ -240,6 +244,7 @@ bool g_killEffectItemHookInstalled = false;
 bool g_killEffectGroupHookInstalled = false;
 
 void my_Item2InventoryCtor(void* instance) {
+    if (orig_Item2InventoryCtor == nullptr) return;
     orig_Item2InventoryCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -248,6 +253,7 @@ void my_Item2InventoryCtor(void* instance) {
 }
 
 void my_WeaponConfExtraCtor(void* instance) {
+    if (orig_WeaponConfExtraCtor == nullptr) return;
     orig_WeaponConfExtraCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -256,6 +262,7 @@ void my_WeaponConfExtraCtor(void* instance) {
 }
 
 void my_WeaponFireEffectCtor(void* instance) {
+    if (orig_WeaponFireEffectCtor == nullptr) return;
     orig_WeaponFireEffectCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -264,6 +271,7 @@ void my_WeaponFireEffectCtor(void* instance) {
 }
 
 void my_WeaponConfCtor(void* instance) {
+    if (orig_WeaponConfCtor == nullptr) return;
     orig_WeaponConfCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -272,6 +280,7 @@ void my_WeaponConfCtor(void* instance) {
 }
 
 void my_WeaponAssetGroupCtor(void* instance) {
+    if (orig_WeaponAssetGroupCtor == nullptr) return;
     orig_WeaponAssetGroupCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -280,6 +289,7 @@ void my_WeaponAssetGroupCtor(void* instance) {
 }
 
 void my_MythicArmorCtor(void* instance) {
+    if (orig_MythicArmorCtor == nullptr) return;
     orig_MythicArmorCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -288,6 +298,7 @@ void my_MythicArmorCtor(void* instance) {
 }
 
 void my_MythicSightCtor(void* instance) {
+    if (orig_MythicSightCtor == nullptr) return;
     orig_MythicSightCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -296,6 +307,7 @@ void my_MythicSightCtor(void* instance) {
 }
 
 void my_WeaponSkinCtor(void* instance) {
+    if (orig_WeaponSkinCtor == nullptr) return;
     orig_WeaponSkinCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -304,6 +316,7 @@ void my_WeaponSkinCtor(void* instance) {
 }
 
 void my_WeaponCamosCtor(void* instance) {
+    if (orig_WeaponCamosCtor == nullptr) return;
     orig_WeaponCamosCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -312,6 +325,7 @@ void my_WeaponCamosCtor(void* instance) {
 }
 
 void my_KillEffectItemCtor(void* instance) {
+    if (orig_KillEffectItemCtor == nullptr) return;
     orig_KillEffectItemCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -320,6 +334,7 @@ void my_KillEffectItemCtor(void* instance) {
 }
 
 void my_SPKillIconCtor(void* instance) {
+    if (orig_SPKillIconCtor == nullptr) return;
     orig_SPKillIconCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -328,6 +343,7 @@ void my_SPKillIconCtor(void* instance) {
 }
 
 void my_ItemResourceCtor(void* instance) {
+    if (orig_ItemResourceCtor == nullptr) return;
     orig_ItemResourceCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -336,6 +352,7 @@ void my_ItemResourceCtor(void* instance) {
 }
 
 void my_CharacterModelCtor(void* instance) {
+    if (orig_CharacterModelCtor == nullptr) return;
     orig_CharacterModelCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -344,6 +361,7 @@ void my_CharacterModelCtor(void* instance) {
 }
 
 void my_RoleConfCtor(void* instance) {
+    if (orig_RoleConfCtor == nullptr) return;
     orig_RoleConfCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -352,6 +370,7 @@ void my_RoleConfCtor(void* instance) {
 }
 
 void my_RoleSkinCtor(void* instance) {
+    if (orig_RoleSkinCtor == nullptr) return;
     orig_RoleSkinCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -360,6 +379,7 @@ void my_RoleSkinCtor(void* instance) {
 }
 
 void my_RolePackConfCtor(void* instance) {
+    if (orig_RolePackConfCtor == nullptr) return;
     orig_RolePackConfCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -368,6 +388,7 @@ void my_RolePackConfCtor(void* instance) {
 }
 
 void my_BRDeadboxSkinCtor(void* instance) {
+    if (orig_BRDeadboxSkinCtor == nullptr) return;
     orig_BRDeadboxSkinCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -376,6 +397,7 @@ void my_BRDeadboxSkinCtor(void* instance) {
 }
 
 void my_BRDropPlaneSkinCtor(void* instance) {
+    if (orig_BRDropPlaneSkinCtor == nullptr) return;
     orig_BRDropPlaneSkinCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -384,6 +406,7 @@ void my_BRDropPlaneSkinCtor(void* instance) {
 }
 
 void my_VehicleSkinConfCtor(void* instance) {
+    if (orig_VehicleSkinConfCtor == nullptr) return;
     orig_VehicleSkinConfCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -392,6 +415,7 @@ void my_VehicleSkinConfCtor(void* instance) {
 }
 
 void my_VehicleItemConfCtor(void* instance) {
+    if (orig_VehicleItemConfCtor == nullptr) return;
     orig_VehicleItemConfCtor(instance);
     if (instance) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -1739,6 +1763,30 @@ void LoadCamos() {
     }
 }
 
+inline bool HookCtorAt(uintptr_t rva, void *hook, void **orig, const char *name)
+{
+    void *target = (void *)getRealOffset(rva);
+    if (!Tools::IsPtrValid(target))
+    {
+        char note[80];
+        snprintf(note, sizeof(note), "ctor hook unresolved: %s", name);
+        crash_report::Note(note);
+        LOGE("[skin] %s did not resolve at 0x%lx", name, (unsigned long)rva);
+        return false;
+    }
+
+    DobbyHook(target, hook, orig);
+    if (*orig == nullptr)
+    {
+        char note[80];
+        snprintf(note, sizeof(note), "ctor hook failed: %s", name);
+        crash_report::Note(note);
+        LOGE("[skin] %s failed to install at 0x%lx", name, (unsigned long)rva);
+        return false;
+    }
+    return true;
+}
+
 void Skins_Thread()
 {
     while (!m_unity)
@@ -1746,26 +1794,26 @@ void Skins_Thread()
         sleep(1);
     }
 
-    DobbyHook((void*)getRealOffset(Item2InventoryAddress), (void*)my_Item2InventoryCtor, (void**)&orig_Item2InventoryCtor);
-    DobbyHook((void*)getRealOffset(WeaponConfExtraAddress), (void*)my_WeaponConfExtraCtor, (void**)&orig_WeaponConfExtraCtor);
-    DobbyHook((void*)getRealOffset(WeaponFireEffectAddress), (void*)my_WeaponFireEffectCtor, (void**)&orig_WeaponFireEffectCtor);
-    DobbyHook((void*)getRealOffset(WeaponConfAddress), (void*)my_WeaponConfCtor, (void**)&orig_WeaponConfCtor);
-    DobbyHook((void*)getRealOffset(WeaponAssetGroupAddress), (void*)my_WeaponAssetGroupCtor, (void**)&orig_WeaponAssetGroupCtor);
-    DobbyHook((void*)getRealOffset(MythicArmorConfigAddress), (void*)my_MythicArmorCtor, (void**)&orig_MythicArmorCtor);
-    DobbyHook((void*)getRealOffset(MythicSightConfigAddress), (void*)my_MythicSightCtor, (void**)&orig_MythicSightCtor);
-    DobbyHook((void*)getRealOffset(WeaponSkinAddress), (void*)my_WeaponSkinCtor, (void**)&orig_WeaponSkinCtor);
-    DobbyHook((void*)getRealOffset(WeaponCamosAddress), (void*)my_WeaponCamosCtor, (void**)&orig_WeaponCamosCtor);
-    DobbyHook((void*)getRealOffset(KillEffectItemConfConfigAddress), (void*)my_KillEffectItemCtor, (void**)&orig_KillEffectItemCtor);
-    DobbyHook((void*)getRealOffset(SPKillIconItemConfConfigAddress), (void*)my_SPKillIconCtor, (void**)&orig_SPKillIconCtor);
-    DobbyHook((void*)getRealOffset(ItemResourceAddress), (void*)my_ItemResourceCtor, (void**)&orig_ItemResourceCtor);
-    DobbyHook((void*)getRealOffset(CharacterModelAddress), (void*)my_CharacterModelCtor, (void**)&orig_CharacterModelCtor);
-    DobbyHook((void*)getRealOffset(RoleConfAddress), (void*)my_RoleConfCtor, (void**)&orig_RoleConfCtor);
-    DobbyHook((void*)getRealOffset(RoleSkinAddress), (void*)my_RoleSkinCtor, (void**)&orig_RoleSkinCtor);
-    DobbyHook((void*)getRealOffset(RolePackConfAddress), (void*)my_RolePackConfCtor, (void**)&orig_RolePackConfCtor);
-    DobbyHook((void*)getRealOffset(BRDeadboxSkinAddress), (void*)my_BRDeadboxSkinCtor, (void**)&orig_BRDeadboxSkinCtor);
-    DobbyHook((void*)getRealOffset(BRDropPlaneSkinAddress), (void*)my_BRDropPlaneSkinCtor, (void**)&orig_BRDropPlaneSkinCtor);
-    DobbyHook((void*)getRealOffset(VehicleSkinConfAddress), (void*)my_VehicleSkinConfCtor, (void**)&orig_VehicleSkinConfCtor);
-    DobbyHook((void*)getRealOffset(VehicleItemConfAddress), (void*)my_VehicleItemConfCtor, (void**)&orig_VehicleItemConfCtor);
+    HookCtorAt(Item2InventoryAddress, (void*)my_Item2InventoryCtor, (void**)&orig_Item2InventoryCtor, "Item2Inventory");
+    HookCtorAt(WeaponConfExtraAddress, (void*)my_WeaponConfExtraCtor, (void**)&orig_WeaponConfExtraCtor, "WeaponConfExtra");
+    HookCtorAt(WeaponFireEffectAddress, (void*)my_WeaponFireEffectCtor, (void**)&orig_WeaponFireEffectCtor, "WeaponFireEffect");
+    HookCtorAt(WeaponConfAddress, (void*)my_WeaponConfCtor, (void**)&orig_WeaponConfCtor, "WeaponConf");
+    HookCtorAt(WeaponAssetGroupAddress, (void*)my_WeaponAssetGroupCtor, (void**)&orig_WeaponAssetGroupCtor, "WeaponAssetGroup");
+    HookCtorAt(MythicArmorConfigAddress, (void*)my_MythicArmorCtor, (void**)&orig_MythicArmorCtor, "MythicArmor");
+    HookCtorAt(MythicSightConfigAddress, (void*)my_MythicSightCtor, (void**)&orig_MythicSightCtor, "MythicSight");
+    HookCtorAt(WeaponSkinAddress, (void*)my_WeaponSkinCtor, (void**)&orig_WeaponSkinCtor, "WeaponSkin");
+    HookCtorAt(WeaponCamosAddress, (void*)my_WeaponCamosCtor, (void**)&orig_WeaponCamosCtor, "WeaponCamos");
+    HookCtorAt(KillEffectItemConfConfigAddress, (void*)my_KillEffectItemCtor, (void**)&orig_KillEffectItemCtor, "KillEffectItem");
+    HookCtorAt(SPKillIconItemConfConfigAddress, (void*)my_SPKillIconCtor, (void**)&orig_SPKillIconCtor, "SPKillIcon");
+    HookCtorAt(ItemResourceAddress, (void*)my_ItemResourceCtor, (void**)&orig_ItemResourceCtor, "ItemResource");
+    HookCtorAt(CharacterModelAddress, (void*)my_CharacterModelCtor, (void**)&orig_CharacterModelCtor, "CharacterModel");
+    HookCtorAt(RoleConfAddress, (void*)my_RoleConfCtor, (void**)&orig_RoleConfCtor, "RoleConf");
+    HookCtorAt(RoleSkinAddress, (void*)my_RoleSkinCtor, (void**)&orig_RoleSkinCtor, "RoleSkin");
+    HookCtorAt(RolePackConfAddress, (void*)my_RolePackConfCtor, (void**)&orig_RolePackConfCtor, "RolePackConf");
+    HookCtorAt(BRDeadboxSkinAddress, (void*)my_BRDeadboxSkinCtor, (void**)&orig_BRDeadboxSkinCtor, "BRDeadboxSkin");
+    HookCtorAt(BRDropPlaneSkinAddress, (void*)my_BRDropPlaneSkinCtor, (void**)&orig_BRDropPlaneSkinCtor, "BRDropPlaneSkin");
+    HookCtorAt(VehicleSkinConfAddress, (void*)my_VehicleSkinConfCtor, (void**)&orig_VehicleSkinConfCtor, "VehicleSkinConf");
+    HookCtorAt(VehicleItemConfAddress, (void*)my_VehicleItemConfCtor, (void**)&orig_VehicleItemConfCtor, "VehicleItemConf");
 
     while (!Tools::GetBaseAddress("libRoosterNN.so"))
     {
