@@ -17,7 +17,7 @@ namespace ui_loading {
 
 static bool  g_Active   = false;
 static float g_Timer    = 0.0f;
-static float g_Duration = 3.0f;
+static float g_Duration = 7.0f;
 static float g_Time     = 0.0f;
 
 static constexpr float kCardW      = kUiCardW;
@@ -300,7 +300,7 @@ static void StatusRow(ImDrawList* dl, ImFont* font, ImVec2 mn, ImVec2 mx, float 
 
 inline bool g_ShowVideoThisRun = false;
 
-inline void Start(float durationSeconds = 3.0f) {
+inline void Start(float durationSeconds = 7.0f) {
     g_Active   = true;
     g_Timer    = 0.0f;
     g_Time     = 0.0f;
@@ -373,10 +373,25 @@ inline bool RenderWindow(ImTextureID tex = nullptr) {
 
         PromoText(dl, body, cardCx, cardMax.y + 34.0f,
                   g_ShowVideoThisRun || tex != nullptr);
+
+        const ImVec2 skipPos(cardMax.x - 124.0f, cardMin.y + 22.0f);
+        ImGui::SetCursorScreenPos(skipPos);
+        if (ImGui::InvisibleButton("##skip_loading", ImVec2(100.0f, 42.0f)))
+            finished = true;
+
+        const bool hovered = ImGui::IsItemHovered();
+        const ImVec2 skipMax(skipPos.x + 100.0f, skipPos.y + 42.0f);
+        dl->AddRectFilled(skipPos, skipMax, IM_COL32(19, 8, 34, hovered ? 226 : 178), 13.0f);
+        dl->AddRect(skipPos, skipMax, hovered ? C::U(C::PurpleBrt) :
+                    C::UA(C::Border, 0.55f), 13.0f, 0, 1.2f);
+        const char* skipLabel = "Skip  >>";
+        dl->AddText(body, 13.0f,
+                    ImVec2(skipPos.x + (100.0f - TextW(body, 13.0f, skipLabel)) * 0.5f,
+                           skipPos.y + 13.0f), C::U(C::White), skipLabel);
     }
     ImGui::End();
 
-    if (g_Timer >= g_Duration) {
+    if (finished || g_Timer >= g_Duration) {
         g_Active = false;
         g_Timer  = 0.0f;
 
