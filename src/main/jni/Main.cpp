@@ -1314,7 +1314,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
                     const double elapsed = ImGui::GetTime() - g_LoginSuccessAt;
 
                     if (elapsed >= 0.85 && (ui_media::VideoReady() || elapsed >= 3.0))
-                        ui_loading::Start(3.0f);
+                        ui_loading::Start();
                 }
 
                 login_screen::Params lp;
