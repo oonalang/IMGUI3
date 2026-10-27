@@ -86,6 +86,32 @@ int main()
     if (src.find("if (*orig == nullptr)") == std::string::npos)
         Fail("HookCtorAt does not verify the trampoline it was handed");
 
+    // Every scan pass derefs thousands of collected config pointers from a
+    // thread that runs from process start, i.e. before the menu ever draws. A
+    // fault in one of them used to be an unguarded process death at app open.
+    const char *passes[] = {
+        "LoadCharacterSkins", "LoadWeaponSkins", "LoadPlaneSkins",
+        "LoadSnowboardSkins", "LoadCamos", "LoadKillIcons"
+    };
+    int passGuarded = 0;
+    for (const char *name : passes)
+    {
+        std::string guarded = std::string("fault_guard::Run(") + name + ")";
+        if (src.find(guarded) != std::string::npos)
+            ++passGuarded;
+        else
+            Fail(std::string(name) + " runs in the scan loop without fault_guard::Run");
+    }
+    if (passGuarded == 6 && src.find("fault_guard::Run(LoadWeaponSkins)") != std::string::npos)
+    {
+        // A faulted weapon pass must rebuild itemData from zero, or the retry
+        // appends a duplicate of every row pushed before the fault.
+        std::string boolDef = std::string("bool loadskinhack = false;");
+        std::string clearDef = std::string("itemData.clear();");
+        if (src.find(clearDef) == std::string::npos)
+            Fail("LoadWeaponSkins never clears itemData for a faulted-pass retry");
+    }
+
     if (failures != 0)
     {
         std::printf("%d failure(s)\n", failures);
