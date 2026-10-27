@@ -1492,7 +1492,7 @@ size_t hook_strlen(const char *thread) {
 }
 
 void Init_Thread2() {
-    crash_report::Stage stage("init: native protection setup");
+    crash_report::Note("init: native protection setup");
     InstallStealth();
     InitializeProtection();
 }
@@ -1580,7 +1580,7 @@ void Init_Thread() {
     crash_report::Note("init: game hooks installed");
 
     {
-        crash_report::Stage stage("init: native protection setup");
+        crash_report::Note("init: native protection setup");
         InitializeProtection();
     }
 
